@@ -26,6 +26,7 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 #### shell_execute
 
 安全にシェルコマンドを実行します。サンドボックス環境での実行により、システムの安全性を確保します。
+新規ターミナルセッション作成にも対応しています。
 
 **パラメータ:**
 ```json
@@ -38,7 +39,11 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
   "timeout_seconds": "number (optional, default: 30) - タイムアウト時間（秒）",
   "max_output_size": "number (optional, default: 1048576) - 最大出力サイズ（バイト）",
   "capture_stderr": "boolean (optional, default: true) - 標準エラー出力をキャプチャするか",
-  "session_id": "string (optional) - セッションID（セッション管理用）"
+  "session_id": "string (optional) - セッションID（セッション管理用）",
+  "create_terminal": "boolean (optional, default: false) - 新規インタラクティブターミナルセッションを作成",
+  "terminal_shell": "string (optional) - ターミナルのシェルタイプ: 'bash', 'zsh', 'fish', 'sh', 'powershell'",
+  "terminal_dimensions": "object (optional) - ターミナルの寸法 {width: number, height: number}"
+}
 }
 ```
 
@@ -53,6 +58,7 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
   "output_truncated": "boolean - 出力が切り捨てられたかどうか",
   "execution_time_ms": "number - 実行時間（ミリ秒）",
   "process_id": "number (optional) - プロセスID（async/backgroundモードの場合）",
+  "terminal_id": "string (optional) - ターミナルID（create_terminal=trueの場合）",
   "output_file_id": "string (optional) - 出力ファイルID（大きな出力の場合）",
   "created_at": "string - 実行開始時刻（ISO8601形式）",
   "completed_at": "string (optional) - 実行完了時刻（ISO8601形式）"
@@ -563,6 +569,36 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
     "command": "python long_running_script.py",
     "execution_mode": "background",
     "timeout_seconds": 3600
+  }
+}
+```
+
+### 新規ターミナルセッションの作成（shell_execute経由）
+```json
+{
+  "tool": "shell_execute",
+  "parameters": {
+    "command": "vim my_file.txt",
+    "create_terminal": true,
+    "terminal_shell": "bash",
+    "terminal_dimensions": {
+      "width": 120,
+      "height": 40
+    },
+    "working_directory": "/home/user/project"
+  }
+}
+```
+
+### インタラクティブシェルの開始
+```json
+{
+  "tool": "shell_execute",
+  "parameters": {
+    "command": "bash",
+    "create_terminal": true,
+    "terminal_shell": "bash",
+    "session_id": "interactive-session-001"
   }
 }
 ```

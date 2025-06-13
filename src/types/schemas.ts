@@ -19,6 +19,9 @@ export const ShellExecuteParamsSchema = z.object({
   max_output_size: z.number().int().min(1024).max(100 * 1024 * 1024).default(1048576),
   capture_stderr: z.boolean().default(true),
   session_id: z.string().optional(),
+  create_terminal: z.boolean().default(false),
+  terminal_shell: ShellTypeSchema.optional(),
+  terminal_dimensions: DimensionsSchema.optional(),
 });
 
 export const ShellGetExecutionParamsSchema = z.object({

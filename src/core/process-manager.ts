@@ -22,6 +22,7 @@ import {
   ResourceNotFoundError,
   ResourceLimitError 
 } from '../utils/errors.js';
+import type { TerminalManager } from './terminal-manager.js';
 
 export interface ExecutionOptions {
   command: string;
@@ -33,6 +34,9 @@ export interface ExecutionOptions {
   maxOutputSize: number;
   captureStderr: boolean;
   sessionId?: string;
+  createTerminal?: boolean;
+  terminalShell?: string;
+  terminalDimensions?: { width: number; height: number };
 }
 
 export class ProcessManager {
@@ -41,11 +45,17 @@ export class ProcessManager {
   private outputFiles = new Map<string, string>();
   private readonly maxConcurrentProcesses: number;
   private readonly outputDir: string;
+  private terminalManager?: TerminalManager; // TerminalManager への参照
 
   constructor(maxConcurrentProcesses = 50, outputDir = '/tmp/mcp-shell-outputs') {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
     this.outputDir = outputDir;
     this.initializeOutputDirectory();
+  }
+
+  // TerminalManager への参照を設定
+  setTerminalManager(terminalManager: TerminalManager): void {
+    this.terminalManager = terminalManager;
   }
 
   private async initializeOutputDirectory(): Promise<void> {
@@ -81,6 +91,43 @@ export class ProcessManager {
     }
 
     this.executions.set(executionId, executionInfo);
+
+    // 新規ターミナル作成オプションがある場合
+    if (options.createTerminal && this.terminalManager) {
+      try {
+        const terminalOptions: any = {
+          sessionName: `exec-${executionId}`,
+          workingDirectory: options.workingDirectory,
+          environmentVariables: options.environmentVariables,
+        };
+
+        if (options.terminalShell) {
+          terminalOptions.shellType = options.terminalShell;
+        }
+
+        if (options.terminalDimensions) {
+          terminalOptions.dimensions = options.terminalDimensions;
+        }
+
+        const terminalInfo = await this.terminalManager.createTerminal(terminalOptions);
+        executionInfo.terminal_id = terminalInfo.terminal_id;
+
+        // ターミナルにコマンドを送信
+        this.terminalManager.sendInput(terminalInfo.terminal_id, options.command, true);
+
+        // 実行情報を更新
+        executionInfo.status = 'completed';
+        executionInfo.completed_at = getCurrentTimestamp();
+        this.executions.set(executionId, executionInfo);
+
+        return executionInfo;
+      } catch (error) {
+        executionInfo.status = 'failed';
+        executionInfo.completed_at = getCurrentTimestamp();
+        this.executions.set(executionId, executionInfo);
+        throw new ExecutionError(`Failed to create terminal: ${error}`, { originalError: String(error) });
+      }
+    }
 
     try {
       if (options.executionMode === 'sync') {

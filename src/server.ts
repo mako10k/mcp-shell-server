@@ -66,6 +66,9 @@ export class MCPShellServer {
     this.monitoringManager = new MonitoringManager();
     this.securityManager = new SecurityManager();
 
+    // ProcessManagerにTerminalManagerの参照を設定
+    this.processManager.setTerminalManager(this.terminalManager);
+
     // ツールハンドラーの初期化
     this.shellTools = new ShellTools(
       this.processManager,
@@ -85,7 +88,7 @@ export class MCPShellServer {
         // Shell Operations
         {
           name: 'shell_execute',
-          description: 'Execute shell commands securely in a sandboxed environment',
+          description: 'Execute shell commands securely in a sandboxed environment. Can also create new interactive terminal sessions.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -122,7 +125,25 @@ export class MCPShellServer {
                 default: true,
                 description: 'Capture standard error output'
               },
-              session_id: { type: 'string', description: 'Session ID for session management' }
+              session_id: { type: 'string', description: 'Session ID for session management' },
+              create_terminal: {
+                type: 'boolean',
+                default: false,
+                description: 'Create a new interactive terminal session instead of running command directly'
+              },
+              terminal_shell: {
+                type: 'string',
+                enum: ['bash', 'zsh', 'fish', 'sh', 'powershell'],
+                description: 'Shell type for the new terminal (only used when create_terminal is true)'
+              },
+              terminal_dimensions: {
+                type: 'object',
+                properties: {
+                  width: { type: 'number', minimum: 10, maximum: 500 },
+                  height: { type: 'number', minimum: 5, maximum: 200 }
+                },
+                description: 'Terminal dimensions (only used when create_terminal is true)'
+              }
             },
             required: ['command']
           }

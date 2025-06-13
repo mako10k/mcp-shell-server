@@ -61,6 +61,15 @@ export class ShellTools {
       if (params.session_id !== undefined) {
         executionOptions.sessionId = params.session_id;
       }
+      if (params.create_terminal !== undefined) {
+        executionOptions.createTerminal = params.create_terminal;
+      }
+      if (params.terminal_shell !== undefined) {
+        executionOptions.terminalShell = params.terminal_shell;
+      }
+      if (params.terminal_dimensions !== undefined) {
+        executionOptions.terminalDimensions = params.terminal_dimensions;
+      }
 
       const executionInfo = await this.processManager.executeCommand(executionOptions);
 

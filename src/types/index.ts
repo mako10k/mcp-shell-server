@@ -77,6 +77,7 @@ export interface ExecutionInfo {
   stderr?: string;
   output_truncated?: boolean;
   output_file_id?: string;
+  terminal_id?: string;
   created_at: string;
   started_at?: string;
   completed_at?: string;

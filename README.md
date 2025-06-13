@@ -179,7 +179,7 @@ Use the `security_set_restrictions` tool to configure:
 ### Shell Operations
 
 #### `shell_execute`
-Execute shell commands with various execution modes.
+Execute shell commands with various execution modes. Can also create new interactive terminal sessions.
 
 **Parameters:**
 - `command` (required): Command to execute
@@ -188,6 +188,29 @@ Execute shell commands with various execution modes.
 - `environment_variables`: Environment variables
 - `timeout_seconds`: Execution timeout
 - `max_output_size`: Maximum output size
+- `create_terminal`: Create new interactive terminal session
+- `terminal_shell`: Shell type for new terminal ('bash', 'zsh', 'fish', etc.)
+- `terminal_dimensions`: Terminal dimensions {width, height}
+
+**Examples:**
+
+Regular command execution:
+```json
+{
+  "command": "ls -la",
+  "execution_mode": "sync"
+}
+```
+
+Create new terminal session:
+```json
+{
+  "command": "vim file.txt", 
+  "create_terminal": true,
+  "terminal_shell": "bash",
+  "terminal_dimensions": {"width": 120, "height": 40}
+}
+```
 
 #### `shell_get_execution`
 Get detailed information about a command execution.
