@@ -54,11 +54,11 @@ export interface ExecutionOptions {
 // ターミナルオプション  
 export interface TerminalOptions {
   sessionName?: string;
-  shellType: ShellType;
-  dimensions: Dimensions;
+  shellType?: ShellType;
+  dimensions?: Dimensions;
   workingDirectory?: string;
   environmentVariables?: EnvironmentVariables;
-  autoSaveHistory: boolean;
+  autoSaveHistory?: boolean;
 }
 
 // 実行情報

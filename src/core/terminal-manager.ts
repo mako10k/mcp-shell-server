@@ -59,8 +59,12 @@ export class TerminalManager {
     const terminalId = generateId();
     const now = getCurrentTimestamp();
 
+    // デフォルト値の設定
+    const shellType = options.shellType || 'bash';
+    const dimensions = options.dimensions || { width: 80, height: 24 };
+
     // シェルコマンドの決定
-    const shellCommand = this.getShellCommand(options.shellType);
+    const shellCommand = this.getShellCommand(shellType);
     
     // 環境変数の準備
     const env = getSafeEnvironment(
@@ -72,8 +76,8 @@ export class TerminalManager {
       // PTYプロセスの作成
       const ptyProcess = pty.spawn(shellCommand.command, shellCommand.args, {
         name: 'xterm-256color',
-        cols: options.dimensions.width,
-        rows: options.dimensions.height,
+        cols: dimensions.width,
+        rows: dimensions.height,
         cwd: options.workingDirectory || process.cwd(),
         env,
       });
@@ -82,8 +86,8 @@ export class TerminalManager {
       const terminalInfo: TerminalInfo = {
         terminal_id: terminalId,
         session_name: options.sessionName || `terminal-${terminalId.slice(0, 8)}`,
-        shell_type: options.shellType,
-        dimensions: options.dimensions,
+        shell_type: shellType,
+        dimensions: dimensions,
         process_id: ptyProcess.pid,
         status: 'active',
         working_directory: options.workingDirectory || process.cwd(),
@@ -116,7 +120,7 @@ export class TerminalManager {
     } catch (error) {
       throw new ExecutionError(
         `Failed to create terminal: ${error}`,
-        { shellType: options.shellType, error: String(error) }
+        { shellType: shellType, error: String(error) }
       );
     }
   }

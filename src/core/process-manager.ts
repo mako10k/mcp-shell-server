@@ -99,14 +99,12 @@ export class ProcessManager {
           sessionName: `exec-${executionId}`,
           workingDirectory: options.workingDirectory,
           environmentVariables: options.environmentVariables,
+          // デフォルトの寸法を設定
+          dimensions: options.terminalDimensions || { width: 80, height: 24 },
         };
 
         if (options.terminalShell) {
           terminalOptions.shellType = options.terminalShell;
-        }
-
-        if (options.terminalDimensions) {
-          terminalOptions.dimensions = options.terminalDimensions;
         }
 
         const terminalInfo = await this.terminalManager.createTerminal(terminalOptions);
