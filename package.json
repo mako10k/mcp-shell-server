@@ -1,0 +1,60 @@
+{
+  "name": "mcp-shell-server",
+  "version": "2.0.0",
+  "description": "MCP Shell Server - Secure shell operations and terminal management",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "watch": "tsx --watch src/index.ts",
+    "test": "vitest",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "clean": "rm -rf dist",
+    "prepublish": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "shell",
+    "terminal",
+    "process-management"
+  ],
+  "author": "mako10k",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mako10k/mcp-shell-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mako10k/mcp-shell-server/issues"
+  },
+  "homepage": "https://github.com/mako10k/mcp-shell-server#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "node-pty": "^1.0.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.14.0",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.0",
+    "@typescript-eslint/parser": "^7.13.0",
+    "eslint": "^8.57.0",
+    "jest": "^30.0.0",
+    "prettier": "^3.3.0",
+    "ts-jest": "^29.4.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

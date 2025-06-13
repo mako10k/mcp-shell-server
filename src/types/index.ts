@@ -1,0 +1,182 @@
+import { z } from 'zod';
+
+// 実行モード
+export const ExecutionModeSchema = z.enum(['sync', 'async', 'background']);
+export type ExecutionMode = z.infer<typeof ExecutionModeSchema>;
+
+// 実行状態
+export const ExecutionStatusSchema = z.enum(['completed', 'running', 'failed', 'timeout']);
+export type ExecutionStatus = z.infer<typeof ExecutionStatusSchema>;
+
+// シェルタイプ
+export const ShellTypeSchema = z.enum(['bash', 'zsh', 'fish', 'cmd', 'powershell']);
+export type ShellType = z.infer<typeof ShellTypeSchema>;
+
+// ターミナル状態
+export const TerminalStatusSchema = z.enum(['active', 'idle', 'closed']);
+export type TerminalStatus = z.infer<typeof TerminalStatusSchema>;
+
+// シグナル
+export const ProcessSignalSchema = z.enum(['TERM', 'KILL', 'INT', 'HUP', 'USR1', 'USR2']);
+export type ProcessSignal = z.infer<typeof ProcessSignalSchema>;
+
+// ファイルタイプ
+export const FileTypeSchema = z.enum(['output', 'log', 'temp', 'all']);
+export type FileType = z.infer<typeof FileTypeSchema>;
+
+// エラーカテゴリ
+export const ErrorCategorySchema = z.enum(['AUTH', 'PARAM', 'RESOURCE', 'EXECUTION', 'SYSTEM', 'SECURITY']);
+export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
+
+// 基本スキーマ
+export const EnvironmentVariablesSchema = z.record(z.string(), z.string());
+export type EnvironmentVariables = z.infer<typeof EnvironmentVariablesSchema>;
+
+export const DimensionsSchema = z.object({
+  width: z.number().int().min(1).max(500),
+  height: z.number().int().min(1).max(200),
+});
+export type Dimensions = z.infer<typeof DimensionsSchema>;
+
+// 実行オプション
+export interface ExecutionOptions {
+  command: string;
+  executionMode: ExecutionMode;
+  workingDirectory?: string;
+  environmentVariables?: EnvironmentVariables;
+  inputData?: string;
+  timeoutSeconds: number;
+  maxOutputSize: number;
+  captureStderr: boolean;
+  sessionId?: string;
+}
+
+// ターミナルオプション  
+export interface TerminalOptions {
+  sessionName?: string;
+  shellType: ShellType;
+  dimensions: Dimensions;
+  workingDirectory?: string;
+  environmentVariables?: EnvironmentVariables;
+  autoSaveHistory: boolean;
+}
+
+// 実行情報
+export interface ExecutionInfo {
+  execution_id: string;
+  command: string;
+  status: ExecutionStatus;
+  exit_code?: number;
+  process_id?: number;
+  working_directory?: string;
+  environment_variables?: EnvironmentVariables;
+  execution_time_ms?: number;
+  memory_usage_mb?: number;
+  cpu_usage_percent?: number;
+  stdout?: string;
+  stderr?: string;
+  output_truncated?: boolean;
+  output_file_id?: string;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+// プロセス情報
+export interface ProcessInfo {
+  process_id: number;
+  execution_id?: string;
+  command: string;
+  status: ExecutionStatus;
+  working_directory?: string;
+  environment_variables?: EnvironmentVariables;
+  memory_usage_mb?: number;
+  cpu_usage_percent?: number;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+// ターミナル情報
+export interface TerminalInfo {
+  terminal_id: string;
+  session_name?: string;
+  shell_type: ShellType;
+  dimensions: Dimensions;
+  process_id: number;
+  status: TerminalStatus;
+  working_directory: string;
+  created_at: string;
+  last_activity: string;
+}
+
+// ファイル情報
+export interface FileInfo {
+  file_id: string;
+  file_type: FileType;
+  name: string;
+  size: number;
+  execution_id?: string;
+  created_at: string;
+  path: string;
+}
+
+// 監視情報
+export interface MonitorInfo {
+  monitor_id: string;
+  process_id: number;
+  status: 'active' | 'stopped';
+  started_at: string;
+  last_update: string;
+  metrics: {
+    cpu_usage_percent?: number;
+    memory_usage_mb?: number;
+    io_read_bytes?: number;
+    io_write_bytes?: number;
+    network_rx_bytes?: number;
+    network_tx_bytes?: number;
+  };
+}
+
+// システム統計
+export interface SystemStats {
+  active_processes: number;
+  active_terminals: number;
+  total_files: number;
+  system_load: {
+    load1: number;
+    load5: number;
+    load15: number;
+  };
+  memory_usage: {
+    total_mb: number;
+    used_mb: number;
+    free_mb: number;
+    available_mb: number;
+  };
+  uptime_seconds: number;
+  collected_at: string;
+}
+
+// エラー情報
+export interface ErrorInfo {
+  code: string;
+  message: string;
+  category: ErrorCategory;
+  details?: Record<string, unknown>;
+  timestamp: string;
+  request_id?: string;
+}
+
+// セキュリティ制限
+export interface SecurityRestrictions {
+  restriction_id: string;
+  allowed_commands?: string[];
+  blocked_commands?: string[];
+  allowed_directories?: string[];
+  max_execution_time?: number;
+  max_memory_mb?: number;
+  enable_network?: boolean;
+  active: boolean;
+  configured_at: string;
+}
