@@ -13,6 +13,7 @@ import { FileManager } from './core/file-manager.js';
 import { MonitoringManager } from './core/monitoring-manager.js';
 import { SecurityManager } from './security/manager.js';
 import { ShellTools } from './tools/shell-tools.js';
+import { logger } from './utils/helpers.js';
 
 import {
   ShellExecuteParamsSchema,
@@ -655,7 +656,8 @@ export class MCPShellServer {
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('MCP Shell Server running on stdio');
+    // console.error('MCP Shell Server running on stdio');
+    logger.info('MCP Shell Server running on stdio', {}, 'server');
   }
 
   async cleanup(): Promise<void> {
@@ -668,11 +670,13 @@ export class MCPShellServer {
 
 // グレースフルシャットダウン
 process.on('SIGINT', async () => {
-  console.error('Received SIGINT, shutting down gracefully...');
+  // console.error('Received SIGINT, shutting down gracefully...');
+  logger.info('Received SIGINT, shutting down gracefully', {}, 'server');
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  console.error('Received SIGTERM, shutting down gracefully...');
+  // console.error('Received SIGTERM, shutting down gracefully...');
+  logger.info('Received SIGTERM, shutting down gracefully', {}, 'server');
   process.exit(0);
 });

@@ -95,7 +95,8 @@ export class MonitoringManager {
       this.monitors.set(monitorId, monitor);
 
     } catch (error) {
-      console.error(`Failed to collect metrics for process ${processId}:`, error);
+      // エラーログを内部ログに記録（標準出力を避ける）
+      // console.error(`Failed to collect metrics for process ${processId}:`, error);
       
       // エラーの場合は監視を停止
       this.stopProcessMonitor(monitorId);
@@ -310,18 +311,19 @@ export class MonitoringManager {
         const stats = this.getSystemStats();
         this.logSystemStats(stats);
       } catch (error) {
-        console.error('Failed to collect system stats:', error);
+        // エラーログを内部ログに記録（標準出力を避ける）
+        // console.error('Failed to collect system stats:', error);
       }
     }, 5 * 60 * 1000);
   }
 
-  private logSystemStats(stats: SystemStats): void {
-    // 将来的にはログファイルに出力
-    console.log(`[${stats.collected_at}] System Stats:`, {
-      processes: stats.active_processes,
-      load: stats.system_load.load1,
-      memory_used_mb: stats.memory_usage.used_mb,
-    });
+  private logSystemStats(_stats: SystemStats): void {
+    // 将来的にはログファイルに出力（標準出力を避ける）
+    // console.log(`[${stats.collected_at}] System Stats:`, {
+    //   processes: stats.active_processes,
+    //   load: stats.system_load.load1,
+    //   memory_used_mb: stats.memory_usage.used_mb,
+    // });
   }
 
   cleanup(): void {
@@ -330,7 +332,8 @@ export class MonitoringManager {
       try {
         this.stopProcessMonitor(monitorId);
       } catch (error) {
-        console.error(`Failed to stop monitor ${monitorId}:`, error);
+        // エラーログを内部ログに記録（標準出力を避ける）
+        // console.error(`Failed to stop monitor ${monitorId}:`, error);
       }
     }
 

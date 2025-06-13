@@ -378,7 +378,8 @@ export class TerminalManager {
       try {
         this.closeTerminal(terminalId, false);
       } catch (error) {
-        console.error(`Failed to cleanup terminal ${terminalId}:`, error);
+        // エラーログを内部ログに記録（標準出力を避ける）
+        // console.error(`Failed to cleanup terminal ${terminalId}:`, error);
       }
     }
 

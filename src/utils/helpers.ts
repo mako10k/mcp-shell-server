@@ -195,3 +195,88 @@ export function formatDuration(milliseconds: number): string {
     return `${seconds}s`;
   }
 }
+
+// ログレベル
+export enum LogLevel {
+  DEBUG = 0,
+  INFO = 1,
+  WARN = 2,
+  ERROR = 3,
+}
+
+// ログエントリ
+export interface LogEntry {
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  data?: any;
+  component?: string;
+}
+
+// 内部ログストレージ
+const logEntries: LogEntry[] = [];
+const MAX_LOG_ENTRIES = 1000;
+
+// ログ機能（標準出力に書き込まない）
+export function internalLog(
+  level: LogLevel,
+  message: string,
+  data?: any,
+  component?: string
+): void {
+  const entry: LogEntry = {
+    timestamp: getCurrentTimestamp(),
+    level,
+    message,
+  };
+
+  if (data !== undefined) {
+    entry.data = data;
+  }
+
+  if (component !== undefined) {
+    entry.component = component;
+  }
+
+  logEntries.push(entry);
+
+  // 古いログエントリを削除
+  if (logEntries.length > MAX_LOG_ENTRIES) {
+    logEntries.shift();
+  }
+}
+
+// ログ取得機能
+export function getLogEntries(
+  level?: LogLevel,
+  component?: string,
+  limit?: number
+): LogEntry[] {
+  let filtered = logEntries;
+
+  if (level !== undefined) {
+    filtered = filtered.filter(entry => entry.level >= level);
+  }
+
+  if (component) {
+    filtered = filtered.filter(entry => entry.component === component);
+  }
+
+  if (limit) {
+    filtered = filtered.slice(-limit);
+  }
+
+  return filtered;
+}
+
+// 便利なログ関数
+export const logger = {
+  debug: (message: string, data?: any, component?: string) =>
+    internalLog(LogLevel.DEBUG, message, data, component),
+  info: (message: string, data?: any, component?: string) =>
+    internalLog(LogLevel.INFO, message, data, component),
+  warn: (message: string, data?: any, component?: string) =>
+    internalLog(LogLevel.WARN, message, data, component),
+  error: (message: string, data?: any, component?: string) =>
+    internalLog(LogLevel.ERROR, message, data, component),
+};

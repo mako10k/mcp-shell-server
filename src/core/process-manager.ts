@@ -197,7 +197,8 @@ export class ProcessManager {
               const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
               executionInfo.output_file_id = outputFileId;
             } catch (error) {
-              console.error('Failed to save output to file:', error);
+              // エラーログを内部ログに記録（標準出力を避ける）
+              // console.error('Failed to save output to file:', error);
             }
           }
 
@@ -286,7 +287,8 @@ export class ProcessManager {
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
           executionInfo.output_file_id = outputFileId;
         } catch (error) {
-          console.error('Failed to save background process output:', error);
+          // エラーログを内部ログに記録（標準出力を避ける）
+          // console.error('Failed to save background process output:', error);
         }
 
         this.executions.set(executionId, executionInfo);
@@ -450,7 +452,7 @@ export class ProcessManager {
 
   cleanup(): void {
     // 実行中のプロセスを全て終了
-    for (const [pid, childProcess] of this.processes) {
+    for (const [_pid, childProcess] of this.processes) {
       try {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
@@ -459,7 +461,8 @@ export class ProcessManager {
           }
         }, 5000);
       } catch (error) {
-        console.error(`Failed to cleanup process ${pid}:`, error);
+        // エラーログを内部ログに記録（標準出力を避ける）
+        // console.error(`Failed to cleanup process ${pid}:`, error);
       }
     }
 

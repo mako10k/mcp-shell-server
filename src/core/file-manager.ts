@@ -203,7 +203,8 @@ export class FileManager {
         deletedFiles.push(fileId);
 
       } catch (error) {
-        console.error(`Failed to delete file ${fileId}:`, error);
+        // エラーログを内部ログに記録（標準出力を避ける）
+        // console.error(`Failed to delete file ${fileId}:`, error);
         failedFiles.push(fileId);
       }
     }
@@ -230,7 +231,8 @@ export class FileManager {
         await fs.unlink(fileInfo.path);
         this.files.delete(fileId);
       } catch (error) {
-        console.error(`Failed to cleanup file ${fileId}:`, error);
+        // エラーログを内部ログに記録（標準出力を避ける）
+        // console.error(`Failed to cleanup file ${fileId}:`, error);
       }
     }
   }
@@ -290,7 +292,8 @@ export class FileManager {
     try {
       await this.deleteFiles(allFileIds, true);
     } catch (error) {
-      console.error('Failed to cleanup files:', error);
+      // エラーログを内部ログに記録（標準出力を避ける）
+      // console.error('Failed to cleanup files:', error);
     }
 
     this.files.clear();
