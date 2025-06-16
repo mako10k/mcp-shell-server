@@ -187,7 +187,8 @@ export class MCPShellServer {
                 default: 0,
                 description: 'Offset for pagination'
               }
-            }
+            },
+            required: []
           }
         },
         {
@@ -260,7 +261,8 @@ export class MCPShellServer {
                 default: 100,
                 description: 'Maximum number of results'
               }
-            }
+            },
+            required: []
           }
         },
         {
@@ -358,7 +360,8 @@ export class MCPShellServer {
                 default: true,
                 description: 'Auto-save command history'
               }
-            }
+            },
+            required: []
           }
         },
         {
@@ -380,7 +383,8 @@ export class MCPShellServer {
                 default: 50,
                 description: 'Maximum number of results'
               }
-            }
+            },
+            required: []
           }
         },
         {
@@ -516,7 +520,8 @@ export class MCPShellServer {
                 default: true,
                 description: 'Enable network access'
               }
-            }
+            },
+            required: []
           }
         },
         {
@@ -540,7 +545,8 @@ export class MCPShellServer {
                 default: 60,
                 description: 'Time range in minutes'
               }
-            }
+            },
+            required: []
           }
         }
       ]
