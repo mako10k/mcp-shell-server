@@ -1,12 +1,12 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { FileInfo, FileType } from '../types/index.js';
-import { 
-  generateId, 
-  getCurrentTimestamp, 
+import {
+  generateId,
+  getCurrentTimestamp,
   getFileSize,
   safeReadFile,
-  ensureDirectory 
+  ensureDirectory,
 } from '../utils/helpers.js';
 import { ResourceNotFoundError } from '../utils/errors.js';
 
@@ -67,7 +67,7 @@ export class FileManager {
     const filePath = path.join(this.baseDir, 'output', fileName);
 
     await fs.writeFile(filePath, content, 'utf-8');
-    
+
     return await this.registerFile(filePath, 'output', executionId, fileName);
   }
 
@@ -77,7 +77,7 @@ export class FileManager {
     const filePath = path.join(this.baseDir, 'log', fileName);
 
     await fs.writeFile(filePath, content, 'utf-8');
-    
+
     return await this.registerFile(filePath, 'log', executionId, fileName);
   }
 
@@ -87,7 +87,7 @@ export class FileManager {
     const filePath = path.join(this.baseDir, 'temp', fileName);
 
     await fs.writeFile(filePath, content, 'utf-8');
-    
+
     return await this.registerFile(filePath, 'temp', undefined, fileName);
   }
 
@@ -146,16 +146,16 @@ export class FileManager {
     // フィルタリング
     if (filter) {
       if (filter.fileType && filter.fileType !== 'all') {
-        files = files.filter(file => file.file_type === filter.fileType);
+        files = files.filter((file) => file.file_type === filter.fileType);
       }
 
       if (filter.executionId) {
-        files = files.filter(file => file.execution_id === filter.executionId);
+        files = files.filter((file) => file.execution_id === filter.executionId);
       }
 
       if (filter.namePattern) {
         const pattern = new RegExp(filter.namePattern, 'i');
-        files = files.filter(file => pattern.test(file.name));
+        files = files.filter((file) => pattern.test(file.name));
       }
     }
 
@@ -170,12 +170,15 @@ export class FileManager {
     files.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return {
-      files: files.map(file => ({ ...file })),
+      files: files.map((file) => ({ ...file })),
       total_count: totalCount,
     };
   }
 
-  async deleteFiles(fileIds: string[], confirm: boolean): Promise<{
+  async deleteFiles(
+    fileIds: string[],
+    confirm: boolean
+  ): Promise<{
     deleted_files: string[];
     failed_files: string[];
     total_deleted: number;
@@ -201,7 +204,6 @@ export class FileManager {
         // マップから削除
         this.files.delete(fileId);
         deletedFiles.push(fileId);
-
       } catch (error) {
         // エラーログを内部ログに記録（標準出力を避ける）
         // console.error(`Failed to delete file ${fileId}:`, error);
@@ -218,10 +220,10 @@ export class FileManager {
 
   private async cleanupOldFiles(deleteCount: number): Promise<void> {
     const files = Array.from(this.files.entries());
-    
+
     // 作成日時でソート（古い順）
-    files.sort(([, a], [, b]) => 
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    files.sort(
+      ([, a], [, b]) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
 
     const filesToDelete = files.slice(0, deleteCount);
@@ -260,7 +262,7 @@ export class FileManager {
   } {
     const files = Array.from(this.files.values());
     const totalFiles = files.length;
-    
+
     const filesByType: Record<FileType, number> = {
       output: 0,
       log: 0,
@@ -288,7 +290,7 @@ export class FileManager {
   async cleanup(): Promise<void> {
     // 全てのファイルを削除
     const allFileIds = Array.from(this.files.keys());
-    
+
     try {
       await this.deleteFiles(allFileIds, true);
     } catch (error) {

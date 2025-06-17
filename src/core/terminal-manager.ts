@@ -1,21 +1,15 @@
 import * as pty from 'node-pty';
-import { 
-  TerminalInfo, 
-  ShellType, 
-  TerminalStatus, 
+import {
+  TerminalInfo,
+  ShellType,
+  TerminalStatus,
   Dimensions,
-  EnvironmentVariables 
+  EnvironmentVariables,
+  ForegroundProcessInfo,
 } from '../types/index.js';
-import { 
-  generateId, 
-  getCurrentTimestamp, 
-  getSafeEnvironment 
-} from '../utils/helpers.js';
-import { 
-  ResourceNotFoundError,
-  ResourceLimitError,
-  ExecutionError 
-} from '../utils/errors.js';
+import { generateId, getCurrentTimestamp, getSafeEnvironment } from '../utils/helpers.js';
+import { ResourceNotFoundError, ResourceLimitError, ExecutionError } from '../utils/errors.js';
+import { ProcessUtils } from '../utils/process-utils.js';
 
 export interface TerminalOptions {
   sessionName?: string;
@@ -32,6 +26,7 @@ interface TerminalSession {
   outputBuffer: string[];
   history: string[];
   lastActivity: Date;
+  foregroundProcessCache?: { info: ForegroundProcessInfo; timestamp: number };
 }
 
 export class TerminalManager {
@@ -40,11 +35,7 @@ export class TerminalManager {
   private readonly maxOutputLines: number;
   private readonly maxHistoryLines: number;
 
-  constructor(
-    maxTerminals = 20,
-    maxOutputLines = 10000,
-    maxHistoryLines = 1000
-  ) {
+  constructor(maxTerminals = 20, maxOutputLines = 10000, maxHistoryLines = 1000) {
     this.maxTerminals = maxTerminals;
     this.maxOutputLines = maxOutputLines;
     this.maxHistoryLines = maxHistoryLines;
@@ -65,7 +56,7 @@ export class TerminalManager {
 
     // シェルコマンドの決定
     const shellCommand = this.getShellCommand(shellType);
-    
+
     // 環境変数の準備
     const env = getSafeEnvironment(
       process.env as Record<string, string>,
@@ -93,6 +84,10 @@ export class TerminalManager {
         working_directory: options.workingDirectory || process.cwd(),
         created_at: now,
         last_activity: now,
+        foreground_process: {
+          available: false,
+          error: 'Not yet determined',
+        },
       };
 
       // ターミナルセッションの初期化
@@ -116,12 +111,11 @@ export class TerminalManager {
 
       this.terminals.set(terminalId, session);
       return terminalInfo;
-
     } catch (error) {
-      throw new ExecutionError(
-        `Failed to create terminal: ${error}`,
-        { shellType: shellType, error: String(error) }
-      );
+      throw new ExecutionError(`Failed to create terminal: ${error}`, {
+        shellType: shellType,
+        error: String(error),
+      });
     }
   }
 
@@ -161,7 +155,10 @@ export class TerminalManager {
     session.info.status = 'active';
   }
 
-  private handleTerminalExit(terminalId: string, _exitCode: { exitCode: number; signal?: number }): void {
+  private handleTerminalExit(
+    terminalId: string,
+    _exitCode: { exitCode: number; signal?: number }
+  ): void {
     const session = this.terminals.get(terminalId);
     if (!session) return;
 
@@ -174,10 +171,15 @@ export class TerminalManager {
     }, 30000); // 30秒後
   }
 
-  getTerminal(terminalId: string): TerminalInfo {
+  async getTerminal(terminalId: string, updateForegroundProcess = true): Promise<TerminalInfo> {
     const session = this.terminals.get(terminalId);
     if (!session) {
       throw new ResourceNotFoundError('terminal', terminalId);
+    }
+
+    // フォアグラウンドプロセス情報を更新
+    if (updateForegroundProcess) {
+      await this.updateForegroundProcess(session);
     }
 
     return { ...session.info };
@@ -188,19 +190,17 @@ export class TerminalManager {
     statusFilter?: TerminalStatus | 'all';
     limit?: number;
   }): { terminals: TerminalInfo[]; total: number } {
-    let terminals = Array.from(this.terminals.values()).map(session => ({ ...session.info }));
+    let terminals = Array.from(this.terminals.values()).map((session) => ({ ...session.info }));
 
     // フィルタリング
     if (filter) {
       if (filter.sessionNamePattern) {
         const pattern = new RegExp(filter.sessionNamePattern, 'i');
-        terminals = terminals.filter(terminal => 
-          pattern.test(terminal.session_name || '')
-        );
+        terminals = terminals.filter((terminal) => pattern.test(terminal.session_name || ''));
       }
 
       if (filter.statusFilter && filter.statusFilter !== 'all') {
-        terminals = terminals.filter(terminal => terminal.status === filter.statusFilter);
+        terminals = terminals.filter((terminal) => terminal.status === filter.statusFilter);
       }
     }
 
@@ -214,7 +214,18 @@ export class TerminalManager {
     return { terminals, total };
   }
 
-  sendInput(terminalId: string, input: string, execute = false): { success: boolean; timestamp: string } {
+  async sendInput(
+    terminalId: string,
+    input: string,
+    execute = false,
+    controlCodes = false,
+    rawBytes = false,
+    sendTo?: string
+  ): Promise<{
+    success: boolean;
+    timestamp: string;
+    guard_check?: { passed: boolean; target?: string };
+  }> {
     const session = this.terminals.get(terminalId);
     if (!session) {
       throw new ResourceNotFoundError('terminal', terminalId);
@@ -224,13 +235,43 @@ export class TerminalManager {
       throw new ExecutionError('Terminal is closed');
     }
 
+    // プログラムガードチェック
+    let guardResult: { passed: boolean; target?: string } | undefined;
+    if (sendTo) {
+      const guardPassed = await this.checkProgramGuard(terminalId, sendTo);
+      guardResult = { passed: guardPassed, target: sendTo };
+
+      if (!guardPassed) {
+        throw new ExecutionError(`Program guard failed: input rejected for target "${sendTo}"`);
+      }
+    }
+
     try {
-      // 入力を送信
-      const inputToSend = execute ? `${input}\r` : input;
+      let inputToSend: string;
+
+      if (rawBytes) {
+        // バイト列として送信（16進数文字列として受け取った場合）
+        try {
+          const bytes = Buffer.from(input, 'hex');
+          inputToSend = bytes.toString('binary');
+        } catch (error) {
+          throw new ExecutionError('Invalid hex string for raw_bytes mode');
+        }
+      } else if (controlCodes) {
+        // 制御コードのエスケープシーケンスを解釈
+        inputToSend = this.parseControlCodes(input);
+        if (execute) {
+          inputToSend += '\r';
+        }
+      } else {
+        // 通常の入力
+        inputToSend = execute ? `${input}\r` : input;
+      }
+
       session.ptyProcess.write(inputToSend);
 
-      // 履歴に追加（executeの場合のみ）
-      if (execute && input.trim()) {
+      // 履歴に追加（executeの場合のみ、制御コードは除く）
+      if (execute && input.trim() && !controlCodes && !rawBytes) {
         session.history.push(input.trim());
         if (session.history.length > this.maxHistoryLines) {
           session.history = session.history.slice(-this.maxHistoryLines);
@@ -241,30 +282,91 @@ export class TerminalManager {
       session.lastActivity = new Date();
       session.info.last_activity = getCurrentTimestamp();
 
-      return {
+      // フォアグラウンドプロセス情報を非同期で更新（パフォーマンスのため）
+      this.updateForegroundProcess(session).catch((err) => {
+        console.warn(`Failed to update foreground process for terminal ${terminalId}:`, err);
+      });
+
+      const result = {
         success: true,
         timestamp: getCurrentTimestamp(),
+      } as {
+        success: boolean;
+        timestamp: string;
+        guard_check?: { passed: boolean; target?: string };
       };
 
+      if (guardResult) {
+        result.guard_check = guardResult;
+      }
+
+      return result;
     } catch (error) {
       throw new ExecutionError(`Failed to send input: ${error}`);
     }
   }
 
-  getOutput(
+  /**
+   * 制御コードのエスケープシーケンスを解釈する
+   */
+  private parseControlCodes(input: string): string {
+    return (
+      input
+        // 一般的な制御文字
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\b/g, '\b')
+        .replace(/\\f/g, '\f')
+        .replace(/\\v/g, '\v')
+        .replace(/\\0/g, '\0')
+        // Ctrl+文字のシーケンス (^C = Ctrl+C)
+        .replace(/\^([A-Z@\[\]\\^_])/g, (_, char) => {
+          const code = char.charCodeAt(0);
+          if (code >= 64 && code <= 95) {
+            // @ to _
+            return String.fromCharCode(code - 64);
+          }
+          return `^${char}`;
+        })
+        // 16進数エスケープ (\x1b)
+        .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => {
+          return String.fromCharCode(parseInt(hex, 16));
+        })
+        // 8進数エスケープ (\033)
+        .replace(/\\([0-7]{3})/g, (_, octal) => {
+          return String.fromCharCode(parseInt(octal, 8));
+        })
+        // Unicode エスケープ (\u001b)
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, unicode) => {
+          return String.fromCharCode(parseInt(unicode, 16));
+        })
+        // エスケープされたバックスラッシュ
+        .replace(/\\\\/g, '\\')
+    );
+  }
+
+  async getOutput(
     terminalId: string,
     startLine = 0,
     lineCount = 100,
-    includeAnsi = false
-  ): {
+    includeAnsi = false,
+    includeForegroundProcess = false
+  ): Promise<{
     output: string;
     line_count: number;
     total_lines: number;
     has_more: boolean;
-  } {
+    foreground_process?: ForegroundProcessInfo;
+  }> {
     const session = this.terminals.get(terminalId);
     if (!session) {
       throw new ResourceNotFoundError('terminal', terminalId);
+    }
+
+    // フォアグラウンドプロセス情報を更新（要求された場合）
+    if (includeForegroundProcess) {
+      await this.updateForegroundProcess(session);
     }
 
     const totalLines = session.outputBuffer.length;
@@ -278,12 +380,18 @@ export class TerminalManager {
       output = this.stripAnsiCodes(output);
     }
 
-    return {
+    const result: any = {
       output,
       line_count: outputLines.length,
       total_lines: totalLines,
       has_more: endLine < totalLines,
     };
+
+    if (includeForegroundProcess) {
+      result.foreground_process = session.info.foreground_process;
+    }
+
+    return result;
   }
 
   private stripAnsiCodes(text: string): string {
@@ -291,7 +399,10 @@ export class TerminalManager {
     return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
   }
 
-  resizeTerminal(terminalId: string, dimensions: Dimensions): { success: boolean; updated_at: string } {
+  resizeTerminal(
+    terminalId: string,
+    dimensions: Dimensions
+  ): { success: boolean; updated_at: string } {
     const session = this.terminals.get(terminalId);
     if (!session) {
       throw new ResourceNotFoundError('terminal', terminalId);
@@ -313,13 +424,15 @@ export class TerminalManager {
         success: true,
         updated_at: session.info.last_activity,
       };
-
     } catch (error) {
       throw new ExecutionError(`Failed to resize terminal: ${error}`);
     }
   }
 
-  closeTerminal(terminalId: string, saveHistory = true): {
+  closeTerminal(
+    terminalId: string,
+    saveHistory = true
+  ): {
     success: boolean;
     history_saved: boolean;
     closed_at: string;
@@ -350,7 +463,6 @@ export class TerminalManager {
         history_saved: historySaved,
         closed_at: closedAt,
       };
-
     } catch (error) {
       throw new ExecutionError(`Failed to close terminal: ${error}`);
     }
@@ -388,5 +500,58 @@ export class TerminalManager {
     }
 
     this.terminals.clear();
+  }
+
+  /**
+   * フォアグラウンドプロセス情報を更新する
+   */
+  private async updateForegroundProcess(session: TerminalSession): Promise<void> {
+    try {
+      // キャッシュチェック（5秒間有効）
+      const now = Date.now();
+      if (session.foregroundProcessCache && now - session.foregroundProcessCache.timestamp < 5000) {
+        session.info.foreground_process = session.foregroundProcessCache.info;
+        return;
+      }
+
+      const foregroundInfo = await ProcessUtils.getForegroundProcess(session.ptyProcess);
+
+      // キャッシュを更新
+      session.foregroundProcessCache = {
+        info: foregroundInfo,
+        timestamp: now,
+      };
+
+      session.info.foreground_process = foregroundInfo;
+    } catch (error) {
+      session.info.foreground_process = {
+        available: false,
+        error: `Failed to update foreground process: ${error}`,
+      };
+    }
+  }
+
+  /**
+   * プログラムガードをチェックする
+   */
+  private async checkProgramGuard(terminalId: string, sendTo: string): Promise<boolean> {
+    if (sendTo === '*') {
+      return true; // 条件なし
+    }
+
+    const session = this.terminals.get(terminalId);
+    if (!session) {
+      return false;
+    }
+
+    // フォアグラウンドプロセス情報を更新
+    await this.updateForegroundProcess(session);
+
+    const foregroundProcess = session.info.foreground_process;
+    if (!foregroundProcess?.available || !foregroundProcess.process) {
+      return false; // フォアグラウンドプロセスが取得できない場合は拒否
+    }
+
+    return ProcessUtils.checkProgramGuard(foregroundProcess.process, sendTo);
   }
 }

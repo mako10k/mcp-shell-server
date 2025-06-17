@@ -94,8 +94,8 @@ describe('MCP Shell Server Components', () => {
 
       const files = fileManager.listFiles();
       expect(files.files.length).toBeGreaterThan(0);
-      
-      const testFile = files.files.find(f => f.file_id === fileId);
+
+      const testFile = files.files.find((f) => f.file_id === fileId);
       expect(testFile).toBeTruthy();
       expect(testFile?.execution_id).toBe('test-execution');
     });
@@ -103,7 +103,7 @@ describe('MCP Shell Server Components', () => {
     it('should read file content', async () => {
       const content = 'test file content';
       const fileId = await fileManager.createOutputFile(content);
-      
+
       const result = await fileManager.readFile(fileId);
       expect(result.content).toBe(content);
       expect(result.file_id).toBe(fileId);

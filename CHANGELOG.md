@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-06-17
+
+### Added
+- **Control Code Support**: Terminal input now supports control codes and escape sequences
+  - `control_codes` parameter for interpreting escape sequences (`\n`, `\r`, `^C`, `\x1b`, etc.)
+  - `raw_bytes` parameter for sending hexadecimal byte sequences
+  - Support for Ctrl+key combinations, ANSI escape sequences, and special characters
+- **Program Guard Feature**: Advanced security mechanism for terminal input protection
+  - `send_to` parameter for restricting input to specific processes
+  - Support for process name, full path, PID, and session leader targeting
+  - Real-time foreground process detection and validation
+- **Enhanced Process Information**: Extended terminal and process management
+  - Foreground process information in terminal objects
+  - `include_foreground_process` parameter in terminal_output
+  - System process information with session leader detection
+  - Process information caching for improved performance
+
+### Enhanced
+- Terminal input validation with program guard checks
+- Process information retrieval with `/proc` filesystem integration
+- Error handling for process detection failures
+- Performance optimization with smart caching mechanisms
+- Extended API responses with guard check results
+
+### Security
+- Secure process targeting prevents unintended input delivery
+- Foreground process validation before input transmission
+- Safe fallback behavior when process information is unavailable
+- Protection against unauthorized process manipulation
+
+### Documentation
+- Complete control codes usage guide (`docs/control-codes.md`)
+- Program guard feature documentation (`docs/program-guard.md`)
+- Example scripts for both features
+- Comprehensive API parameter documentation
+
 ## [2.0.0] - 2025-06-13
 
 ### Added

@@ -16,7 +16,12 @@ export const ShellExecuteParamsSchema = z.object({
   environment_variables: EnvironmentVariablesSchema.optional(),
   input_data: z.string().optional(),
   timeout_seconds: z.number().int().min(1).max(3600).default(30),
-  max_output_size: z.number().int().min(1024).max(100 * 1024 * 1024).default(1048576),
+  max_output_size: z
+    .number()
+    .int()
+    .min(1024)
+    .max(100 * 1024 * 1024)
+    .default(1048576),
   capture_stderr: z.boolean().default(true),
   session_id: z.string().optional(),
   create_terminal: z.boolean().default(false),
@@ -60,7 +65,12 @@ export const FileListParamsSchema = z.object({
 export const FileReadParamsSchema = z.object({
   file_id: z.string().min(1),
   offset: z.number().int().min(0).default(0),
-  size: z.number().int().min(1).max(10 * 1024 * 1024).default(8192),
+  size: z
+    .number()
+    .int()
+    .min(1)
+    .max(10 * 1024 * 1024)
+    .default(8192),
   encoding: z.string().default('utf-8'),
 });
 
@@ -93,6 +103,9 @@ export const TerminalInputParamsSchema = z.object({
   terminal_id: z.string().min(1),
   input: z.string(),
   execute: z.boolean().default(false),
+  control_codes: z.boolean().default(false), // 制御コードとして解釈するかどうか
+  raw_bytes: z.boolean().default(false), // バイト列として送信するかどうか
+  send_to: z.string().optional(), // プログラムガード: "bash", "/bin/bash", "pid:12345", "sessionleader:", "*"
 });
 
 export const TerminalOutputParamsSchema = z.object({
@@ -100,6 +113,7 @@ export const TerminalOutputParamsSchema = z.object({
   start_line: z.number().int().min(0).default(0),
   line_count: z.number().int().min(1).max(10000).default(100),
   include_ansi: z.boolean().default(false),
+  include_foreground_process: z.boolean().default(false),
 });
 
 export const TerminalResizeParamsSchema = z.object({

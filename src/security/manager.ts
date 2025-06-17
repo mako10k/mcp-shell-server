@@ -15,24 +15,47 @@ export class SecurityManager {
       restriction_id: generateId(),
       blocked_commands: [
         // システム操作
-        'rm', 'rmdir', 'del', 'format', 'fdisk', 'mkfs', 'mount', 'umount',
+        'rm',
+        'rmdir',
+        'del',
+        'format',
+        'fdisk',
+        'mkfs',
+        'mount',
+        'umount',
         // 権限操作
-        'sudo', 'su', 'chmod', 'chown', 'chgrp',
+        'sudo',
+        'su',
+        'chmod',
+        'chown',
+        'chgrp',
         // システム制御
-        'shutdown', 'reboot', 'halt', 'poweroff', 'systemctl', 'service',
+        'shutdown',
+        'reboot',
+        'halt',
+        'poweroff',
+        'systemctl',
+        'service',
         // ネットワーク/ファイアウォール
-        'iptables', 'ufw', 'firewall-cmd', 'netsh',
+        'iptables',
+        'ufw',
+        'firewall-cmd',
+        'netsh',
         // パッケージ管理
-        'apt', 'yum', 'dnf', 'pacman', 'brew', 'npm', 'pip',
+        'apt',
+        'yum',
+        'dnf',
+        'pacman',
+        'brew',
+        'npm',
+        'pip',
         // コンパイラ/インタープリター（制限付き）
-        'gcc', 'g++', 'clang', 'javac',
+        'gcc',
+        'g++',
+        'clang',
+        'javac',
       ],
-      allowed_directories: [
-        '/tmp',
-        '/var/tmp',
-        process.env['HOME'] || '/home',
-        process.cwd(),
-      ],
+      allowed_directories: ['/tmp', '/var/tmp', process.env['HOME'] || '/home', process.cwd()],
       max_execution_time: 300, // 5分
       max_memory_mb: 1024, // 1GB
       enable_network: true,
@@ -44,7 +67,8 @@ export class SecurityManager {
   setRestrictions(restrictions: Partial<SecurityRestrictions>): SecurityRestrictions {
     const newRestrictions: SecurityRestrictions = {
       restriction_id: generateId(),
-      max_execution_time: restrictions.max_execution_time || this.restrictions?.max_execution_time || 300,
+      max_execution_time:
+        restrictions.max_execution_time || this.restrictions?.max_execution_time || 300,
       max_memory_mb: restrictions.max_memory_mb || this.restrictions?.max_memory_mb || 1024,
       enable_network: restrictions.enable_network ?? this.restrictions?.enable_network ?? true,
       active: true,
@@ -56,13 +80,13 @@ export class SecurityManager {
     } else if (this.restrictions?.allowed_commands) {
       newRestrictions.allowed_commands = this.restrictions.allowed_commands;
     }
-    
+
     if (restrictions.blocked_commands) {
       newRestrictions.blocked_commands = restrictions.blocked_commands;
     } else if (this.restrictions?.blocked_commands) {
       newRestrictions.blocked_commands = this.restrictions.blocked_commands;
     }
-    
+
     if (restrictions.allowed_directories) {
       newRestrictions.allowed_directories = restrictions.allowed_directories;
     } else if (this.restrictions?.allowed_directories) {
@@ -82,7 +106,13 @@ export class SecurityManager {
       return;
     }
 
-    if (!isValidCommand(command, this.restrictions.allowed_commands, this.restrictions.blocked_commands)) {
+    if (
+      !isValidCommand(
+        command,
+        this.restrictions.allowed_commands,
+        this.restrictions.blocked_commands
+      )
+    ) {
       throw new SecurityError(`Command '${command}' is not allowed by security policy`, {
         command,
         allowedCommands: this.restrictions.allowed_commands,
@@ -109,7 +139,10 @@ export class SecurityManager {
       return;
     }
 
-    if (this.restrictions.max_execution_time && timeoutSeconds > this.restrictions.max_execution_time) {
+    if (
+      this.restrictions.max_execution_time &&
+      timeoutSeconds > this.restrictions.max_execution_time
+    ) {
       throw new SecurityError(
         `Execution time ${timeoutSeconds}s exceeds maximum allowed ${this.restrictions.max_execution_time}s`,
         {
@@ -153,26 +186,26 @@ export class SecurityManager {
       /rm\s+-rf\s+\//, // rm -rf /
       />\s*\/dev\/sd[a-z]/, // > /dev/sda
       /dd\s+.*of=\/dev\//, // dd ... of=/dev/
-      
+
       // ネットワーク
       /curl\s+.*\|\s*bash/, // curl | bash
       /wget\s+.*\|\s*sh/, // wget | sh
-      
+
       // 権限昇格
       /sudo\s+/, // sudo
       /su\s+/, // su
-      
+
       // システム情報収集
       /\/etc\/passwd/, // /etc/passwd
       /\/etc\/shadow/, // /etc/shadow
-      
+
       // リバースシェル
       /nc\s+.*-e/, // netcat with -e
       /bash\s+-i/, // interactive bash
     ];
 
     const detectedPatterns: string[] = [];
-    
+
     for (const pattern of dangerousPatterns) {
       if (pattern.test(command)) {
         detectedPatterns.push(pattern.source);
@@ -184,21 +217,18 @@ export class SecurityManager {
 
   auditCommand(command: string, workingDirectory?: string): void {
     const dangerousPatterns = this.detectDangerousPatterns(command);
-    
+
     if (dangerousPatterns.length > 0) {
-      throw new SecurityError(
-        `Dangerous patterns detected in command`,
-        {
-          command,
-          detectedPatterns: dangerousPatterns,
-          workingDirectory,
-        }
-      );
+      throw new SecurityError(`Dangerous patterns detected in command`, {
+        command,
+        detectedPatterns: dangerousPatterns,
+        workingDirectory,
+      });
     }
 
     // 追加のセキュリティチェック
     this.validateCommand(command);
-    
+
     if (workingDirectory) {
       this.validatePath(workingDirectory);
     }

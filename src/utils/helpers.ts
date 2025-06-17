@@ -17,7 +17,7 @@ export function getCurrentTimestamp(): string {
 export function isValidPath(filePath: string, allowedPaths?: string[]): boolean {
   try {
     const resolvedPath = path.resolve(filePath);
-    
+
     // 基本的なセキュリティチェック
     if (resolvedPath.includes('..')) {
       return false;
@@ -25,9 +25,7 @@ export function isValidPath(filePath: string, allowedPaths?: string[]): boolean 
 
     // 許可されたパスのチェック
     if (allowedPaths && allowedPaths.length > 0) {
-      return allowedPaths.some(allowedPath => 
-        resolvedPath.startsWith(path.resolve(allowedPath))
-      );
+      return allowedPaths.some((allowedPath) => resolvedPath.startsWith(path.resolve(allowedPath)));
     }
 
     return true;
@@ -37,9 +35,13 @@ export function isValidPath(filePath: string, allowedPaths?: string[]): boolean 
 }
 
 // コマンドの検証
-export function isValidCommand(command: string, allowedCommands?: string[], blockedCommands?: string[]): boolean {
+export function isValidCommand(
+  command: string,
+  allowedCommands?: string[],
+  blockedCommands?: string[]
+): boolean {
   const commandName = command.trim().split(/\s+/)[0];
-  
+
   if (!commandName) {
     return false;
   }
@@ -56,10 +58,23 @@ export function isValidCommand(command: string, allowedCommands?: string[], bloc
 
   // デフォルトで危険なコマンドをブロック
   const dangerousCommands = [
-    'rm', 'rmdir', 'del', 'format', 'fdisk', 'mkfs',
-    'shutdown', 'reboot', 'halt', 'poweroff',
-    'sudo', 'su', 'chmod', 'chown',
-    'iptables', 'ufw', 'firewall-cmd'
+    'rm',
+    'rmdir',
+    'del',
+    'format',
+    'fdisk',
+    'mkfs',
+    'shutdown',
+    'reboot',
+    'halt',
+    'poweroff',
+    'sudo',
+    'su',
+    'chmod',
+    'chown',
+    'iptables',
+    'ufw',
+    'firewall-cmd',
   ];
 
   return !dangerousCommands.includes(commandName);
@@ -93,16 +108,16 @@ export async function safeReadFile(
 ): Promise<{ content: string; totalSize: number; isTruncated: boolean }> {
   const stats = await fs.stat(filePath);
   const totalSize = stats.size;
-  
+
   const fileHandle = await fs.open(filePath, 'r');
   try {
     const readSize = size ? Math.min(size, totalSize - offset) : totalSize - offset;
     const buffer = Buffer.alloc(readSize);
-    
+
     await fileHandle.read(buffer, 0, readSize, offset);
     const content = buffer.toString(encoding);
     const isTruncated = size ? totalSize > offset + size : false;
-    
+
     return { content, totalSize, isTruncated };
   } finally {
     await fileHandle.close();
@@ -169,11 +184,11 @@ export function sanitizeString(input: string, maxLength: number = 1000): string 
 // バイト数のフォーマット
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
-  
+
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
+
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
@@ -182,11 +197,11 @@ export function formatDuration(milliseconds: number): string {
   if (milliseconds < 1000) {
     return `${milliseconds}ms`;
   }
-  
+
   const seconds = Math.floor(milliseconds / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
-  
+
   if (hours > 0) {
     return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
   } else if (minutes > 0) {
@@ -247,19 +262,15 @@ export function internalLog(
 }
 
 // ログ取得機能
-export function getLogEntries(
-  level?: LogLevel,
-  component?: string,
-  limit?: number
-): LogEntry[] {
+export function getLogEntries(level?: LogLevel, component?: string, limit?: number): LogEntry[] {
   let filtered = logEntries;
 
   if (level !== undefined) {
-    filtered = filtered.filter(entry => entry.level >= level);
+    filtered = filtered.filter((entry) => entry.level >= level);
   }
 
   if (component) {
-    filtered = filtered.filter(entry => entry.component === component);
+    filtered = filtered.filter((entry) => entry.component === component);
   }
 
   if (limit) {

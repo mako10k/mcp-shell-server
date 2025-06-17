@@ -1,6 +1,6 @@
 {
   "name": "mcp-shell-server",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "MCP Shell Server - Secure shell operations and terminal management",
   "main": "dist/index.js",
   "type": "module",
@@ -10,8 +10,8 @@
     "start": "node dist/index.js",
     "watch": "tsx --watch src/index.ts",
     "test": "vitest",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write src/**/*.ts",
     "clean": "rm -rf dist",
     "prepublish": "npm run clean && npm run build"

@@ -1,26 +1,26 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { 
-  ExecutionInfo, 
-  ProcessInfo, 
-  ExecutionMode, 
-  ExecutionStatus, 
+import {
+  ExecutionInfo,
+  ExecutionProcessInfo,
+  ExecutionMode,
+  ExecutionStatus,
   ProcessSignal,
-  EnvironmentVariables 
+  EnvironmentVariables,
 } from '../types/index.js';
-import { 
-  generateId, 
-  getCurrentTimestamp, 
-  getSafeEnvironment, 
+import {
+  generateId,
+  getCurrentTimestamp,
+  getSafeEnvironment,
   sanitizeString,
-  ensureDirectory 
+  ensureDirectory,
 } from '../utils/helpers.js';
-import { 
-  ExecutionError, 
-  TimeoutError, 
+import {
+  ExecutionError,
+  TimeoutError,
   ResourceNotFoundError,
-  ResourceLimitError 
+  ResourceLimitError,
 } from '../utils/errors.js';
 import type { TerminalManager } from './terminal-manager.js';
 
@@ -64,9 +64,10 @@ export class ProcessManager {
 
   async executeCommand(options: ExecutionOptions): Promise<ExecutionInfo> {
     // 同時実行数のチェック
-    const runningProcesses = Array.from(this.executions.values())
-      .filter(exec => exec.status === 'running').length;
-    
+    const runningProcesses = Array.from(this.executions.values()).filter(
+      (exec) => exec.status === 'running'
+    ).length;
+
     if (runningProcesses >= this.maxConcurrentProcesses) {
       throw new ResourceLimitError('concurrent processes', this.maxConcurrentProcesses);
     }
@@ -123,7 +124,9 @@ export class ProcessManager {
         executionInfo.status = 'failed';
         executionInfo.completed_at = getCurrentTimestamp();
         this.executions.set(executionId, executionInfo);
-        throw new ExecutionError(`Failed to create terminal: ${error}`, { originalError: String(error) });
+        throw new ExecutionError(`Failed to create terminal: ${error}`, {
+          originalError: String(error),
+        });
       }
     }
 
@@ -145,7 +148,10 @@ export class ProcessManager {
     }
   }
 
-  private async executeSyncCommand(executionId: string, options: ExecutionOptions): Promise<ExecutionInfo> {
+  private async executeSyncCommand(
+    executionId: string,
+    options: ExecutionOptions
+  ): Promise<ExecutionInfo> {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
       let stdout = '';
@@ -153,7 +159,10 @@ export class ProcessManager {
       let outputTruncated = false;
 
       // 環境変数の準備
-      const env = getSafeEnvironment(process.env as Record<string, string>, options.environmentVariables);
+      const env = getSafeEnvironment(
+        process.env as Record<string, string>,
+        options.environmentVariables
+      );
 
       // プロセスの起動
       const childProcess = spawn('/bin/bash', ['-c', options.command], {
@@ -237,7 +246,11 @@ export class ProcessManager {
           executionInfo.completed_at = getCurrentTimestamp();
 
           // 大きな出力の場合はファイルに保存
-          if (outputTruncated || stdout.length > options.maxOutputSize || stderr.length > options.maxOutputSize) {
+          if (
+            outputTruncated ||
+            stdout.length > options.maxOutputSize ||
+            stderr.length > options.maxOutputSize
+          ) {
             try {
               const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
               executionInfo.output_file_id = outputFileId;
@@ -265,13 +278,23 @@ export class ProcessManager {
           this.executions.set(executionId, executionInfo);
         }
 
-        reject(new ExecutionError(`Process execution failed: ${error.message}`, { originalError: error.message }));
+        reject(
+          new ExecutionError(`Process execution failed: ${error.message}`, {
+            originalError: error.message,
+          })
+        );
       });
     });
   }
 
-  private async executeAsyncCommand(executionId: string, options: ExecutionOptions): Promise<ExecutionInfo> {
-    const env = getSafeEnvironment(process.env as Record<string, string>, options.environmentVariables);
+  private async executeAsyncCommand(
+    executionId: string,
+    options: ExecutionOptions
+  ): Promise<ExecutionInfo> {
+    const env = getSafeEnvironment(
+      process.env as Record<string, string>,
+      options.environmentVariables
+    );
 
     const childProcess = spawn('/bin/bash', ['-c', options.command], {
       cwd: options.workingDirectory || process.cwd(),
@@ -297,8 +320,8 @@ export class ProcessManager {
   }
 
   private handleBackgroundProcess(
-    executionId: string, 
-    childProcess: ChildProcess, 
+    executionId: string,
+    childProcess: ChildProcess,
     options: ExecutionOptions
   ): void {
     const startTime = Date.now();
@@ -352,7 +375,11 @@ export class ProcessManager {
     });
   }
 
-  private async saveOutputToFile(executionId: string, stdout: string, stderr: string): Promise<string> {
+  private async saveOutputToFile(
+    executionId: string,
+    stdout: string,
+    stderr: string
+  ): Promise<string> {
     const outputFileId = generateId();
     const filePath = path.join(this.outputDir, `${outputFileId}.json`);
 
@@ -385,11 +412,11 @@ export class ProcessManager {
     // フィルタリング
     if (filter) {
       if (filter.status) {
-        executions = executions.filter(exec => exec.status === filter.status);
+        executions = executions.filter((exec) => exec.status === filter.status);
       }
       if (filter.commandPattern) {
         const pattern = new RegExp(filter.commandPattern, 'i');
-        executions = executions.filter(exec => pattern.test(exec.command));
+        executions = executions.filter((exec) => pattern.test(exec.command));
       }
       if (filter.sessionId) {
         // セッション管理は今後実装
@@ -408,14 +435,18 @@ export class ProcessManager {
     return { executions, total };
   }
 
-  async killProcess(processId: number, signal: ProcessSignal = 'TERM', force = false): Promise<{
+  async killProcess(
+    processId: number,
+    signal: ProcessSignal = 'TERM',
+    force = false
+  ): Promise<{
     success: boolean;
     signal_sent: ProcessSignal;
     exit_code?: number;
     message: string;
   }> {
     const childProcess = this.processes.get(processId);
-    
+
     if (!childProcess) {
       throw new ResourceNotFoundError('process', processId.toString());
     }
@@ -424,7 +455,7 @@ export class ProcessManager {
       // プロセスを終了
       const signalName = signal === 'KILL' ? 'SIGKILL' : `SIG${signal}`;
       const killed = childProcess.kill(signalName as any);
-      
+
       if (!killed && force && signal !== 'KILL') {
         // 強制終了
         childProcess.kill('SIGKILL');
@@ -458,16 +489,17 @@ export class ProcessManager {
     }
   }
 
-  listProcesses(): ProcessInfo[] {
-    const processes: ProcessInfo[] = [];
+  listProcesses(): ExecutionProcessInfo[] {
+    const processes: ExecutionProcessInfo[] = [];
 
     for (const [pid] of this.processes) {
       // 対応する実行情報を検索
-      const execution = Array.from(this.executions.values())
-        .find(exec => exec.process_id === pid);
+      const execution = Array.from(this.executions.values()).find(
+        (exec) => exec.process_id === pid
+      );
 
       if (execution) {
-        const processInfo: ProcessInfo = {
+        const processInfo: ExecutionProcessInfo = {
           process_id: pid,
           execution_id: execution.execution_id,
           command: execution.command,

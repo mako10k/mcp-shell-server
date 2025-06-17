@@ -46,9 +46,21 @@ A secure and comprehensive Model Context Protocol (MCP) server for shell operati
 ### 💻 Terminal Management
 - Interactive terminal sessions
 - Multiple shell support (bash, zsh, fish, PowerShell)
+- **🆕 Control Code Support**: Send control characters and escape sequences
+- **🆕 Program Guard**: Secure input targeting with process validation
+- **🆕 Foreground Process Detection**: Real-time process information
 - Resizable terminals
 - Command history
 - Real-time output streaming
+
+### 🔐 Advanced Security Features
+- **🆕 Program Guard System**: Prevents unintended input delivery
+  - Target specific processes by name, path, or PID
+  - Session leader detection and validation
+  - Safe fallback behavior for unknown processes
+- **🆕 Control Code Validation**: Secure handling of terminal control sequences
+- Process isolation and sandboxing
+- Configurable security restrictions
 
 ### 📁 File Operations
 - Output file management
@@ -119,6 +131,68 @@ const result = await client.request({
 });
 
 console.log(result);
+```
+
+### 🆕 New Features in v2.1.0
+
+#### Control Code Support
+```typescript
+// Send Ctrl+C to interrupt a process
+await client.request({
+  method: 'tools/call',
+  params: {
+    name: 'terminal_input',
+    arguments: {
+      terminal_id: 'terminal_123',
+      input: '^C',
+      control_codes: true
+    }
+  }
+});
+
+// Send ANSI escape sequences for colored output
+await client.request({
+  method: 'tools/call',
+  params: {
+    name: 'terminal_input',
+    arguments: {
+      terminal_id: 'terminal_123',
+      input: '\\x1b[31mRed Text\\x1b[0m',
+      control_codes: true
+    }
+  }
+});
+```
+
+#### Program Guard Security
+```typescript
+// Only allow input to bash processes
+await client.request({
+  method: 'tools/call',
+  params: {
+    name: 'terminal_input',
+    arguments: {
+      terminal_id: 'terminal_123',
+      input: 'echo "secure command"',
+      send_to: 'bash',
+      execute: true
+    }
+  }
+});
+
+// Target specific process by PID
+await client.request({
+  method: 'tools/call',
+  params: {
+    name: 'terminal_input',
+    arguments: {
+      terminal_id: 'terminal_123',
+      input: '^C',
+      send_to: 'pid:12345',
+      control_codes: true
+    }
+  }
+});
 ```
 
 ## Usage
@@ -335,3 +409,19 @@ MIT License - see LICENSE file for details.
 - Performance improvements
 - New terminal management
 - Comprehensive monitoring
+
+## Documentation
+
+### Core Documentation
+- [API Specification](docs/specification.md) - Complete API reference
+- [Control Codes Guide](docs/control-codes.md) - Terminal control sequences and escape codes
+- [Program Guard Manual](docs/program-guard.md) - Security features and process targeting
+
+### Examples
+- [Control Codes Demo](examples/control-codes-demo.js) - Control code usage examples
+- [Program Guard Demo](examples/program-guard-demo.js) - Security feature demonstrations
+
+### Getting Started
+- Review the [API Specification](docs/specification.md) for complete tool documentation
+- Check out [Control Codes Guide](docs/control-codes.md) for advanced terminal features
+- Learn about [Program Guard](docs/program-guard.md) for enhanced security

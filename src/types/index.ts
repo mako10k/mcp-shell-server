@@ -25,7 +25,14 @@ export const FileTypeSchema = z.enum(['output', 'log', 'temp', 'all']);
 export type FileType = z.infer<typeof FileTypeSchema>;
 
 // エラーカテゴリ
-export const ErrorCategorySchema = z.enum(['AUTH', 'PARAM', 'RESOURCE', 'EXECUTION', 'SYSTEM', 'SECURITY']);
+export const ErrorCategorySchema = z.enum([
+  'AUTH',
+  'PARAM',
+  'RESOURCE',
+  'EXECUTION',
+  'SYSTEM',
+  'SECURITY',
+]);
 export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
 
 // 基本スキーマ
@@ -51,7 +58,7 @@ export interface ExecutionOptions {
   sessionId?: string;
 }
 
-// ターミナルオプション  
+// ターミナルオプション
 export interface TerminalOptions {
   sessionName?: string;
   shellType?: ShellType;
@@ -83,19 +90,27 @@ export interface ExecutionInfo {
   completed_at?: string;
 }
 
-// プロセス情報
-export interface ProcessInfo {
-  process_id: number;
-  execution_id?: string;
-  command: string;
-  status: ExecutionStatus;
-  working_directory?: string;
-  environment_variables?: EnvironmentVariables;
-  memory_usage_mb?: number;
-  cpu_usage_percent?: number;
-  created_at: string;
-  started_at?: string;
-  completed_at?: string;
+// システムプロセス情報（フォアグラウンドプロセス用）
+export interface SystemProcessInfo {
+  pid: number;
+  name: string;
+  path?: string;
+  sessionId?: number;
+  isSessionLeader: boolean;
+  parentPid?: number;
+}
+
+// プログラムガード設定
+export const ProgramGuardSchema = z.object({
+  sendTo: z.string(), // "bash", "/bin/bash", "pid:12345", "sessionleader:", "*"
+});
+export type ProgramGuard = z.infer<typeof ProgramGuardSchema>;
+
+// フォアグラウンドプロセス情報
+export interface ForegroundProcessInfo {
+  process?: SystemProcessInfo;
+  available: boolean;
+  error?: string;
 }
 
 // ターミナル情報
@@ -109,6 +124,7 @@ export interface TerminalInfo {
   working_directory: string;
   created_at: string;
   last_activity: string;
+  foreground_process?: ForegroundProcessInfo;
 }
 
 // ファイル情報
@@ -180,4 +196,17 @@ export interface SecurityRestrictions {
   enable_network?: boolean;
   active: boolean;
   configured_at: string;
+}
+
+// 実行プロセス情報（Process Manager用）
+export interface ExecutionProcessInfo {
+  process_id: number;
+  execution_id: string;
+  command: string;
+  status: ExecutionStatus;
+  created_at: string;
+  working_directory?: string;
+  environment_variables?: EnvironmentVariables;
+  started_at?: string;
+  completed_at?: string;
 }

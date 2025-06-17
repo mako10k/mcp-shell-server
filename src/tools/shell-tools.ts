@@ -1,4 +1,4 @@
-import { 
+import {
   ShellExecuteParams,
   ShellGetExecutionParams,
   ProcessListParams,
@@ -15,7 +15,7 @@ import {
   TerminalResizeParams,
   TerminalCloseParams,
   SecuritySetRestrictionsParams,
-  MonitoringGetStatsParams
+  MonitoringGetStatsParams,
 } from '../types/schemas.js';
 import { ProcessManager } from '../core/process-manager.js';
 import { TerminalManager } from '../core/terminal-manager.js';
@@ -207,10 +207,7 @@ export class ShellTools {
 
   async deleteFiles(params: FileDeleteParams) {
     try {
-      const result = await this.fileManager.deleteFiles(
-        params.file_ids,
-        params.confirm
-      );
+      const result = await this.fileManager.deleteFiles(params.file_ids, params.confirm);
 
       return result;
     } catch (error) {
@@ -268,7 +265,7 @@ export class ShellTools {
 
   async getTerminal(params: TerminalGetParams) {
     try {
-      const terminalInfo = this.terminalManager.getTerminal(params.terminal_id);
+      const terminalInfo = await this.terminalManager.getTerminal(params.terminal_id);
       return terminalInfo;
     } catch (error) {
       throw MCPShellError.fromError(error);
@@ -277,15 +274,21 @@ export class ShellTools {
 
   async sendTerminalInput(params: TerminalInputParams) {
     try {
-      const result = this.terminalManager.sendInput(
+      const result = await this.terminalManager.sendInput(
         params.terminal_id,
         params.input,
-        params.execute
+        params.execute,
+        params.control_codes,
+        params.raw_bytes,
+        params.send_to
       );
 
       return {
         success: result.success,
         input_sent: params.input,
+        control_codes_enabled: params.control_codes || false,
+        raw_bytes_mode: params.raw_bytes || false,
+        program_guard: result.guard_check,
         timestamp: result.timestamp,
       };
     } catch (error) {
@@ -295,20 +298,27 @@ export class ShellTools {
 
   async getTerminalOutput(params: TerminalOutputParams) {
     try {
-      const result = this.terminalManager.getOutput(
+      const result = await this.terminalManager.getOutput(
         params.terminal_id,
         params.start_line,
         params.line_count,
-        params.include_ansi
+        params.include_ansi,
+        params.include_foreground_process
       );
 
-      return {
+      const response: any = {
         terminal_id: params.terminal_id,
         output: result.output,
         line_count: result.line_count,
         total_lines: result.total_lines,
         has_more: result.has_more,
       };
+
+      if (params.include_foreground_process) {
+        response.foreground_process = result.foreground_process;
+      }
+
+      return response;
     } catch (error) {
       throw MCPShellError.fromError(error);
     }
@@ -316,10 +326,7 @@ export class ShellTools {
 
   async resizeTerminal(params: TerminalResizeParams) {
     try {
-      const result = this.terminalManager.resizeTerminal(
-        params.terminal_id,
-        params.dimensions
-      );
+      const result = this.terminalManager.resizeTerminal(params.terminal_id, params.dimensions);
 
       return {
         success: result.success,
@@ -334,10 +341,7 @@ export class ShellTools {
 
   async closeTerminal(params: TerminalCloseParams) {
     try {
-      const result = this.terminalManager.closeTerminal(
-        params.terminal_id,
-        params.save_history
-      );
+      const result = this.terminalManager.closeTerminal(params.terminal_id, params.save_history);
 
       return result;
     } catch (error) {

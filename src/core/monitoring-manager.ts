@@ -93,11 +93,10 @@ export class MonitoringManager {
       monitor.metrics = metrics;
       monitor.last_update = getCurrentTimestamp();
       this.monitors.set(monitorId, monitor);
-
     } catch (error) {
       // エラーログを内部ログに記録（標準出力を避ける）
       // console.error(`Failed to collect metrics for process ${processId}:`, error);
-      
+
       // エラーの場合は監視を停止
       this.stopProcessMonitor(monitorId);
     }
@@ -194,12 +193,14 @@ export class MonitoringManager {
     }
   }
 
-  private async getIoStats(processId: number): Promise<{ read_bytes: number; write_bytes: number }> {
+  private async getIoStats(
+    processId: number
+  ): Promise<{ read_bytes: number; write_bytes: number }> {
     try {
       if (process.platform === 'linux') {
         const fs = await import('fs/promises');
         const ioData = await fs.readFile(`/proc/${processId}/io`, 'utf-8');
-        
+
         let readBytes = 0;
         let writeBytes = 0;
 
@@ -220,7 +221,9 @@ export class MonitoringManager {
     return { read_bytes: 0, write_bytes: 0 };
   }
 
-  private async getNetworkStats(_processId: number): Promise<{ rx_bytes: number; tx_bytes: number }> {
+  private async getNetworkStats(
+    _processId: number
+  ): Promise<{ rx_bytes: number; tx_bytes: number }> {
     // ネットワーク統計の取得は複雑なので、今回は簡易実装
     return { rx_bytes: 0, tx_bytes: 0 };
   }
@@ -269,7 +272,7 @@ export class MonitoringManager {
   }
 
   listMonitors(): MonitorInfo[] {
-    return Array.from(this.monitors.values()).map(monitor => ({ ...monitor }));
+    return Array.from(this.monitors.values()).map((monitor) => ({ ...monitor }));
   }
 
   getSystemStats(_timeRangeMinutes = 60): SystemStats {
@@ -299,22 +302,25 @@ export class MonitoringManager {
   }
 
   private getActiveProcessCount(): number {
-    return Array.from(this.monitors.values())
-      .filter(monitor => monitor.status === 'active').length;
+    return Array.from(this.monitors.values()).filter((monitor) => monitor.status === 'active')
+      .length;
   }
 
   private startSystemMonitoring(): void {
     // 5分ごとにシステム統計を収集
-    setInterval(() => {
-      try {
-        // 将来的にはシステム統計をログファイルに保存
-        const stats = this.getSystemStats();
-        this.logSystemStats(stats);
-      } catch (error) {
-        // エラーログを内部ログに記録（標準出力を避ける）
-        // console.error('Failed to collect system stats:', error);
-      }
-    }, 5 * 60 * 1000);
+    setInterval(
+      () => {
+        try {
+          // 将来的にはシステム統計をログファイルに保存
+          const stats = this.getSystemStats();
+          this.logSystemStats(stats);
+        } catch (error) {
+          // エラーログを内部ログに記録（標準出力を避ける）
+          // console.error('Failed to collect system stats:', error);
+        }
+      },
+      5 * 60 * 1000
+    );
   }
 
   private logSystemStats(_stats: SystemStats): void {
