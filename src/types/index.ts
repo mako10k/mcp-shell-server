@@ -36,13 +36,13 @@ export const ErrorCategorySchema = z.enum([
 export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
 
 // 基本スキーマ
-export const EnvironmentVariablesSchema = z.record(z.string(), z.string());
+export const EnvironmentVariablesSchema = z.record(z.string(), z.string()).describe('Environment variables');
 export type EnvironmentVariables = z.infer<typeof EnvironmentVariablesSchema>;
 
 export const DimensionsSchema = z.object({
-  width: z.number().int().min(1).max(500),
-  height: z.number().int().min(1).max(200),
-});
+  width: z.number().int().min(1).max(500).describe('Width in characters'),
+  height: z.number().int().min(1).max(200).describe('Height in lines'),
+}).describe('Terminal dimensions');
 export type Dimensions = z.infer<typeof DimensionsSchema>;
 
 // 実行オプション
