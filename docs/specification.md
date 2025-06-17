@@ -326,7 +326,10 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 {
   "terminal_id": "string (required) - ターミナルID",
   "input": "string (required) - 入力内容",
-  "execute": "boolean (optional, default: false) - 自動実行フラグ（Enterキーを送信）"
+  "execute": "boolean (optional, default: false) - 自動実行フラグ（Enterキーを送信）",
+  "control_codes": "boolean (optional, default: false) - 制御コードとエスケープシーケンスとして解釈",
+  "raw_bytes": "boolean (optional, default: false) - 生バイト送信（16進数文字列形式）",
+  "send_to": "string (optional) - プログラムガード対象: プロセス名、パス、\"pid:12345\"、\"sessionleader:\"、\"*\""
 }
 ```
 
@@ -335,6 +338,9 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 {
   "success": "boolean - 成功フラグ",
   "input_sent": "string - 送信された入力",
+  "control_codes_enabled": "boolean - 制御コードモードが有効だったか",
+  "raw_bytes_mode": "boolean - 生バイトモードが有効だったか",
+  "program_guard": "object (optional) - プログラムガード結果",
   "timestamp": "string - 送信時刻"
 }
 ```

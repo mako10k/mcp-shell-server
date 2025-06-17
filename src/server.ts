@@ -34,6 +34,7 @@ import {
   SecuritySetRestrictionsParamsSchema,
   MonitoringGetStatsParamsSchema,
 } from './types/schemas.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 import { MCPShellError } from './utils/errors.js';
 
@@ -89,465 +90,95 @@ export class MCPShellServer {
         {
           name: 'shell_execute',
           description: 'Execute shell commands securely in a sandboxed environment. Can also create new interactive terminal sessions.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              command: { type: 'string', description: 'Command to execute' },
-              execution_mode: { 
-                type: 'string', 
-                enum: ['sync', 'async', 'background'],
-                default: 'sync',
-                description: 'Execution mode'
-              },
-              working_directory: { type: 'string', description: 'Working directory' },
-              environment_variables: { 
-                type: 'object',
-                additionalProperties: { type: 'string' },
-                description: 'Environment variables'
-              },
-              input_data: { type: 'string', description: 'Standard input data' },
-              timeout_seconds: { 
-                type: 'number',
-                minimum: 1,
-                maximum: 3600,
-                default: 30,
-                description: 'Timeout in seconds'
-              },
-              max_output_size: {
-                type: 'number',
-                minimum: 1024,
-                maximum: 104857600,
-                default: 1048576,
-                description: 'Maximum output size in bytes'
-              },
-              capture_stderr: {
-                type: 'boolean',
-                default: true,
-                description: 'Capture standard error output'
-              },
-              session_id: { type: 'string', description: 'Session ID for session management' },
-              create_terminal: {
-                type: 'boolean',
-                default: false,
-                description: 'Create a new interactive terminal session instead of running command directly'
-              },
-              terminal_shell: {
-                type: 'string',
-                enum: ['bash', 'zsh', 'fish', 'sh', 'powershell'],
-                description: 'Shell type for the new terminal (only used when create_terminal is true)'
-              },
-              terminal_dimensions: {
-                type: 'object',
-                properties: {
-                  width: { type: 'number', minimum: 10, maximum: 500 },
-                  height: { type: 'number', minimum: 5, maximum: 200 }
-                },
-                description: 'Terminal dimensions (only used when create_terminal is true)'
-              }
-            },
-            required: ['command']
-          }
+          inputSchema: zodToJsonSchema(ShellExecuteParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'shell_get_execution',
           description: 'Get detailed information about a command execution',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              execution_id: { type: 'string', description: 'Execution ID' }
-            },
-            required: ['execution_id']
-          }
+          inputSchema: zodToJsonSchema(ShellGetExecutionParamsSchema, { target: 'jsonSchema7' })
         },
 
         // Process Management
         {
           name: 'process_list',
           description: 'List running or background processes',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              status_filter: {
-                type: 'string',
-                enum: ['running', 'completed', 'failed', 'all'],
-                description: 'Filter by process status'
-              },
-              command_pattern: { type: 'string', description: 'Filter by command pattern' },
-              session_id: { type: 'string', description: 'Filter by session ID' },
-              limit: {
-                type: 'number',
-                minimum: 1,
-                maximum: 500,
-                default: 50,
-                description: 'Maximum number of results'
-              },
-              offset: {
-                type: 'number',
-                minimum: 0,
-                default: 0,
-                description: 'Offset for pagination'
-              }
-            },
-            required: []
-          }
+          inputSchema: zodToJsonSchema(ProcessListParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'process_kill',
           description: 'Safely terminate a process',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              process_id: { type: 'number', description: 'Process ID' },
-              signal: {
-                type: 'string',
-                enum: ['TERM', 'KILL', 'INT', 'HUP', 'USR1', 'USR2'],
-                default: 'TERM',
-                description: 'Signal to send'
-              },
-              force: {
-                type: 'boolean',
-                default: false,
-                description: 'Force termination flag'
-              }
-            },
-            required: ['process_id']
-          }
+          inputSchema: zodToJsonSchema(ProcessKillParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'process_monitor',
           description: 'Start real-time monitoring of a process',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              process_id: { type: 'number', description: 'Process ID' },
-              monitor_interval_ms: {
-                type: 'number',
-                minimum: 100,
-                maximum: 60000,
-                default: 1000,
-                description: 'Monitoring interval in milliseconds'
-              },
-              include_metrics: {
-                type: 'array',
-                items: {
-                  type: 'string',
-                  enum: ['cpu', 'memory', 'io', 'network']
-                },
-                description: 'Metrics to monitor'
-              }
-            },
-            required: ['process_id']
-          }
+          inputSchema: zodToJsonSchema(ProcessMonitorParamsSchema, { target: 'jsonSchema7' })
         },
 
         // File Operations
         {
           name: 'file_list',
           description: 'List files and output files',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              file_type: {
-                type: 'string',
-                enum: ['output', 'log', 'temp', 'all'],
-                description: 'Filter by file type'
-              },
-              execution_id: { type: 'string', description: 'Filter by execution ID' },
-              name_pattern: { type: 'string', description: 'Filter by filename pattern' },
-              limit: {
-                type: 'number',
-                minimum: 1,
-                maximum: 1000,
-                default: 100,
-                description: 'Maximum number of results'
-              }
-            },
-            required: []
-          }
+          inputSchema: zodToJsonSchema(FileListParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'file_read',
           description: 'Read file contents',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              file_id: { type: 'string', description: 'File ID' },
-              offset: {
-                type: 'number',
-                minimum: 0,
-                default: 0,
-                description: 'Read offset'
-              },
-              size: {
-                type: 'number',
-                minimum: 1,
-                maximum: 10485760,
-                default: 8192,
-                description: 'Read size'
-              },
-              encoding: {
-                type: 'string',
-                default: 'utf-8',
-                description: 'Character encoding'
-              }
-            },
-            required: ['file_id']
-          }
+          inputSchema: zodToJsonSchema(FileReadParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'file_delete',
           description: 'Delete specified files',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              file_ids: {
-                type: 'array',
-                items: { type: 'string' },
-                minItems: 1,
-                description: 'List of file IDs to delete'
-              },
-              confirm: {
-                type: 'boolean',
-                description: 'Deletion confirmation flag'
-              }
-            },
-            required: ['file_ids', 'confirm']
-          }
+          inputSchema: zodToJsonSchema(FileDeleteParamsSchema, { target: 'jsonSchema7' })
         },
 
         // Terminal Management
         {
           name: 'terminal_create',
           description: 'Create a new interactive terminal session',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              session_name: { type: 'string', description: 'Session name' },
-              shell_type: {
-                type: 'string',
-                enum: ['bash', 'zsh', 'fish', 'cmd', 'powershell'],
-                default: 'bash',
-                description: 'Shell type'
-              },
-              dimensions: {
-                type: 'object',
-                properties: {
-                  width: {
-                    type: 'number',
-                    minimum: 1,
-                    maximum: 500,
-                    default: 120,
-                    description: 'Terminal width in characters'
-                  },
-                  height: {
-                    type: 'number',
-                    minimum: 1,
-                    maximum: 200,
-                    default: 30,
-                    description: 'Terminal height in lines'
-                  }
-                },
-                description: 'Terminal dimensions'
-              },
-              working_directory: { type: 'string', description: 'Initial working directory' },
-              environment_variables: {
-                type: 'object',
-                additionalProperties: { type: 'string' },
-                description: 'Environment variables'
-              },
-              auto_save_history: {
-                type: 'boolean',
-                default: true,
-                description: 'Auto-save command history'
-              }
-            },
-            required: []
-          }
+          inputSchema: zodToJsonSchema(TerminalCreateParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_list',
           description: 'List active terminal sessions',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              session_name_pattern: { type: 'string', description: 'Session name pattern' },
-              status_filter: {
-                type: 'string',
-                enum: ['active', 'idle', 'all'],
-                description: 'Filter by status'
-              },
-              limit: {
-                type: 'number',
-                minimum: 1,
-                maximum: 200,
-                default: 50,
-                description: 'Maximum number of results'
-              }
-            },
-            required: []
-          }
+          inputSchema: zodToJsonSchema(TerminalListParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_get',
           description: 'Get terminal detailed information',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              terminal_id: { type: 'string', description: 'Terminal ID' }
-            },
-            required: ['terminal_id']
-          }
+          inputSchema: zodToJsonSchema(TerminalGetParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_input',
           description: 'Send input to terminal',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              terminal_id: { type: 'string', description: 'Terminal ID' },
-              input: { type: 'string', description: 'Input content' },
-              execute: {
-                type: 'boolean',
-                default: false,
-                description: 'Auto-execute flag (send Enter key)'
-              }
-            },
-            required: ['terminal_id', 'input']
-          }
+          inputSchema: zodToJsonSchema(TerminalInputParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_output',
           description: 'Get terminal output',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              terminal_id: { type: 'string', description: 'Terminal ID' },
-              start_line: {
-                type: 'number',
-                minimum: 0,
-                default: 0,
-                description: 'Start line number'
-              },
-              line_count: {
-                type: 'number',
-                minimum: 1,
-                maximum: 10000,
-                default: 100,
-                description: 'Number of lines to get'
-              },
-              include_ansi: {
-                type: 'boolean',
-                default: false,
-                description: 'Include ANSI control codes'
-              }
-            },
-            required: ['terminal_id']
-          }
+          inputSchema: zodToJsonSchema(TerminalOutputParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_resize',
           description: 'Resize terminal',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              terminal_id: { type: 'string', description: 'Terminal ID' },
-              dimensions: {
-                type: 'object',
-                properties: {
-                  width: { type: 'number', minimum: 1, maximum: 500, description: 'New width' },
-                  height: { type: 'number', minimum: 1, maximum: 200, description: 'New height' }
-                },
-                required: ['width', 'height'],
-                description: 'New dimensions'
-              }
-            },
-            required: ['terminal_id', 'dimensions']
-          }
+          inputSchema: zodToJsonSchema(TerminalResizeParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_close',
           description: 'Close terminal session',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              terminal_id: { type: 'string', description: 'Terminal ID' },
-              save_history: {
-                type: 'boolean',
-                default: true,
-                description: 'Save command history'
-              }
-            },
-            required: ['terminal_id']
-          }
+          inputSchema: zodToJsonSchema(TerminalCloseParamsSchema, { target: 'jsonSchema7' })
         },
 
         // Security & Monitoring
         {
           name: 'security_set_restrictions',
           description: 'Set execution restrictions',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              allowed_commands: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'List of allowed commands'
-              },
-              blocked_commands: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'List of blocked commands'
-              },
-              allowed_directories: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'List of allowed directories'
-              },
-              max_execution_time: {
-                type: 'number',
-                minimum: 1,
-                maximum: 86400,
-                description: 'Maximum execution time in seconds'
-              },
-              max_memory_mb: {
-                type: 'number',
-                minimum: 1,
-                maximum: 32768,
-                description: 'Maximum memory usage in MB'
-              },
-              enable_network: {
-                type: 'boolean',
-                default: true,
-                description: 'Enable network access'
-              }
-            },
-            required: []
-          }
+          inputSchema: zodToJsonSchema(SecuritySetRestrictionsParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'monitoring_get_stats',
           description: 'Get system-wide statistics',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              include_metrics: {
-                type: 'array',
-                items: {
-                  type: 'string',
-                  enum: ['processes', 'terminals', 'files', 'system']
-                },
-                description: 'Metrics to include'
-              },
-              time_range_minutes: {
-                type: 'number',
-                minimum: 1,
-                maximum: 1440,
-                default: 60,
-                description: 'Time range in minutes'
-              }
-            },
-            required: []
-          }
+          inputSchema: zodToJsonSchema(MonitoringGetStatsParamsSchema, { target: 'jsonSchema7' })
         }
       ]
     }));
