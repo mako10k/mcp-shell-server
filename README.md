@@ -233,6 +233,10 @@ The server can be configured through environment variables or by calling the sec
 - 1GB memory limit
 - Network access enabled
 
+### Disabling Tools
+Set `MCP_DISABLED_TOOLS` to a comma-separated list of tool names to disable.
+Disabled tools will not appear in the tool list and cannot be called.
+
 ### Customizing Security
 
 Use the `security_set_restrictions` tool to configure:

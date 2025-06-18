@@ -38,6 +38,14 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 
 import { MCPShellError } from './utils/errors.js';
 
+// Tools can be disabled by specifying a comma-separated list in the
+// MCP_DISABLED_TOOLS environment variable. Disabled tools will not be
+// advertised or executable.
+const DISABLED_TOOLS: string[] = (process.env['MCP_DISABLED_TOOLS'] || '')
+  .split(',')
+  .map((t) => t.trim())
+  .filter((t) => t.length > 0);
+
 export class MCPShellServer {
   private server: Server;
   private processManager: ProcessManager;
@@ -180,13 +188,19 @@ export class MCPShellServer {
           description: 'Get system-wide statistics',
           inputSchema: zodToJsonSchema(MonitoringGetStatsParamsSchema, { target: 'jsonSchema7' })
         }
-      ]
+      ].filter((tool) => !DISABLED_TOOLS.includes(tool.name))
     }));
 
     // ツール実行ハンドラー
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         const { name, arguments: args } = request.params;
+        if (DISABLED_TOOLS.includes(name)) {
+          throw new McpError(
+            ErrorCode.MethodNotFound,
+            `Tool ${name} is disabled`
+          );
+        }
 
         switch (name) {
           // Shell Operations
