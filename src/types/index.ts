@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // 実行モード
-export const ExecutionModeSchema = z.enum(['sync', 'async', 'background']);
+export const ExecutionModeSchema = z.enum(['foreground', 'background', 'detached', 'adaptive']);
 export type ExecutionMode = z.infer<typeof ExecutionModeSchema>;
 
 // 実行状態
@@ -20,9 +20,9 @@ export type TerminalStatus = z.infer<typeof TerminalStatusSchema>;
 export const ProcessSignalSchema = z.enum(['TERM', 'KILL', 'INT', 'HUP', 'USR1', 'USR2']);
 export type ProcessSignal = z.infer<typeof ProcessSignalSchema>;
 
-// ファイルタイプ
-export const FileTypeSchema = z.enum(['output', 'log', 'temp', 'all']);
-export type FileType = z.infer<typeof FileTypeSchema>;
+// 出力タイプ
+export const OutputTypeSchema = z.enum(['stdout', 'stderr', 'combined', 'log', 'all']);
+export type OutputType = z.infer<typeof OutputTypeSchema>;
 
 // エラーカテゴリ
 export const ErrorCategorySchema = z.enum([
@@ -83,7 +83,7 @@ export interface ExecutionInfo {
   stdout?: string;
   stderr?: string;
   output_truncated?: boolean;
-  output_file_id?: string;
+  output_id?: string;
   terminal_id?: string;
   created_at: string;
   started_at?: string;
@@ -127,10 +127,10 @@ export interface TerminalInfo {
   foreground_process?: ForegroundProcessInfo;
 }
 
-// ファイル情報
+// 出力ファイル情報
 export interface FileInfo {
-  file_id: string;
-  file_type: FileType;
+  output_id: string;
+  output_type: OutputType;
   name: string;
   size: number;
   execution_id?: string;

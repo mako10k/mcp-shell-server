@@ -3,7 +3,7 @@ import {
   ExecutionModeSchema,
   ShellTypeSchema,
   ProcessSignalSchema,
-  FileTypeSchema,
+  OutputTypeSchema,
   DimensionsSchema,
   EnvironmentVariablesSchema,
 } from './index.js';
@@ -11,11 +11,13 @@ import {
 // Shell Operations
 export const ShellExecuteParamsSchema = z.object({
   command: z.string().min(1).describe('Command to execute'),
-  execution_mode: ExecutionModeSchema.default('sync').describe('Execution mode'),
+  execution_mode: ExecutionModeSchema.default('adaptive').describe('Execution mode'),
   working_directory: z.string().optional().describe('Working directory'),
   environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables'),
   input_data: z.string().optional().describe('Standard input data'),
-  timeout_seconds: z.number().int().min(1).max(3600).default(30).describe('Timeout in seconds'),
+  timeout_seconds: z.number().int().min(1).max(3600).default(30).describe('Timeout in seconds for foreground mode'),
+  foreground_timeout_seconds: z.number().int().min(1).max(300).default(10).describe('Timeout in seconds for adaptive mode foreground phase'),
+  return_partial_on_timeout: z.boolean().default(true).describe('Return partial output when timeout occurs'),
   max_output_size: z
     .number()
     .int()
@@ -57,14 +59,14 @@ export const ProcessMonitorParamsSchema = z.object({
 
 // File Operations
 export const FileListParamsSchema = z.object({
-  file_type: FileTypeSchema.optional().describe('Filter by file type'),
+  output_type: OutputTypeSchema.optional().describe('Filter by output type'),
   execution_id: z.string().optional().describe('Filter by execution ID'),
   name_pattern: z.string().optional().describe('Filter by filename pattern'),
   limit: z.number().int().min(1).max(1000).default(100).describe('Maximum number of results'),
 });
 
 export const FileReadParamsSchema = z.object({
-  file_id: z.string().min(1).describe('File ID'),
+  output_id: z.string().min(1).describe('Output ID'),
   offset: z.number().int().min(0).default(0).describe('Read offset'),
   size: z
     .number()
@@ -77,7 +79,7 @@ export const FileReadParamsSchema = z.object({
 });
 
 export const FileDeleteParamsSchema = z.object({
-  file_ids: z.array(z.string().min(1)).min(1).describe('List of file IDs to delete'),
+  output_ids: z.array(z.string().min(1)).min(1).describe('List of output IDs to delete'),
   confirm: z.boolean().describe('Deletion confirmation flag'),
 });
 

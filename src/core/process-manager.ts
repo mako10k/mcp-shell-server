@@ -131,10 +131,17 @@ export class ProcessManager {
     }
 
     try {
-      if (options.executionMode === 'sync') {
-        return await this.executeSyncCommand(executionId, options);
-      } else {
-        return await this.executeAsyncCommand(executionId, options);
+      switch (options.executionMode) {
+        case 'foreground':
+          return await this.executeForegroundCommand(executionId, options);
+        case 'adaptive':
+          return await this.executeAdaptiveCommand(executionId, options);
+        case 'background':
+          return await this.executeBackgroundCommand(executionId, options);
+        case 'detached':
+          return await this.executeDetachedCommand(executionId, options);
+        default:
+          throw new ExecutionError('Unsupported execution mode', { mode: options.executionMode });
       }
     } catch (error) {
       // エラー時の実行情報更新
@@ -148,7 +155,7 @@ export class ProcessManager {
     }
   }
 
-  private async executeSyncCommand(
+  private async executeForegroundCommand(
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
@@ -253,7 +260,7 @@ export class ProcessManager {
           ) {
             try {
               const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
-              executionInfo.output_file_id = outputFileId;
+              executionInfo.output_id = outputFileId;
             } catch (error) {
               // エラーログを内部ログに記録（標準出力を避ける）
               // console.error('Failed to save output to file:', error);
@@ -287,7 +294,40 @@ export class ProcessManager {
     });
   }
 
-  private async executeAsyncCommand(
+  private async executeAdaptiveCommand(
+    executionId: string,
+    options: ExecutionOptions
+  ): Promise<ExecutionInfo> {
+    // adaptiveモード: 最初に短時間フォアグラウンドで実行し、
+    // タイムアウトした場合はバックグラウンドに移行
+    const returnPartialOnTimeout = (options as any).return_partial_on_timeout ?? true;
+
+    try {
+      // フォアグラウンドで実行開始  
+      return await this.executeForegroundCommand(executionId, options);
+    } catch (error) {
+      if (error instanceof TimeoutError && returnPartialOnTimeout) {
+        // タイムアウトした場合、バックグラウンドに移行
+        const executionInfo = this.executions.get(executionId);
+        if (executionInfo) {
+          // 部分出力フラグを設定
+          executionInfo.output_truncated = true;
+          executionInfo.status = 'running'; // バックグラウンドで継続実行中
+          this.executions.set(executionId, executionInfo);
+          
+          // バックグラウンドで継続実行
+          this.executeBackgroundCommand(executionId, { ...options, executionMode: 'background' as ExecutionMode }).catch(() => {
+            // バックグラウンド実行でエラーが発生した場合の処理
+          });
+          
+          return executionInfo;
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async executeBackgroundCommand(
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
@@ -353,7 +393,7 @@ export class ProcessManager {
         // 出力をファイルに保存
         try {
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
-          executionInfo.output_file_id = outputFileId;
+          executionInfo.output_id = outputFileId;
         } catch (error) {
           // エラーログを内部ログに記録（標準出力を避ける）
           // console.error('Failed to save background process output:', error);
@@ -373,6 +413,75 @@ export class ProcessManager {
         this.executions.set(executionId, executionInfo);
       }
     });
+  }
+
+  private async executeDetachedCommand(
+    executionId: string,
+    options: ExecutionOptions
+  ): Promise<ExecutionInfo> {
+    // detachedモード: 完全にバックグラウンドで実行し、親プロセスとの接続を切断
+    const env = getSafeEnvironment(
+      process.env as Record<string, string>,
+      options.environmentVariables
+    );
+
+    const childProcess = spawn('/bin/bash', ['-c', options.command], {
+      cwd: options.workingDirectory || process.cwd(),
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'], // stdin は無視
+      detached: true, // 完全にデタッチ
+    });
+
+    // デタッチされたプロセスのPIDは記録するが、プロセス管理からは除外
+    const executionInfo = this.executions.get(executionId);
+    if (executionInfo && childProcess.pid !== undefined) {
+      executionInfo.process_id = childProcess.pid;
+      executionInfo.status = 'running';
+      this.executions.set(executionId, executionInfo);
+    }
+
+    // デタッチされたプロセスは親プロセスの終了後も継続実行されるため、
+    // 出力の収集は限定的
+    const startTime = Date.now();
+    let stdout = '';
+    let stderr = '';
+
+    if (childProcess.stdout) {
+      childProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+    }
+
+    if (childProcess.stderr) {
+      childProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+    }
+
+    // プロセスの終了を監視（デタッチされているため必ずしも捕捉されない）
+    childProcess.on('close', async (code) => {
+      const executionInfo = this.executions.get(executionId);
+      if (executionInfo) {
+        executionInfo.status = 'completed';
+        executionInfo.exit_code = code || 0;
+        executionInfo.execution_time_ms = Date.now() - startTime;
+        executionInfo.completed_at = getCurrentTimestamp();
+
+        try {
+          const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+          executionInfo.output_id = outputFileId;
+        } catch (error) {
+          // エラーログを内部ログに記録
+        }
+
+        this.executions.set(executionId, executionInfo);
+      }
+    });
+
+    // プロセスをデタッチ
+    childProcess.unref();
+
+    return this.executions.get(executionId)!;
   }
 
   private async saveOutputToFile(

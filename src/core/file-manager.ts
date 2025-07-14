@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { FileInfo, FileType } from '../types/index.js';
+import { FileInfo, OutputType } from '../types/index.js';
 import {
   generateId,
   getCurrentTimestamp,
@@ -30,7 +30,7 @@ export class FileManager {
 
   async registerFile(
     filePath: string,
-    fileType: FileType,
+    outputType: OutputType,
     executionId?: string,
     customName?: string
   ): Promise<string> {
@@ -40,13 +40,13 @@ export class FileManager {
       await this.cleanupOldFiles(100);
     }
 
-    const fileId = generateId();
+    const outputId = generateId();
     const size = await getFileSize(filePath);
     const fileName = customName || path.basename(filePath);
 
     const fileInfo: FileInfo = {
-      file_id: fileId,
-      file_type: fileType,
+      output_id: outputId,
+      output_type: outputType,
       name: fileName,
       size,
       created_at: getCurrentTimestamp(),
@@ -57,23 +57,23 @@ export class FileManager {
       fileInfo.execution_id = executionId;
     }
 
-    this.files.set(fileId, fileInfo);
-    return fileId;
+    this.files.set(outputId, fileInfo);
+    return outputId;
   }
 
   async createOutputFile(content: string, executionId?: string): Promise<string> {
-    const fileId = generateId();
-    const fileName = `output_${fileId}.txt`;
+    const outputId = generateId();
+    const fileName = `output_${outputId}.txt`;
     const filePath = path.join(this.baseDir, 'output', fileName);
 
     await fs.writeFile(filePath, content, 'utf-8');
 
-    return await this.registerFile(filePath, 'output', executionId, fileName);
+    return await this.registerFile(filePath, 'combined', executionId, fileName);
   }
 
   async createLogFile(content: string, executionId?: string): Promise<string> {
-    const fileId = generateId();
-    const fileName = `log_${fileId}.log`;
+    const outputId = generateId();
+    const fileName = `log_${outputId}.log`;
     const filePath = path.join(this.baseDir, 'log', fileName);
 
     await fs.writeFile(filePath, content, 'utf-8');
@@ -82,37 +82,37 @@ export class FileManager {
   }
 
   async createTempFile(content: string, extension = '.tmp'): Promise<string> {
-    const fileId = generateId();
-    const fileName = `temp_${fileId}${extension}`;
+    const outputId = generateId();
+    const fileName = `temp_${outputId}${extension}`;
     const filePath = path.join(this.baseDir, 'temp', fileName);
 
     await fs.writeFile(filePath, content, 'utf-8');
 
-    return await this.registerFile(filePath, 'temp', undefined, fileName);
+    return await this.registerFile(filePath, 'log', undefined, fileName);
   }
 
-  getFile(fileId: string): FileInfo {
-    const fileInfo = this.files.get(fileId);
+  getFile(outputId: string): FileInfo {
+    const fileInfo = this.files.get(outputId);
     if (!fileInfo) {
-      throw new ResourceNotFoundError('file', fileId);
+      throw new ResourceNotFoundError('file', outputId);
     }
     return { ...fileInfo };
   }
 
   async readFile(
-    fileId: string,
+    outputId: string,
     offset = 0,
     size = 8192,
     encoding: BufferEncoding = 'utf-8'
   ): Promise<{
-    file_id: string;
+    output_id: string;
     content: string;
     size: number;
     total_size: number;
     is_truncated: boolean;
     encoding: string;
   }> {
-    const fileInfo = this.getFile(fileId);
+    const fileInfo = this.getFile(outputId);
 
     try {
       const { content, totalSize, isTruncated } = await safeReadFile(
@@ -123,7 +123,7 @@ export class FileManager {
       );
 
       return {
-        file_id: fileId,
+        output_id: outputId,
         content,
         size: content.length,
         total_size: totalSize,
@@ -131,12 +131,12 @@ export class FileManager {
         encoding,
       };
     } catch (error) {
-      throw new Error(`Failed to read file ${fileId}: ${error}`);
+      throw new Error(`Failed to read file ${outputId}: ${error}`);
     }
   }
 
   listFiles(filter?: {
-    fileType?: FileType | 'all';
+    outputType?: OutputType | 'all';
     executionId?: string;
     namePattern?: string;
     limit?: number;
@@ -145,8 +145,8 @@ export class FileManager {
 
     // フィルタリング
     if (filter) {
-      if (filter.fileType && filter.fileType !== 'all') {
-        files = files.filter((file) => file.file_type === filter.fileType);
+      if (filter.outputType && filter.outputType !== 'all') {
+        files = files.filter((file) => file.output_type === filter.outputType);
       }
 
       if (filter.executionId) {
@@ -176,7 +176,7 @@ export class FileManager {
   }
 
   async deleteFiles(
-    fileIds: string[],
+    outputIds: string[],
     confirm: boolean
   ): Promise<{
     deleted_files: string[];
@@ -190,11 +190,11 @@ export class FileManager {
     const deletedFiles: string[] = [];
     const failedFiles: string[] = [];
 
-    for (const fileId of fileIds) {
+    for (const outputId of outputIds) {
       try {
-        const fileInfo = this.files.get(fileId);
+        const fileInfo = this.files.get(outputId);
         if (!fileInfo) {
-          failedFiles.push(fileId);
+          failedFiles.push(outputId);
           continue;
         }
 
@@ -202,12 +202,12 @@ export class FileManager {
         await fs.unlink(fileInfo.path);
 
         // マップから削除
-        this.files.delete(fileId);
-        deletedFiles.push(fileId);
+        this.files.delete(outputId);
+        deletedFiles.push(outputId);
       } catch (error) {
         // エラーログを内部ログに記録（標準出力を避ける）
-        // console.error(`Failed to delete file ${fileId}:`, error);
-        failedFiles.push(fileId);
+        // console.error(`Failed to delete file ${outputId}:`, error);
+        failedFiles.push(outputId);
       }
     }
 
@@ -256,25 +256,26 @@ export class FileManager {
   // 使用統計の取得
   getUsageStats(): {
     total_files: number;
-    files_by_type: Record<FileType, number>;
+    files_by_type: Record<OutputType, number>;
     total_size_bytes: number;
     average_file_size: number;
   } {
     const files = Array.from(this.files.values());
     const totalFiles = files.length;
 
-    const filesByType: Record<FileType, number> = {
-      output: 0,
+    const filesByType: Record<OutputType, number> = {
+      stdout: 0,
+      stderr: 0,
+      combined: 0,
       log: 0,
-      temp: 0,
       all: 0,
     };
 
     let totalSize = 0;
 
     for (const file of files) {
-      if (file.file_type !== 'all') {
-        filesByType[file.file_type]++;
+      if (file.output_type !== 'all') {
+        filesByType[file.output_type]++;
       }
       totalSize += file.size;
     }
@@ -289,10 +290,10 @@ export class FileManager {
 
   async cleanup(): Promise<void> {
     // 全てのファイルを削除
-    const allFileIds = Array.from(this.files.keys());
+    const allOutputIds = Array.from(this.files.keys());
 
     try {
-      await this.deleteFiles(allFileIds, true);
+      await this.deleteFiles(allOutputIds, true);
     } catch (error) {
       // エラーログを内部ログに記録（標準出力を避ける）
       // console.error('Failed to cleanup files:', error);

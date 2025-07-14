@@ -8,38 +8,38 @@
 ## Phase 1: ExecutionModeと応答パラメータの改善 [優先度: 高]
 
 ### ExecutionMode の実装変更
-- [ ] `src/types/index.ts` - ExecutionModeスキーマを更新
-  - [ ] `'sync' | 'async' | 'background'` → `'foreground' | 'background' | 'detached' | 'adaptive'`
-  - [ ] デフォルト値を`'adaptive'`に変更
-- [ ] `src/types/schemas.ts` - パラメータスキーマの更新
-  - [ ] `foreground_timeout_seconds`パラメータの追加
-  - [ ] `return_partial_on_timeout`パラメータの追加
-- [ ] `src/core/process-manager.ts` - 実行ロジックの実装
-  - [ ] `adaptive`モードの実装
-  - [ ] `foreground`モードの実装（現在のsyncから改名）
-  - [ ] タイムアウト時の部分出力応答機能
-- [ ] `src/tools/shell-tools.ts` - ツール層の更新
-  - [ ] 新しいExecutionModeパラメータの対応
+- [x] `src/types/index.ts` - ExecutionModeスキーマを更新
+  - [x] `'sync' | 'async' | 'background'` → `'foreground' | 'background' | 'detached' | 'adaptive'`
+  - [x] デフォルト値を`'adaptive'`に変更
+- [x] `src/types/schemas.ts` - パラメータスキーマの更新
+  - [x] `foreground_timeout_seconds`パラメータの追加
+  - [x] `return_partial_on_timeout`パラメータの追加
+- [x] `src/core/process-manager.ts` - 実行ロジックの実装
+  - [x] `adaptive`モードの実装
+  - [x] `foreground`モードの実装（現在のsyncから改名）
+  - [x] タイムアウト時の部分出力応答機能
+- [x] `src/tools/shell-tools.ts` - ツール層の更新
+  - [x] 新しいExecutionModeパラメータの対応
 
 ### 応答パラメータの改善
-- [ ] `file`から`output`への用語統一
-  - [ ] `output_file_id` → `output_id`
-  - [ ] `file_id` → `output_id`
-  - [ ] `file_ids` → `output_ids`
-  - [ ] `file_type` → `output_type`
-- [ ] 応答フィールドの追加
-  - [ ] `output_id`フィールドの実装
-  - [ ] `output_truncated`フィールドの確認
+- [x] `file`から`output`への用語統一
+  - [x] `output_file_id` → `output_id`
+  - [x] `file_id` → `output_id`
+  - [x] `file_ids` → `output_ids`
+  - [x] `file_type` → `output_type`
+- [x] 応答フィールドの追加
+  - [x] `output_id`フィールドの実装
+  - [x] `output_truncated`フィールドの確認
 
 ### テスト
-- [ ] ExecutionModeの単体テスト
-  - [ ] `foreground`モードのテスト
-  - [ ] `background`モードのテスト  
-  - [ ] `detached`モードのテスト
-  - [ ] `adaptive`モードのテスト
-- [ ] タイムアウト応答のテスト
-  - [ ] 部分出力応答のテスト
-  - [ ] `output_id`生成のテスト
+- [x] ExecutionModeの単体テスト
+  - [x] `foreground`モードのテスト
+  - [x] `background`モードのテスト  
+  - [x] `detached`モードのテスト
+  - [x] `adaptive`モードのテスト
+- [x] タイムアウト応答のテスト
+  - [x] 部分出力応答のテスト
+  - [x] `output_id`生成のテスト
 
 ## Phase 2: ツール名変更とワーキングディレクトリ [優先度: 中]
 

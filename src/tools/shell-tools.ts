@@ -172,8 +172,8 @@ export class ShellTools {
         limit: params.limit,
       };
 
-      if (params.file_type !== undefined) {
-        listOptions.fileType = params.file_type;
+      if (params.output_type !== undefined) {
+        listOptions.outputType = params.output_type;
       }
       if (params.execution_id !== undefined) {
         listOptions.executionId = params.execution_id;
@@ -193,7 +193,7 @@ export class ShellTools {
   async readFile(params: FileReadParams) {
     try {
       const result = await this.fileManager.readFile(
-        params.file_id,
+        params.output_id,
         params.offset,
         params.size,
         params.encoding as BufferEncoding
@@ -207,7 +207,7 @@ export class ShellTools {
 
   async deleteFiles(params: FileDeleteParams) {
     try {
-      const result = await this.fileManager.deleteFiles(params.file_ids, params.confirm);
+      const result = await this.fileManager.deleteFiles(params.output_ids, params.confirm);
 
       return result;
     } catch (error) {
