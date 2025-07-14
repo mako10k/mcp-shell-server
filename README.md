@@ -21,7 +21,7 @@ A secure and comprehensive Model Context Protocol (MCP) server for shell operati
 
 ### Key Achievements
 - 🔐 **Comprehensive Security**: Advanced command validation and sandboxing
-- 🖥️ **16 MCP Tools**: Complete API covering all shell operations
+- 🖥️ **18 MCP Tools**: Complete API covering all shell operations
 - 📊 **Real-time Monitoring**: System and process metrics
 - 🖥️ **Terminal Sessions**: Interactive PTY-based terminals
 - 📁 **File Management**: Secure file operations and storage
@@ -37,11 +37,11 @@ A secure and comprehensive Model Context Protocol (MCP) server for shell operati
 - Real-time security monitoring
 
 ### 🔧 Shell Operations
-- Synchronous and asynchronous command execution
-- Background process management
+- Multiple execution modes: foreground, background, detached, adaptive
+- Background process management with timeout handling
 - Configurable timeouts and output limits
 - Environment variable control
-- Input/output capture
+- Input/output capture and partial output support
 
 ### 💻 Terminal Management
 - Interactive terminal sessions
@@ -125,7 +125,7 @@ const result = await client.request({
     name: 'shell_execute',
     arguments: {
       command: 'echo "Hello from MCP Shell Server!"',
-      execution_mode: 'sync'
+      execution_mode: 'foreground'
     }
   }
 });
@@ -141,7 +141,7 @@ console.log(result);
 await client.request({
   method: 'tools/call',
   params: {
-    name: 'terminal_input',
+    name: 'terminal_send_input',
     arguments: {
       terminal_id: 'terminal_123',
       input: '^C',
@@ -154,7 +154,7 @@ await client.request({
 await client.request({
   method: 'tools/call',
   params: {
-    name: 'terminal_input',
+    name: 'terminal_send_input',
     arguments: {
       terminal_id: 'terminal_123',
       input: '\\x1b[31mRed Text\\x1b[0m',
@@ -170,7 +170,7 @@ await client.request({
 await client.request({
   method: 'tools/call',
   params: {
-    name: 'terminal_input',
+    name: 'terminal_send_input',
     arguments: {
       terminal_id: 'terminal_123',
       input: 'echo "secure command"',
@@ -184,7 +184,7 @@ await client.request({
 await client.request({
   method: 'tools/call',
   params: {
-    name: 'terminal_input',
+    name: 'terminal_send_input',
     arguments: {
       terminal_id: 'terminal_123',
       input: '^C',
@@ -261,10 +261,12 @@ Execute shell commands with various execution modes. Can also create new interac
 
 **Parameters:**
 - `command` (required): Command to execute
-- `execution_mode`: 'sync', 'async', or 'background'
+- `execution_mode`: 'foreground', 'background', 'detached', or 'adaptive' (default)
 - `working_directory`: Working directory
 - `environment_variables`: Environment variables
-- `timeout_seconds`: Execution timeout
+- `timeout_seconds`: Execution timeout for foreground mode
+- `foreground_timeout_seconds`: Timeout for adaptive mode foreground phase
+- `return_partial_on_timeout`: Return partial output on timeout
 - `max_output_size`: Maximum output size
 - `create_terminal`: Create new interactive terminal session
 - `terminal_shell`: Shell type for new terminal ('bash', 'zsh', 'fish', etc.)
@@ -276,7 +278,17 @@ Regular command execution:
 ```json
 {
   "command": "ls -la",
-  "execution_mode": "sync"
+  "execution_mode": "foreground"
+}
+```
+
+Adaptive execution with timeout handling:
+```json
+{
+  "command": "long-running-process",
+  "execution_mode": "adaptive",
+  "foreground_timeout_seconds": 10,
+  "return_partial_on_timeout": true
 }
 ```
 
@@ -290,15 +302,18 @@ Create new terminal session:
 }
 ```
 
-#### `shell_get_execution`
+#### `process_get_execution`
 Get detailed information about a command execution.
+
+#### `shell_set_default_workdir`
+Set the default working directory for command execution.
 
 ### Process Management
 
 #### `process_list`
 List running processes with filtering options.
 
-#### `process_kill`
+#### `process_terminate`
 Safely terminate processes with signal control.
 
 #### `process_monitor`
@@ -309,22 +324,31 @@ Start real-time process monitoring.
 #### `terminal_create`
 Create interactive terminal sessions.
 
-#### `terminal_input`
+#### `terminal_send_input`
 Send input to terminals.
 
-#### `terminal_output`
+#### `terminal_get_output`
 Get terminal output with ANSI support.
+
+#### `terminal_get_info`
+Get detailed terminal information.
+
+#### `terminal_resize`
+Resize terminal dimensions.
+
+#### `terminal_close`
+Close terminal sessions.
 
 ### File Operations
 
-#### `file_list`
-List managed files with filtering.
+#### `list_execution_outputs`
+List managed output files with filtering.
 
-#### `file_read`
-Read file contents safely.
+#### `read_execution_output`
+Read output file contents safely.
 
-#### `file_delete`
-Delete files with confirmation.
+#### `delete_execution_outputs`
+Delete output files with confirmation.
 
 ### Security & Monitoring
 

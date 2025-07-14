@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2025-07-14
+
+### Added
+- Comprehensive MCP tool description improvements for better LLM comprehension
+- Consistent naming conventions across all 18 tools
+- Enhanced parameter descriptions with examples, constraints, and relationships
+- Tool description best practices documentation (`docs/mcp-tool-description-best-practices.md`)
+- New tool: `shell_set_default_workdir` for working directory management
+
+### Changed
+- **Tool Naming Improvements** for consistency:
+  - `shell_get_execution` → `process_get_execution`
+  - `process_kill` → `process_terminate`
+  - `terminal_get` → `terminal_get_info`
+  - `terminal_input` → `terminal_send_input`
+  - `terminal_output` → `terminal_get_output`
+  - `file_list` → `list_execution_outputs`
+  - `file_read` → `read_execution_output`
+  - `file_delete` → `delete_execution_outputs`
+
+- **ExecutionMode Improvements**:
+  - `'sync' | 'async' | 'background'` → `'foreground' | 'background' | 'detached' | 'adaptive'`
+  - Default mode changed to `'adaptive'` for optimal performance
+  - Added `foreground_timeout_seconds` parameter for adaptive mode
+  - Added `return_partial_on_timeout` parameter for timeout handling
+
+- **File Management Terminology**:
+  - `file_id` → `output_id` for consistency
+  - `file_type` → `output_type` for clarity
+  - Unified "output files" terminology throughout
+
+- **Tool Descriptions**: All 18 tools updated with:
+  - Clear, specific descriptions for better LLM understanding
+  - Consistent terminology and tone
+  - Enhanced parameter descriptions with examples and constraints
+  - Proper edge case and error condition documentation
+
+### Fixed
+- **Critical Bug**: `return_partial_on_timeout` now correctly returns partial output instead of errors
+- ProcessManager and FileManager integration for proper output file management
+- Timeout handling in adaptive execution mode
+
+### Documentation
+- Updated README.md with new tool names and execution modes
+- Added comprehensive MCP tool description best practices guide
+- Updated API examples and usage instructions
+- Enhanced security and configuration documentation
+- Updated implementation checklist with progress tracking
+
 ## [2.1.0] - 2025-06-17
 
 ### Added
