@@ -4,6 +4,7 @@ import {
   ShellTypeSchema,
   ProcessSignalSchema,
   OutputTypeSchema,
+  SecurityModeSchema,
   DimensionsSchema,
   EnvironmentVariablesSchema,
 } from './index.js';
@@ -132,12 +133,17 @@ export const TerminalCloseParamsSchema = z.object({
 
 // Security & Monitoring
 export const SecuritySetRestrictionsParamsSchema = z.object({
-  allowed_commands: z.array(z.string()).optional().describe('List of allowed commands'),
-  blocked_commands: z.array(z.string()).optional().describe('List of blocked commands'),
-  allowed_directories: z.array(z.string()).optional().describe('List of allowed directories'),
-  max_execution_time: z.number().int().min(1).max(86400).optional().describe('Maximum execution time in seconds'),
-  max_memory_mb: z.number().int().min(1).max(32768).optional().describe('Maximum memory usage in MB'),
-  enable_network: z.boolean().default(true).describe('Enable network access'),
+  security_mode: SecurityModeSchema.optional().describe('Security mode: permissive (basic safety), restrictive (read-only commands), or custom (detailed configuration)'),
+  
+  // customモード時のみ有効 - 他のモードでは無視される
+  allowed_commands: z.array(z.string()).optional().describe('List of allowed commands (custom mode only). Commands not in this list will be blocked.'),
+  blocked_commands: z.array(z.string()).optional().describe('List of blocked commands (custom mode only). Takes precedence over allowed_commands.'),
+  allowed_directories: z.array(z.string()).optional().describe('List of allowed directories (custom mode only). Commands cannot access files outside these directories.'),
+  
+  // 全モード共通設定
+  max_execution_time: z.number().int().min(1).max(86400).optional().describe('Maximum execution time in seconds (applies to all modes)'),
+  max_memory_mb: z.number().int().min(1).max(32768).optional().describe('Maximum memory usage in MB (applies to all modes)'),
+  enable_network: z.boolean().default(true).describe('Enable network access (applies to all modes)'),
 });
 
 export const MonitoringGetStatsParamsSchema = z.object({

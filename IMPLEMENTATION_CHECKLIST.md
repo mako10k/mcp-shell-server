@@ -74,22 +74,59 @@
 - [x] ワーキングディレクトリ機能のテスト
 - [x] 環境変数設定のテスト
 
-## Phase 3: セキュリティ設定の簡素化 [優先度: 低]
+## 発見された課題とタスク
 
-### セキュリティモードの実装
-- [ ] `SecurityMode`型の追加
-- [ ] セキュリティプリセットの実装
-- [ ] 既存設定の置き換え
+- [ ] FileManagerとProcessManagerの連携問題修正【重要】
+  - [ ] 問題分析完了: ProcessManagerが独自のoutputFiles管理でFileManagerと非連携
+  - [ ] ProcessManagerの`saveOutputToFile`をFileManager連携に変更
+  - [ ] ProcessManagerにFileManager依存性注入またはファクトリパターン実装
+  - [ ] `list_execution_outputs`ツールの実装をProcessManager.outputFiles → FileManager.listFiles に変更
+  - [ ] `read_execution_output`ツールの実装をProcessManager → FileManager に変更
+  - [ ] 既存出力ファイルのマイグレーション対応
+  - [ ] テストケースの追加・修正
+
+## Phase 3: セキュリティ設定の簡素化 [優先度: 低] ✅ **完了**
+
+### セキュリティモードの改善
+- [x] `SecurityMode`型の追加（permissive/restrictive/custom）
+- [x] SecurityManagerの基本実装完了
+- [x] セキュリティプリセットの詳細化
+  - [x] permissiveモード: 危険パターンのみブロック
+  - [x] restrictiveモード: 読み取り専用コマンドのみ許可
+  - [x] customモード: 詳細設定による制御
+- [x] `security_set_restrictions`ツールのスキーマ改善
+  - [x] SecurityModeに基づくパラメータ最適化
+  - [x] プリセット選択の簡素化
+- [x] デフォルト設定の最適化
+  - [x] 環境変数による初期設定サポート
+  - [x] 安全なデフォルト値の確定
 
 ### テスト
-- [ ] セキュリティモードのテスト
-- [ ] プリセット機能のテスト
+- [x] セキュリティモードのテスト
+  - [x] permissiveモードのテスト
+  - [x] restrictiveモードのテスト
+  - [x] customモードのテスト
+- [x] プリセット機能のテスト
+- [x] 危険パターン検出のテスト
+- [x] セキュリティ設定ツールのテスト
 
-## ドキュメント更新
+## 次のステップ - 優先課題
 
-- [x] 改善提案ドキュメントの作成
-- [ ] `README.md`の更新
-- [ ] APIドキュメントの更新
+1. **FileManagerとProcessManagerの連携問題修正【最優先】**
+   - ProcessManagerが独自のoutputFiles管理でFileManagerと非連携
+   - `list_execution_outputs`と`read_execution_output`ツールが正常に動作しない
+   - 統一された出力ファイル管理システムが必要
+
+2. **ドキュメント更新**
+   - README.mdの更新（新ツール名、新機能の説明）
+   - API仕様書の更新
+   - CHANGELOGの作成
+
+## 完了したPhase
+
+- ✅ **Phase 1**: ExecutionModeと応答パラメータの改善
+- ✅ **Phase 2**: ツール名変更とワーキングディレクトリ
+- ✅ **Phase 3**: セキュリティ設定の簡素化
 - [ ] 使用例の更新
 - [ ] CHANGELOGの更新
 

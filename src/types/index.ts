@@ -190,15 +190,25 @@ export interface ErrorInfo {
 // セキュリティ制限
 export interface SecurityRestrictions {
   restriction_id: string;
+  security_mode: SecurityMode;
+  
+  // customモード時のみ有効
   allowed_commands?: string[];
   blocked_commands?: string[];
   allowed_directories?: string[];
+  
+  // 共通設定
   max_execution_time?: number;
   max_memory_mb?: number;
   enable_network?: boolean;
+  
   active: boolean;
   configured_at: string;
 }
+
+// セキュリティモード
+export const SecurityModeSchema = z.enum(['permissive', 'restrictive', 'custom']);
+export type SecurityMode = z.infer<typeof SecurityModeSchema>;
 
 // 実行プロセス情報（Process Manager用）
 export interface ExecutionProcessInfo {
