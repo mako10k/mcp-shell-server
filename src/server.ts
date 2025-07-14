@@ -18,6 +18,7 @@ import { logger } from './utils/helpers.js';
 import {
   ShellExecuteParamsSchema,
   ShellGetExecutionParamsSchema,
+  ShellSetDefaultWorkdirParamsSchema,
   ProcessListParamsSchema,
   ProcessKillParamsSchema,
   ProcessMonitorParamsSchema,
@@ -101,9 +102,14 @@ export class MCPShellServer {
           inputSchema: zodToJsonSchema(ShellExecuteParamsSchema, { target: 'jsonSchema7' })
         },
         {
-          name: 'shell_get_execution',
+          name: 'process_get_execution',
           description: 'Get detailed information about a command execution',
           inputSchema: zodToJsonSchema(ShellGetExecutionParamsSchema, { target: 'jsonSchema7' })
+        },
+        {
+          name: 'shell_set_default_workdir',
+          description: 'Set the default working directory for command execution',
+          inputSchema: zodToJsonSchema(ShellSetDefaultWorkdirParamsSchema, { target: 'jsonSchema7' })
         },
 
         // Process Management
@@ -113,7 +119,7 @@ export class MCPShellServer {
           inputSchema: zodToJsonSchema(ProcessListParamsSchema, { target: 'jsonSchema7' })
         },
         {
-          name: 'process_kill',
+          name: 'process_terminate',
           description: 'Safely terminate a process',
           inputSchema: zodToJsonSchema(ProcessKillParamsSchema, { target: 'jsonSchema7' })
         },
@@ -125,17 +131,17 @@ export class MCPShellServer {
 
         // File Operations
         {
-          name: 'file_list',
+          name: 'list_execution_outputs',
           description: 'List files and output files',
           inputSchema: zodToJsonSchema(FileListParamsSchema, { target: 'jsonSchema7' })
         },
         {
-          name: 'file_read',
+          name: 'read_execution_output',
           description: 'Read file contents',
           inputSchema: zodToJsonSchema(FileReadParamsSchema, { target: 'jsonSchema7' })
         },
         {
-          name: 'file_delete',
+          name: 'delete_execution_outputs',
           description: 'Delete specified files',
           inputSchema: zodToJsonSchema(FileDeleteParamsSchema, { target: 'jsonSchema7' })
         },
@@ -152,17 +158,17 @@ export class MCPShellServer {
           inputSchema: zodToJsonSchema(TerminalListParamsSchema, { target: 'jsonSchema7' })
         },
         {
-          name: 'terminal_get',
+          name: 'terminal_get_info',
           description: 'Get terminal detailed information',
           inputSchema: zodToJsonSchema(TerminalGetParamsSchema, { target: 'jsonSchema7' })
         },
         {
-          name: 'terminal_input',
+          name: 'terminal_send_input',
           description: 'Send input to terminal',
           inputSchema: zodToJsonSchema(TerminalInputParamsSchema, { target: 'jsonSchema7' })
         },
         {
-          name: 'terminal_output',
+          name: 'terminal_get_output',
           description: 'Get terminal output',
           inputSchema: zodToJsonSchema(TerminalOutputParamsSchema, { target: 'jsonSchema7' })
         },
@@ -210,9 +216,15 @@ export class MCPShellServer {
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
-          case 'shell_get_execution': {
+          case 'process_get_execution': {
             const params = ShellGetExecutionParamsSchema.parse(args);
             const result = await this.shellTools.getExecution(params);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          case 'shell_set_default_workdir': {
+            const params = ShellSetDefaultWorkdirParamsSchema.parse(args);
+            const result = await this.shellTools.setDefaultWorkingDirectory(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
@@ -223,7 +235,7 @@ export class MCPShellServer {
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
-          case 'process_kill': {
+          case 'process_terminate': {
             const params = ProcessKillParamsSchema.parse(args);
             const result = await this.shellTools.killProcess(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -235,20 +247,20 @@ export class MCPShellServer {
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
-          // File Operations  
-          case 'file_list': {
+          // Output File Operations  
+          case 'list_execution_outputs': {
             const params = FileListParamsSchema.parse(args);
             const result = await this.shellTools.listFiles(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
-          case 'file_read': {
+          case 'read_execution_output': {
             const params = FileReadParamsSchema.parse(args);
             const result = await this.shellTools.readFile(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
-          case 'file_delete': {
+          case 'delete_execution_outputs': {
             const params = FileDeleteParamsSchema.parse(args);
             const result = await this.shellTools.deleteFiles(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -267,19 +279,19 @@ export class MCPShellServer {
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
-          case 'terminal_get': {
+          case 'terminal_get_info': {
             const params = TerminalGetParamsSchema.parse(args);
             const result = await this.shellTools.getTerminal(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
-          case 'terminal_input': {
+          case 'terminal_send_input': {
             const params = TerminalInputParamsSchema.parse(args);
             const result = await this.shellTools.sendTerminalInput(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
-          case 'terminal_output': {
+          case 'terminal_get_output': {
             const params = TerminalOutputParamsSchema.parse(args);
             const result = await this.shellTools.getTerminalOutput(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };

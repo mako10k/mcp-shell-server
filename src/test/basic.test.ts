@@ -162,6 +162,47 @@ describe('MCP Shell Server Components', () => {
     });
   });
 
+  describe('Phase 2: Tool Names and Working Directory', () => {
+    it('should set default working directory', async () => {
+      // 許可されているディレクトリを使用
+      const allowedDirs = processManager.getAllowedWorkingDirectories();
+      const newWorkdir = allowedDirs[0]; // 最初の許可されたディレクトリを使用
+      
+      const result = processManager.setDefaultWorkingDirectory(newWorkdir);
+      
+      expect(result.success).toBe(true);
+      expect(result.new_working_directory).toBe(newWorkdir);
+      expect(processManager.getDefaultWorkingDirectory()).toBe(newWorkdir);
+    });
+
+    it('should validate allowed working directories', () => {
+      const allowedDirs = processManager.getAllowedWorkingDirectories();
+      expect(allowedDirs).toContain(process.cwd());
+    });
+
+    it('should reject non-allowed working directories', () => {
+      expect(() => {
+        processManager.setDefaultWorkingDirectory('/non-existent-directory');
+      }).toThrow('Working directory not allowed');
+    });
+
+    it('should include working directory info in execution results', async () => {
+      const testWorkdir = process.cwd();
+      const result = await processManager.executeCommand({
+        command: 'pwd',
+        executionMode: 'foreground',
+        workingDirectory: testWorkdir,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+
+      expect(result.working_directory).toBe(testWorkdir);
+      expect(result.default_working_directory).toBe(processManager.getDefaultWorkingDirectory());
+      expect(result.working_directory_changed).toBeDefined();
+    });
+  });
+
   describe.skip('FileManager', () => {
     it('should create and list files', async () => {
       const fileId = await fileManager.createOutputFile('test content', 'test-execution');

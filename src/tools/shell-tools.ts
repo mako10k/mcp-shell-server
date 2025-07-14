@@ -1,6 +1,7 @@
 import {
   ShellExecuteParams,
   ShellGetExecutionParams,
+  ShellSetDefaultWorkdirParams,
   ProcessListParams,
   ProcessKillParams,
   ProcessMonitorParams,
@@ -417,6 +418,23 @@ export class ShellTools {
       }
 
       return stats;
+    } catch (error) {
+      throw MCPShellError.fromError(error);
+    }
+  }
+
+  async setDefaultWorkingDirectory(params: ShellSetDefaultWorkdirParams) {
+    try {
+      const result = this.processManager.setDefaultWorkingDirectory(params.working_directory);
+      
+      return {
+        success: result.success,
+        previous_working_directory: result.previous_working_directory,
+        new_working_directory: result.new_working_directory,
+        working_directory_changed: result.working_directory_changed,
+        default_working_directory: this.processManager.getDefaultWorkingDirectory(),
+        allowed_working_directories: this.processManager.getAllowedWorkingDirectories(),
+      };
     } catch (error) {
       throw MCPShellError.fromError(error);
     }

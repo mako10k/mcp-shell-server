@@ -76,6 +76,8 @@ export interface ExecutionInfo {
   exit_code?: number;
   process_id?: number;
   working_directory?: string;
+  default_working_directory?: string;
+  working_directory_changed?: boolean;
   environment_variables?: EnvironmentVariables;
   execution_time_ms?: number;
   memory_usage_mb?: number;

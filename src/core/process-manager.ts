@@ -46,10 +46,16 @@ export class ProcessManager {
   private readonly maxConcurrentProcesses: number;
   private readonly outputDir: string;
   private terminalManager?: TerminalManager; // TerminalManager への参照
+  private defaultWorkingDirectory: string;
+  private allowedWorkingDirectories: string[];
 
   constructor(maxConcurrentProcesses = 50, outputDir = '/tmp/mcp-shell-outputs') {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
     this.outputDir = outputDir;
+    this.defaultWorkingDirectory = process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd();
+    this.allowedWorkingDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS'] 
+      ? process.env['MCP_SHELL_ALLOWED_WORKDIRS'].split(',').map(dir => dir.trim())
+      : [process.cwd()];
     this.initializeOutputDirectory();
   }
 
@@ -76,17 +82,18 @@ export class ProcessManager {
     const startTime = getCurrentTimestamp();
 
     // 実行情報の初期化
+    const resolvedWorkingDirectory = this.resolveWorkingDirectory(options.workingDirectory);
     const executionInfo: ExecutionInfo = {
       execution_id: executionId,
       command: options.command,
       status: 'running',
+      working_directory: resolvedWorkingDirectory,
+      default_working_directory: this.defaultWorkingDirectory,
+      working_directory_changed: resolvedWorkingDirectory !== this.defaultWorkingDirectory,
       created_at: startTime,
       started_at: startTime,
     };
 
-    if (options.workingDirectory) {
-      executionInfo.working_directory = options.workingDirectory;
-    }
     if (options.environmentVariables) {
       executionInfo.environment_variables = options.environmentVariables;
     }
@@ -173,7 +180,7 @@ export class ProcessManager {
 
       // プロセスの起動
       const childProcess = spawn('/bin/bash', ['-c', options.command], {
-        cwd: options.workingDirectory || process.cwd(),
+        cwd: this.resolveWorkingDirectory(options.workingDirectory),
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
@@ -337,7 +344,7 @@ export class ProcessManager {
     );
 
     const childProcess = spawn('/bin/bash', ['-c', options.command], {
-      cwd: options.workingDirectory || process.cwd(),
+      cwd: this.resolveWorkingDirectory(options.workingDirectory),
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: options.executionMode === 'background',
@@ -426,7 +433,7 @@ export class ProcessManager {
     );
 
     const childProcess = spawn('/bin/bash', ['-c', options.command], {
-      cwd: options.workingDirectory || process.cwd(),
+      cwd: this.resolveWorkingDirectory(options.workingDirectory),
       env,
       stdio: ['ignore', 'pipe', 'pipe'], // stdin は無視
       detached: true, // 完全にデタッチ
@@ -654,5 +661,56 @@ export class ProcessManager {
 
     this.processes.clear();
     this.executions.clear();
+  }
+
+  // ワーキングディレクトリ管理
+  setDefaultWorkingDirectory(workingDirectory: string): {
+    success: boolean;
+    previous_working_directory: string;
+    new_working_directory: string;
+    working_directory_changed: boolean;
+  } {
+    const previousWorkdir = this.defaultWorkingDirectory;
+    
+    // ディレクトリの検証
+    if (!this.isAllowedWorkingDirectory(workingDirectory)) {
+      throw new Error(`Working directory not allowed: ${workingDirectory}`);
+    }
+
+    this.defaultWorkingDirectory = workingDirectory;
+    
+    return {
+      success: true,
+      previous_working_directory: previousWorkdir,
+      new_working_directory: workingDirectory,
+      working_directory_changed: previousWorkdir !== workingDirectory,
+    };
+  }
+
+  getDefaultWorkingDirectory(): string {
+    return this.defaultWorkingDirectory;
+  }
+
+  getAllowedWorkingDirectories(): string[] {
+    return [...this.allowedWorkingDirectories];
+  }
+
+  private isAllowedWorkingDirectory(workingDirectory: string): boolean {
+    // パスの正規化を行って比較
+    const normalizedPath = path.resolve(workingDirectory);
+    return this.allowedWorkingDirectories.some(allowedDir => {
+      const normalizedAllowed = path.resolve(allowedDir);
+      return normalizedPath === normalizedAllowed || normalizedPath.startsWith(normalizedAllowed + path.sep);
+    });
+  }
+
+  private resolveWorkingDirectory(workingDirectory?: string): string {
+    const resolved = workingDirectory || this.defaultWorkingDirectory;
+    
+    if (!this.isAllowedWorkingDirectory(resolved)) {
+      throw new Error(`Working directory not allowed: ${resolved}`);
+    }
+    
+    return resolved;
   }
 }

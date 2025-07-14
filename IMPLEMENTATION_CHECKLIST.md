@@ -44,35 +44,35 @@
 ## Phase 2: ツール名変更とワーキングディレクトリ [優先度: 中]
 
 ### ツール名の変更実装
-- [ ] `src/server.ts` - ツール定義の更新
-  - [ ] `shell_get_execution` → `process_get_execution`
-  - [ ] `process_kill` → `process_terminate`
-  - [ ] `terminal_get` → `terminal_get_info`
-  - [ ] `terminal_input` → `terminal_send_input`
-  - [ ] `terminal_output` → `terminal_get_output`
-  - [ ] `file_list` → `list_execution_outputs`
-  - [ ] `file_read` → `read_execution_output`
-  - [ ] `file_delete` → `delete_execution_outputs`
-- [ ] `src/types/schemas.ts` - スキーマ名の更新
-- [ ] `src/tools/shell-tools.ts` - メソッド名の更新（必要に応じて）
+- [x] `src/server.ts` - ツール定義の更新
+  - [x] `shell_get_execution` → `process_get_execution`
+  - [x] `process_kill` → `process_terminate`
+  - [x] `terminal_get` → `terminal_get_info`
+  - [x] `terminal_input` → `terminal_send_input`
+  - [x] `terminal_output` → `terminal_get_output`
+  - [x] `file_list` → `list_execution_outputs`
+  - [x] `file_read` → `read_execution_output`
+  - [x] `file_delete` → `delete_execution_outputs`
+- [x] `src/types/schemas.ts` - スキーマ名の更新
+- [x] `src/tools/shell-tools.ts` - メソッド名の更新（必要に応じて）
 
 ### ワーキングディレクトリ管理の改善
-- [ ] 環境変数サポートの実装
-  - [ ] `MCP_SHELL_DEFAULT_WORKDIR`の処理
-  - [ ] `MCP_SHELL_ALLOWED_WORKDIRS`の処理
-- [ ] 新ツール`shell_set_default_workdir`の実装
-  - [ ] ツール定義の追加
-  - [ ] 実装ロジックの追加
-- [ ] 既存のworking_directory変更バグの修正
-- [ ] 応答フィールドの改善
-  - [ ] `working_directory`
-  - [ ] `default_working_directory` 
-  - [ ] `working_directory_changed`
+- [x] 環境変数サポートの実装
+  - [x] `MCP_SHELL_DEFAULT_WORKDIR`の処理
+  - [x] `MCP_SHELL_ALLOWED_WORKDIRS`の処理
+- [x] 新ツール`shell_set_default_workdir`の実装
+  - [x] ツール定義の追加
+  - [x] 実装ロジックの追加
+- [x] 既存のworking_directory変更バグの修正
+- [x] 応答フィールドの改善
+  - [x] `working_directory`
+  - [x] `default_working_directory` 
+  - [x] `working_directory_changed`
 
 ### テスト
-- [ ] 新ツール名でのテスト更新
-- [ ] ワーキングディレクトリ機能のテスト
-- [ ] 環境変数設定のテスト
+- [x] 新ツール名でのテスト更新
+- [x] ワーキングディレクトリ機能のテスト
+- [x] 環境変数設定のテスト
 
 ## Phase 3: セキュリティ設定の簡素化 [優先度: 低]
 

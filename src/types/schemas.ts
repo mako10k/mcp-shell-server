@@ -145,9 +145,15 @@ export const MonitoringGetStatsParamsSchema = z.object({
   time_range_minutes: z.number().int().min(1).max(1440).default(60).describe('Time range in minutes'),
 });
 
+// New working directory setting schema
+export const ShellSetDefaultWorkdirParamsSchema = z.object({
+  working_directory: z.string().describe('Default working directory to set'),
+});
+
 // Type exports
 export type ShellExecuteParams = z.infer<typeof ShellExecuteParamsSchema>;
 export type ShellGetExecutionParams = z.infer<typeof ShellGetExecutionParamsSchema>;
+export type ShellSetDefaultWorkdirParams = z.infer<typeof ShellSetDefaultWorkdirParamsSchema>;
 export type ProcessListParams = z.infer<typeof ProcessListParamsSchema>;
 export type ProcessKillParams = z.infer<typeof ProcessKillParamsSchema>;
 export type ProcessMonitorParams = z.infer<typeof ProcessMonitorParamsSchema>;
