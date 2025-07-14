@@ -101,7 +101,7 @@ export class MCPShellServer {
         // Shell Operations
         {
           name: 'shell_execute',
-          description: 'Execute shell commands in a secure sandboxed environment and return their output. Supports multiple execution modes: foreground (immediate), background (async), and adaptive (starts foreground, switches to background if needed). Commands run with security restrictions and resource limits.',
+          description: 'Execute shell commands securely in a sandboxed environment. Can also create new interactive terminal sessions.',
           inputSchema: zodToJsonSchema(ShellExecuteParamsSchema, { target: 'jsonSchema7' })
         },
         {
@@ -111,7 +111,7 @@ export class MCPShellServer {
         },
         {
           name: 'shell_set_default_workdir',
-          description: 'Set the default working directory for all subsequent command executions. This affects where commands run if no working_directory is specified in shell_execute.',
+          description: 'Set the default working directory for command execution',
           inputSchema: zodToJsonSchema(ShellSetDefaultWorkdirParamsSchema, { target: 'jsonSchema7' })
         },
 
@@ -157,32 +157,32 @@ export class MCPShellServer {
         },
         {
           name: 'terminal_list',
-          description: 'List all active and idle terminal sessions with their status, session names, and creation times. Use to find existing terminals before creating new ones.',
+          description: 'List active terminal sessions',
           inputSchema: zodToJsonSchema(TerminalListParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_get_info',
-          description: 'Get detailed information about a specific terminal session, including current directory, running processes, dimensions, and session state.',
+          description: 'Get terminal detailed information',
           inputSchema: zodToJsonSchema(TerminalGetParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_send_input',
-          description: 'Send text input, commands, or control codes to an interactive terminal session. Supports auto-execution, raw bytes, and program guard for secure input handling.',
+          description: 'Send input to terminal',
           inputSchema: zodToJsonSchema(TerminalInputParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_get_output',
-          description: 'Retrieve output from a terminal session with optional ANSI codes and foreground process information. Supports line-based reading for efficient output processing.',
+          description: 'Get terminal output',
           inputSchema: zodToJsonSchema(TerminalOutputParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_resize',
-          description: 'Resize a terminal session to new dimensions (width and height in characters). Useful when the display environment changes or when working with different screen sizes.',
+          description: 'Resize terminal',
           inputSchema: zodToJsonSchema(TerminalResizeParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_close',
-          description: 'Close an interactive terminal session and optionally save its command history. All processes running in the terminal will be terminated.',
+          description: 'Close terminal session',
           inputSchema: zodToJsonSchema(TerminalCloseParamsSchema, { target: 'jsonSchema7' })
         },
 

@@ -168,3 +168,34 @@ timeout_seconds: "Maximum time in seconds to wait for foreground execution befor
 2. [Securing the Model Context Protocol: A Comprehensive Guide](https://collabnix.com/securing-the-model-context-protocol-a-comprehensive-guide/)
 3. [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-06-18)
 4. [Guide to Tool Calling in LLMs](https://www.analyticsvidhya.com/blog/2024/08/tool-calling-in-llms/)
+
+## Consistency Review (Phase 4c) ✅ **完了**
+
+### Consistency Checks Applied
+
+1. **用語統一**
+   - "command execution" で統一（"command executions" など複数形の不統一を修正）
+   - "output files" で統一（"execution outputs" との混在を解消）
+   - "session" vs "sessions" の適切な使い分け
+
+2. **トーン・文体統一**
+   - 説明形で統一（"Execute...", "List...", "Retrieve..." など）
+   - 命令形（"Use", "Supports"）から説明文への調整
+   - 技術的詳細レベルの統一
+
+3. **詳細レベル調整**
+   - 冗長な説明を簡潔に調整
+   - 重要な制約・機能は維持
+   - LLM が理解しやすい適切な情報量に統一
+
+### Tools Adjusted for Consistency
+
+- `shell_execute`: 冗長な詳細を簡潔化
+- `terminal_*` ツール群: 説明レベルを統一、簡潔性を重視
+- 全ツール: 用語統一とトーン調整
+
+### Result
+
+- 全18ツールの description が一貫性を保ちつつ明確
+- LLM が混乱しにくい統一された説明スタイル
+- 適切な詳細レベルでの情報提供
