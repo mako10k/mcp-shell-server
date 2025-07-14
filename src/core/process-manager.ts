@@ -23,6 +23,7 @@ import {
   ResourceLimitError,
 } from '../utils/errors.js';
 import type { TerminalManager } from './terminal-manager.js';
+import type { FileManager } from './file-manager.js';
 
 export interface ExecutionOptions {
   command: string;
@@ -42,16 +43,17 @@ export interface ExecutionOptions {
 export class ProcessManager {
   private executions = new Map<string, ExecutionInfo>();
   private processes = new Map<number, ChildProcess>();
-  private outputFiles = new Map<string, string>();
   private readonly maxConcurrentProcesses: number;
   private readonly outputDir: string;
   private terminalManager?: TerminalManager; // TerminalManager への参照
+  private fileManager: FileManager | undefined; // FileManager への参照
   private defaultWorkingDirectory: string;
   private allowedWorkingDirectories: string[];
 
-  constructor(maxConcurrentProcesses = 50, outputDir = '/tmp/mcp-shell-outputs') {
+  constructor(maxConcurrentProcesses = 50, outputDir = '/tmp/mcp-shell-outputs', fileManager?: FileManager) {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
     this.outputDir = outputDir;
+    this.fileManager = fileManager;
     this.defaultWorkingDirectory = process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd();
     this.allowedWorkingDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS'] 
       ? process.env['MCP_SHELL_ALLOWED_WORKDIRS'].split(',').map(dir => dir.trim())
@@ -62,6 +64,11 @@ export class ProcessManager {
   // TerminalManager への参照を設定
   setTerminalManager(terminalManager: TerminalManager): void {
     this.terminalManager = terminalManager;
+  }
+
+  // FileManager への参照を設定
+  setFileManager(fileManager: FileManager): void {
+    this.fileManager = fileManager;
   }
 
   private async initializeOutputDirectory(): Promise<void> {
@@ -496,20 +503,25 @@ export class ProcessManager {
     stdout: string,
     stderr: string
   ): Promise<string> {
-    const outputFileId = generateId();
-    const filePath = path.join(this.outputDir, `${outputFileId}.json`);
+    if (!this.fileManager) {
+      // FileManagerが利用できない場合は、従来の方法でファイルを保存
+      const outputFileId = generateId();
+      const filePath = path.join(this.outputDir, `${outputFileId}.json`);
 
-    const outputData = {
-      execution_id: executionId,
-      stdout,
-      stderr,
-      created_at: getCurrentTimestamp(),
-    };
+      const outputData = {
+        execution_id: executionId,
+        stdout,
+        stderr,
+        created_at: getCurrentTimestamp(),
+      };
 
-    await fs.writeFile(filePath, JSON.stringify(outputData, null, 2), 'utf-8');
-    this.outputFiles.set(outputFileId, filePath);
+      await fs.writeFile(filePath, JSON.stringify(outputData, null, 2), 'utf-8');
+      return outputFileId;
+    }
 
-    return outputFileId;
+    // FileManagerを使用して出力ファイルを作成
+    const combinedOutput = stdout + (stderr ? '\n--- STDERR ---\n' + stderr : '');
+    return await this.fileManager.createOutputFile(combinedOutput, executionId);
   }
 
   getExecution(executionId: string): ExecutionInfo | undefined {

@@ -76,14 +76,14 @@
 
 ## 発見された課題とタスク
 
-- [ ] FileManagerとProcessManagerの連携問題修正【重要】
-  - [ ] 問題分析完了: ProcessManagerが独自のoutputFiles管理でFileManagerと非連携
-  - [ ] ProcessManagerの`saveOutputToFile`をFileManager連携に変更
-  - [ ] ProcessManagerにFileManager依存性注入またはファクトリパターン実装
-  - [ ] `list_execution_outputs`ツールの実装をProcessManager.outputFiles → FileManager.listFiles に変更
-  - [ ] `read_execution_output`ツールの実装をProcessManager → FileManager に変更
-  - [ ] 既存出力ファイルのマイグレーション対応
-  - [ ] テストケースの追加・修正
+- [x] FileManagerとProcessManagerの連携問題修正【重要】 ✅ **完了**
+  - [x] 問題分析完了: ProcessManagerが独自のoutputFiles管理でFileManagerと非連携
+  - [x] ProcessManagerの`saveOutputToFile`をFileManager連携に変更
+  - [x] ProcessManagerにFileManager依存性注入またはファクトリパターン実装
+  - [x] `list_execution_outputs`ツールの実装をProcessManager.outputFiles → FileManager.listFiles に変更
+  - [x] `read_execution_output`ツールの実装をProcessManager → FileManager に変更
+  - [x] 既存出力ファイルのマイグレーション対応
+  - [x] テストケースの追加・修正
 
 ## Phase 3: セキュリティ設定の簡素化 [優先度: 低] ✅ **完了**
 

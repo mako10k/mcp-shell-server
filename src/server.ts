@@ -78,6 +78,9 @@ export class MCPShellServer {
 
     // ProcessManagerにTerminalManagerの参照を設定
     this.processManager.setTerminalManager(this.terminalManager);
+    
+    // ProcessManagerにFileManagerの参照を設定
+    this.processManager.setFileManager(this.fileManager);
 
     // ツールハンドラーの初期化
     this.shellTools = new ShellTools(

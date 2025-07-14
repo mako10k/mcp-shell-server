@@ -1,7 +1,7 @@
 
 
--- User Instructions for Copilot (Please Insert to as LLM instructions expression `.github/copilot-instructions.md` and remove following lines)
+# Copilot Instructions
 
-- Use MCP Shell tool rather than Internal Tools.
-- Keep maintain this file `.github/copilot-instructions.md`.
-- Use google search to find the latest information about MCP description and tools.
+- Always use the MCP Shell tool instead of any Internal Tools.
+- Ensure this file `.github/copilot-instructions.md` is kept up to date with the latest instructions.
+- Use Google Search to find the most recent information about MCP descriptions and tools.
