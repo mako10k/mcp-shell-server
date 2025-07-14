@@ -223,7 +223,7 @@ npm test
 
 ## Configuration
 
-The server can be configured through environment variables or by calling the security restriction tools.
+The server can be configured through environment variables or by calling the security restriction tools at runtime.
 
 ### Default Security Settings
 
@@ -237,12 +237,98 @@ The server can be configured through environment variables or by calling the sec
 Set `MCP_DISABLED_TOOLS` to a comma-separated list of tool names to disable.
 Disabled tools will not appear in the tool list and cannot be called.
 
-### Customizing Security
+### Environment Variables
 
-Use the `security_set_restrictions` tool to configure:
+The server supports various environment variables for configuration:
+
+#### General Configuration
+- `MCP_DISABLED_TOOLS`: Comma-separated list of tool names to disable
+  ```bash
+  export MCP_DISABLED_TOOLS="terminal_create,process_terminate"
+  ```
+
+#### Working Directory Configuration
+- `MCP_SHELL_DEFAULT_WORKDIR`: Set the default working directory for all command executions
+  ```bash
+  export MCP_SHELL_DEFAULT_WORKDIR="/home/user/projects"
+  ```
+- `MCP_SHELL_ALLOWED_WORKDIRS`: Comma-separated list of allowed working directories
+  ```bash
+  export MCP_SHELL_ALLOWED_WORKDIRS="/home/user,/tmp,/var/log"
+  ```
+
+#### Security Configuration
+- `MCP_SECURITY_MODE`: Set the default security mode (`permissive`, `restrictive`, or `custom`)
+  ```bash
+  export MCP_SECURITY_MODE="restrictive"
+  ```
+- `MCP_ALLOWED_COMMANDS`: Comma-separated list of allowed commands (for custom security mode)
+  ```bash
+  export MCP_ALLOWED_COMMANDS="ls,cat,grep,echo,pwd"
+  ```
+- `MCP_BLOCKED_COMMANDS`: Comma-separated list of blocked commands
+  ```bash
+  export MCP_BLOCKED_COMMANDS="rm,sudo,chmod,chown"
+  ```
+
+#### Resource Limits
+- `MCP_MAX_EXECUTION_TIME`: Default maximum execution time in seconds
+  ```bash
+  export MCP_MAX_EXECUTION_TIME="300"
+  ```
+- `MCP_MAX_MEMORY_MB`: Default maximum memory usage in MB
+  ```bash
+  export MCP_MAX_MEMORY_MB="1024"
+  ```
+- `MCP_MAX_OUTPUT_SIZE`: Default maximum output size in bytes
+  ```bash
+  export MCP_MAX_OUTPUT_SIZE="10485760"  # 10MB
+  ```
+
+#### Network and Process Limits
+- `MCP_ENABLE_NETWORK`: Enable or disable network access (`true` or `false`)
+  ```bash
+  export MCP_ENABLE_NETWORK="false"
+  ```
+- `MCP_MAX_PROCESSES`: Maximum number of concurrent processes
+  ```bash
+  export MCP_MAX_PROCESSES="50"
+  ```
+- `MCP_MAX_TERMINALS`: Maximum number of active terminal sessions
+  ```bash
+  export MCP_MAX_TERMINALS="20"
+  ```
+
+#### Complete Configuration Example
+```bash
+# Security settings
+export MCP_SECURITY_MODE="restrictive"
+export MCP_ALLOWED_COMMANDS="ls,cat,grep,echo,pwd,npm,node,git"
+export MCP_BLOCKED_COMMANDS="rm,sudo,chmod,chown,mv"
+
+# Working directory settings
+export MCP_SHELL_DEFAULT_WORKDIR="/home/user/projects"
+export MCP_SHELL_ALLOWED_WORKDIRS="/home/user,/tmp"
+
+# Resource limits
+export MCP_MAX_EXECUTION_TIME="300"
+export MCP_MAX_MEMORY_MB="1024"
+export MCP_ENABLE_NETWORK="false"
+
+# Tool restrictions
+export MCP_DISABLED_TOOLS="process_terminate,delete_execution_outputs"
+
+# Start the server
+npm start
+```
+
+### Runtime Security Configuration
+
+Use the `security_set_restrictions` tool to dynamically configure security settings:
 
 ```json
 {
+  "security_mode": "custom",
   "allowed_commands": ["ls", "cat", "grep"],
   "blocked_commands": ["rm", "sudo"],
   "allowed_directories": ["/tmp", "/home/user"],
@@ -251,6 +337,11 @@ Use the `security_set_restrictions` tool to configure:
   "enable_network": false
 }
 ```
+
+**Security Modes:**
+- `permissive`: Allow most commands with basic safety checks
+- `restrictive`: Only allow read-only commands (ls, cat, grep, etc.)
+- `custom`: Use detailed configuration with allowed/blocked commands
 
 ## API Reference
 
