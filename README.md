@@ -231,7 +231,6 @@ The server can be configured through environment variables or by calling the sec
 - Limited to safe directories
 - 5-minute execution timeout
 - 1GB memory limit
-- Network access enabled
 
 ### Disabling Tools
 Set `MCP_DISABLED_TOOLS` to a comma-separated list of tool names to disable.
@@ -272,10 +271,6 @@ The server supports the following environment variables for configuration:
   ```bash
   export MCP_SHELL_MAX_MEMORY_MB="1024"
   ```
-- `MCP_SHELL_ENABLE_NETWORK`: Enable or disable network access (`true` or `false`)
-  ```bash
-  export MCP_SHELL_ENABLE_NETWORK="false"
-  ```
 
 #### Complete Configuration Example
 ```bash
@@ -283,7 +278,6 @@ The server supports the following environment variables for configuration:
 export MCP_SHELL_SECURITY_MODE="restrictive"
 export MCP_SHELL_MAX_EXECUTION_TIME="300"
 export MCP_SHELL_MAX_MEMORY_MB="1024"
-export MCP_SHELL_ENABLE_NETWORK="false"
 
 # Working directory settings
 export MCP_SHELL_DEFAULT_WORKDIR="/home/user/projects"
@@ -309,8 +303,7 @@ Use the `security_set_restrictions` tool to dynamically configure security setti
   "blocked_commands": ["rm", "sudo"],
   "allowed_directories": ["/tmp", "/home/user"],
   "max_execution_time": 300,
-  "max_memory_mb": 1024,
-  "enable_network": false
+  "max_memory_mb": 1024
 }
 ```
 
