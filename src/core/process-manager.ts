@@ -32,12 +32,14 @@ export interface ExecutionOptions {
   environmentVariables?: EnvironmentVariables;
   inputData?: string;
   timeoutSeconds: number;
+  foregroundTimeoutSeconds?: number;
   maxOutputSize: number;
   captureStderr: boolean;
   sessionId?: string;
   createTerminal?: boolean;
   terminalShell?: string;
   terminalDimensions?: { width: number; height: number };
+  returnPartialOnTimeout?: boolean;
 }
 
 export class ProcessManager {
@@ -195,7 +197,7 @@ export class ProcessManager {
       this.processes.set(childProcess.pid!, childProcess);
 
       // タイムアウトの設定
-      const timeout = setTimeout(() => {
+      const timeout = setTimeout(async () => {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
           if (!childProcess.killed) {
@@ -203,12 +205,41 @@ export class ProcessManager {
           }
         }, 5000);
 
+        const executionTime = Date.now() - startTime;
         const executionInfo = this.executions.get(executionId);
         if (executionInfo) {
           executionInfo.status = 'timeout';
+          executionInfo.stdout = sanitizeString(stdout);
+          executionInfo.stderr = sanitizeString(stderr);
+          executionInfo.output_truncated = outputTruncated;
           executionInfo.completed_at = getCurrentTimestamp();
-          executionInfo.execution_time_ms = Date.now() - startTime;
+          executionInfo.execution_time_ms = executionTime;
+          if (childProcess.pid !== undefined) {
+            executionInfo.process_id = childProcess.pid;
+          }
+
+          // 大きな出力の場合はファイルに保存
+          if (
+            outputTruncated ||
+            stdout.length > options.maxOutputSize ||
+            stderr.length > options.maxOutputSize
+          ) {
+            try {
+              const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+              executionInfo.output_id = outputFileId;
+            } catch (error) {
+              // エラーログを内部ログに記録（標準出力を避ける）
+              // console.error('Failed to save output to file:', error);
+            }
+          }
+
           this.executions.set(executionId, executionInfo);
+
+          // return_partial_on_timeout が true の場合は部分結果を返す
+          if (options.returnPartialOnTimeout) {
+            resolve(executionInfo);
+            return;
+          }
         }
 
         reject(new TimeoutError(options.timeoutSeconds));
@@ -314,11 +345,13 @@ export class ProcessManager {
   ): Promise<ExecutionInfo> {
     // adaptiveモード: 最初に短時間フォアグラウンドで実行し、
     // タイムアウトした場合はバックグラウンドに移行
-    const returnPartialOnTimeout = (options as any).return_partial_on_timeout ?? true;
+    const returnPartialOnTimeout = options.returnPartialOnTimeout ?? true;
+    const foregroundTimeout = options.foregroundTimeoutSeconds ?? 10;
 
     try {
-      // フォアグラウンドで実行開始  
-      return await this.executeForegroundCommand(executionId, options);
+      // フォアグラウンドで実行開始（短いタイムアウトを使用）
+      const adaptiveOptions = { ...options, timeoutSeconds: foregroundTimeout };
+      return await this.executeForegroundCommand(executionId, adaptiveOptions);
     } catch (error) {
       if (error instanceof TimeoutError && returnPartialOnTimeout) {
         // タイムアウトした場合、バックグラウンドに移行

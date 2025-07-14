@@ -11,149 +11,149 @@ import {
 
 // Shell Operations
 export const ShellExecuteParamsSchema = z.object({
-  command: z.string().min(1).describe('Command to execute'),
-  execution_mode: ExecutionModeSchema.default('adaptive').describe('Execution mode'),
-  working_directory: z.string().optional().describe('Working directory'),
-  environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables'),
-  input_data: z.string().optional().describe('Standard input data'),
-  timeout_seconds: z.number().int().min(1).max(3600).default(30).describe('Timeout in seconds for foreground mode'),
-  foreground_timeout_seconds: z.number().int().min(1).max(300).default(10).describe('Timeout in seconds for adaptive mode foreground phase'),
-  return_partial_on_timeout: z.boolean().default(true).describe('Return partial output when timeout occurs'),
+  command: z.string().min(1).describe('Shell command to execute (e.g., "ls -la", "npm install", "python script.py"). Command will be validated against security restrictions.'),
+  execution_mode: ExecutionModeSchema.default('adaptive').describe('How the command should be executed: "foreground" (wait for completion), "background" (run async), "detached" (fire-and-forget), "adaptive" (start foreground, switch to background for long-running commands)'),
+  working_directory: z.string().optional().describe('Directory where the command should be executed. If not specified, uses the default working directory set by shell_set_default_workdir or the initial server directory.'),
+  environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables to set for this command execution. These are added to or override the current environment.'),
+  input_data: z.string().optional().describe('Standard input data to provide to the command. Useful for commands that read from stdin.'),
+  timeout_seconds: z.number().int().min(1).max(3600).default(30).describe('Maximum time in seconds to wait for foreground execution before switching to background or failing. Range: 1-3600 seconds.'),
+  foreground_timeout_seconds: z.number().int().min(1).max(300).default(10).describe('For adaptive mode: timeout in seconds for the initial foreground phase before switching to background execution. Range: 1-300 seconds.'),
+  return_partial_on_timeout: z.boolean().default(true).describe('When timeout occurs, return partial output collected so far instead of an error. Useful for monitoring long-running commands.'),
   max_output_size: z
     .number()
     .int()
     .min(1024)
     .max(100 * 1024 * 1024)
     .default(1048576)
-    .describe('Maximum output size in bytes'),
-  capture_stderr: z.boolean().default(true).describe('Capture standard error output'),
-  session_id: z.string().optional().describe('Session ID for session management'),
-  create_terminal: z.boolean().default(false).describe('Create a new interactive terminal session instead of running command directly'),
-  terminal_shell: ShellTypeSchema.optional().describe('Shell type for the new terminal (only used when create_terminal is true)'),
-  terminal_dimensions: DimensionsSchema.optional().describe('Terminal dimensions (only used when create_terminal is true)'),
+    .describe('Maximum output size in bytes (1KB-100MB). Output will be truncated if it exceeds this limit. Default: 1MB.'),
+  capture_stderr: z.boolean().default(true).describe('Whether to capture standard error output in addition to stdout. When false, stderr is discarded.'),
+  session_id: z.string().optional().describe('Session ID for grouping related command executions. Used for process management and filtering in process_list.'),
+  create_terminal: z.boolean().default(false).describe('Create a new interactive terminal session instead of running command directly. Use for commands requiring interactive input/output.'),
+  terminal_shell: ShellTypeSchema.optional().describe('Shell type for the new terminal (bash, zsh, fish, cmd, powershell). Only used when create_terminal is true.'),
+  terminal_dimensions: DimensionsSchema.optional().describe('Terminal dimensions in characters (width x height). Only used when create_terminal is true. Default: 120x30.'),
 });
 
 export const ShellGetExecutionParamsSchema = z.object({
-  execution_id: z.string().min(1).describe('Execution ID'),
+  execution_id: z.string().min(1).describe('Unique execution ID returned by shell_execute. Use this to retrieve detailed information about a specific command execution.'),
 });
 
 // Process Management
 export const ProcessListParamsSchema = z.object({
-  status_filter: z.enum(['running', 'completed', 'failed', 'all']).optional().describe('Filter by process status'),
-  command_pattern: z.string().optional().describe('Filter by command pattern'),
-  session_id: z.string().optional().describe('Filter by session ID'),
-  limit: z.number().int().min(1).max(500).default(50).describe('Maximum number of results'),
-  offset: z.number().int().min(0).default(0).describe('Offset for pagination'),
+  status_filter: z.enum(['running', 'completed', 'failed', 'all']).optional().describe('Filter processes by their current status: "running" (active), "completed" (finished successfully), "failed" (terminated with error), or "all" (no filter)'),
+  command_pattern: z.string().optional().describe('Filter processes by command text using substring match (case-insensitive). E.g., "python" will match all Python scripts.'),
+  session_id: z.string().optional().describe('Filter processes by session ID. Use the same session_id provided in shell_execute to group related commands.'),
+  limit: z.number().int().min(1).max(500).default(50).describe('Maximum number of results to return (1-500). Use for pagination with offset parameter.'),
+  offset: z.number().int().min(0).default(0).describe('Number of results to skip for pagination. Combine with limit for paging through large result sets.'),
 });
 
 export const ProcessKillParamsSchema = z.object({
-  process_id: z.number().int().min(1).describe('Process ID'),
-  signal: ProcessSignalSchema.default('TERM').describe('Signal to send'),
-  force: z.boolean().default(false).describe('Force termination flag'),
+  process_id: z.number().int().min(1).describe('Process ID (PID) of the process to terminate. Get this from process_list results.'),
+  signal: ProcessSignalSchema.default('TERM').describe('Signal to send to the process: "TERM" (graceful), "KILL" (immediate), "INT" (interrupt), "HUP" (hangup), "USR1", "USR2"'),
+  force: z.boolean().default(false).describe('Force immediate termination if true. Bypasses graceful shutdown and sends KILL signal regardless of signal parameter.'),
 });
 
 export const ProcessMonitorParamsSchema = z.object({
-  process_id: z.number().int().min(1).describe('Process ID'),
-  monitor_interval_ms: z.number().int().min(100).max(60000).default(1000).describe('Monitoring interval in milliseconds'),
-  include_metrics: z.array(z.enum(['cpu', 'memory', 'io', 'network'])).optional().describe('Metrics to monitor'),
+  process_id: z.number().int().min(1).describe('Process ID (PID) to monitor. Get this from process_list results. Process must be currently running.'),
+  monitor_interval_ms: z.number().int().min(100).max(60000).default(1000).describe('Monitoring interval in milliseconds (100ms-60s). Higher frequency provides more detailed data but uses more resources.'),
+  include_metrics: z.array(z.enum(['cpu', 'memory', 'io', 'network'])).optional().describe('Specific metrics to collect: "cpu" (usage %), "memory" (RAM/swap), "io" (disk reads/writes), "network" (bytes sent/received)'),
 });
 
 // File Operations
 export const FileListParamsSchema = z.object({
-  output_type: OutputTypeSchema.optional().describe('Filter by output type'),
-  execution_id: z.string().optional().describe('Filter by execution ID'),
-  name_pattern: z.string().optional().describe('Filter by filename pattern'),
-  limit: z.number().int().min(1).max(1000).default(100).describe('Maximum number of results'),
+  output_type: OutputTypeSchema.optional().describe('Filter by output type: "stdout" (standard output), "stderr" (error output), "combined" (both), "log" (execution logs), or "all" (no filter)'),
+  execution_id: z.string().optional().describe('Filter files by the execution that created them. Use execution_id from shell_execute results.'),
+  name_pattern: z.string().optional().describe('Filter by filename using substring match (case-insensitive). E.g., ".log" will match all log files.'),
+  limit: z.number().int().min(1).max(1000).default(100).describe('Maximum number of files to return (1-1000). Use for pagination through large file lists.'),
 });
 
 export const FileReadParamsSchema = z.object({
-  output_id: z.string().min(1).describe('Output ID'),
-  offset: z.number().int().min(0).default(0).describe('Read offset'),
+  output_id: z.string().min(1).describe('Unique output file ID from list_execution_outputs. Use this to read a specific output file generated by command execution.'),
+  offset: z.number().int().min(0).default(0).describe('Byte offset to start reading from (0-based). Use for reading large files in chunks or continuing from previous read.'),
   size: z
     .number()
     .int()
     .min(1)
     .max(10 * 1024 * 1024)
     .default(8192)
-    .describe('Read size'),
-  encoding: z.string().default('utf-8').describe('Character encoding'),
+    .describe('Number of bytes to read (1B-10MB). Larger sizes may improve efficiency but use more memory. Default: 8KB.'),
+  encoding: z.string().default('utf-8').describe('Character encoding for text files (utf-8, ascii, latin1, etc.). Use "binary" for non-text files.'),
 });
 
 export const FileDeleteParamsSchema = z.object({
-  output_ids: z.array(z.string().min(1)).min(1).describe('List of output IDs to delete'),
-  confirm: z.boolean().describe('Deletion confirmation flag'),
+  output_ids: z.array(z.string().min(1)).min(1).describe('List of output file IDs to delete. Get these from list_execution_outputs. All specified files will be permanently removed.'),
+  confirm: z.boolean().describe('Deletion confirmation flag. Must be set to true to proceed with deletion. Required to prevent accidental data loss.'),
 });
 
 // Terminal Management
 export const TerminalCreateParamsSchema = z.object({
-  session_name: z.string().optional().describe('Session name'),
-  shell_type: ShellTypeSchema.default('bash').describe('Shell type'),
-  dimensions: DimensionsSchema.default({ width: 120, height: 30 }).describe('Terminal dimensions'),
-  working_directory: z.string().optional().describe('Initial working directory'),
-  environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables'),
-  auto_save_history: z.boolean().default(true).describe('Auto-save command history'),
+  session_name: z.string().optional().describe('Human-readable name for the terminal session. If not provided, a unique name will be generated. Useful for identifying terminals in terminal_list.'),
+  shell_type: ShellTypeSchema.default('bash').describe('Shell to use for the terminal: "bash" (default), "zsh", "fish", "cmd" (Windows), "powershell" (Windows)'),
+  dimensions: DimensionsSchema.default({ width: 120, height: 30 }).describe('Terminal size in characters (width x height). Standard terminal sizes: 80x24 (classic), 120x30 (wide), 132x43 (large)'),
+  working_directory: z.string().optional().describe('Initial working directory for the terminal session. If not specified, uses the default working directory.'),
+  environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables to set for the terminal session. These persist for the lifetime of the terminal.'),
+  auto_save_history: z.boolean().default(true).describe('Whether to automatically save command history when the terminal is closed. Useful for session continuity.'),
 });
 
 export const TerminalListParamsSchema = z.object({
-  session_name_pattern: z.string().optional().describe('Session name pattern'),
-  status_filter: z.enum(['active', 'idle', 'all']).optional().describe('Filter by status'),
-  limit: z.number().int().min(1).max(200).default(50).describe('Maximum number of results'),
+  session_name_pattern: z.string().optional().describe('Filter terminals by session name using substring match (case-insensitive). E.g., "dev" will match "development", "devtools", etc.'),
+  status_filter: z.enum(['active', 'idle', 'all']).optional().describe('Filter by terminal status: "active" (currently running commands), "idle" (waiting for input), "all" (no filter)'),
+  limit: z.number().int().min(1).max(200).default(50).describe('Maximum number of terminals to return (1-200). Use for pagination through large terminal lists.'),
 });
 
 export const TerminalGetParamsSchema = z.object({
-  terminal_id: z.string().min(1).describe('Terminal ID'),
+  terminal_id: z.string().min(1).describe('Unique terminal ID from terminal_create or terminal_list. Use this to get detailed information about a specific terminal session.'),
 });
 
 export const TerminalInputParamsSchema = z.object({
-  terminal_id: z.string().min(1).describe('Terminal ID'),
-  input: z.string().describe('Input content to send to terminal'),
-  execute: z.boolean().default(false).describe('Auto-execute flag (send Enter key)'),
-  control_codes: z.boolean().default(false).describe('Interpret input as control codes and escape sequences'),
-  raw_bytes: z.boolean().default(false).describe('Send input as raw bytes (hex string format)'),
-  send_to: z.string().optional().describe('Program guard target: process name, path, "pid:12345", "sessionleader:", or "*"'),
+  terminal_id: z.string().min(1).describe('Unique terminal ID from terminal_create or terminal_list. The terminal must be active to receive input.'),
+  input: z.string().describe('Text input to send to the terminal. Can be commands, text, or control sequences depending on the control_codes flag.'),
+  execute: z.boolean().default(false).describe('Whether to automatically press Enter after sending the input. Set to true for command execution, false for partial input.'),
+  control_codes: z.boolean().default(false).describe('Whether to interpret the input as control codes and escape sequences (e.g., "\\n", "\\t", "\\x03" for Ctrl+C). Use for special key combinations.'),
+  raw_bytes: z.boolean().default(false).describe('Whether to send input as raw bytes using hex string format (e.g., "48656c6c6f" for "Hello"). Advanced feature for binary data.'),
+  send_to: z.string().optional().describe('Program guard target to ensure input is sent to the correct process. Can be process name, path, "pid:12345", "sessionleader:", or "*" for any process.'),
 });
 
 export const TerminalOutputParamsSchema = z.object({
-  terminal_id: z.string().min(1).describe('Terminal ID'),
-  start_line: z.number().int().min(0).default(0).describe('Start line number'),
-  line_count: z.number().int().min(1).max(10000).default(100).describe('Number of lines to get'),
-  include_ansi: z.boolean().default(false).describe('Include ANSI control codes'),
-  include_foreground_process: z.boolean().default(false).describe('Include foreground process information'),
+  terminal_id: z.string().min(1).describe('Unique terminal ID from terminal_create or terminal_list. The terminal must exist to retrieve output.'),
+  start_line: z.number().int().min(0).default(0).describe('Starting line number to read from (0-based). Use for reading specific portions of terminal history.'),
+  line_count: z.number().int().min(1).max(10000).default(100).describe('Number of lines to retrieve (1-10000). Balance between getting enough context and response size.'),
+  include_ansi: z.boolean().default(false).describe('Whether to include ANSI control codes for colors and formatting. Set to true if you need to preserve terminal appearance.'),
+  include_foreground_process: z.boolean().default(false).describe('Whether to include information about the currently running foreground process in the terminal.'),
 });
 
 export const TerminalResizeParamsSchema = z.object({
-  terminal_id: z.string().min(1).describe('Terminal ID'),
-  dimensions: DimensionsSchema.describe('New dimensions'),
+  terminal_id: z.string().min(1).describe('Unique terminal ID from terminal_create or terminal_list. The terminal must be active to be resized.'),
+  dimensions: DimensionsSchema.describe('New terminal dimensions in characters (width x height). Should match the display environment for proper formatting.'),
 });
 
 export const TerminalCloseParamsSchema = z.object({
-  terminal_id: z.string().min(1).describe('Terminal ID'),
-  save_history: z.boolean().default(true).describe('Save command history'),
+  terminal_id: z.string().min(1).describe('Unique terminal ID from terminal_create or terminal_list. All processes in this terminal will be terminated.'),
+  save_history: z.boolean().default(true).describe('Whether to save the command history before closing. History can be restored when creating future terminals.'),
 });
 
 // Security & Monitoring
 export const SecuritySetRestrictionsParamsSchema = z.object({
-  security_mode: SecurityModeSchema.optional().describe('Security mode: permissive (basic safety), restrictive (read-only commands), or custom (detailed configuration)'),
+  security_mode: SecurityModeSchema.optional().describe('Security preset: "permissive" (basic safety only), "restrictive" (read-only commands only), or "custom" (use detailed configuration below)'),
   
   // customモード時のみ有効 - 他のモードでは無視される
-  allowed_commands: z.array(z.string()).optional().describe('List of allowed commands (custom mode only). Commands not in this list will be blocked.'),
-  blocked_commands: z.array(z.string()).optional().describe('List of blocked commands (custom mode only). Takes precedence over allowed_commands.'),
-  allowed_directories: z.array(z.string()).optional().describe('List of allowed directories (custom mode only). Commands cannot access files outside these directories.'),
+  allowed_commands: z.array(z.string()).optional().describe('Whitelist of allowed commands (custom mode only). Commands not in this list will be blocked. Use command names like ["ls", "cat", "python"] or patterns.'),
+  blocked_commands: z.array(z.string()).optional().describe('Blacklist of forbidden commands (custom mode only). These commands will be blocked even if in allowed_commands. Takes precedence over allowed_commands.'),
+  allowed_directories: z.array(z.string()).optional().describe('List of allowed directories (custom mode only). Commands cannot access files outside these directories. Use absolute paths like ["/home/user", "/tmp"].'),
   
   // 全モード共通設定
-  max_execution_time: z.number().int().min(1).max(86400).optional().describe('Maximum execution time in seconds (applies to all modes)'),
-  max_memory_mb: z.number().int().min(1).max(32768).optional().describe('Maximum memory usage in MB (applies to all modes)'),
-  enable_network: z.boolean().default(true).describe('Enable network access (applies to all modes)'),
+  max_execution_time: z.number().int().min(1).max(86400).optional().describe('Maximum execution time in seconds for any command (1s-24h). Commands exceeding this limit will be terminated.'),
+  max_memory_mb: z.number().int().min(1).max(32768).optional().describe('Maximum memory usage in MB for command execution (1MB-32GB). Commands exceeding this limit will be terminated.'),
+  enable_network: z.boolean().default(true).describe('Whether to allow network access for executed commands. Disable for security in untrusted environments.'),
 });
 
 export const MonitoringGetStatsParamsSchema = z.object({
-  include_metrics: z.array(z.enum(['processes', 'terminals', 'files', 'system'])).optional().describe('Metrics to include'),
-  time_range_minutes: z.number().int().min(1).max(1440).default(60).describe('Time range in minutes'),
+  include_metrics: z.array(z.enum(['processes', 'terminals', 'files', 'system'])).optional().describe('Types of statistics to include: "processes" (execution counts), "terminals" (session info), "files" (output stats), "system" (resource usage)'),
+  time_range_minutes: z.number().int().min(1).max(1440).default(60).describe('Time range in minutes for statistics collection (1min-24h). Longer ranges provide more historical data but may be slower.'),
 });
 
 // New working directory setting schema
 export const ShellSetDefaultWorkdirParamsSchema = z.object({
-  working_directory: z.string().describe('Default working directory to set'),
+  working_directory: z.string().describe('Absolute path to set as the default working directory for all subsequent command executions. Must be an existing, accessible directory.'),
 });
 
 // Type exports

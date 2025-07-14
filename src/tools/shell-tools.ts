@@ -45,8 +45,10 @@ export class ShellTools {
         command: params.command,
         executionMode: params.execution_mode,
         timeoutSeconds: params.timeout_seconds,
+        foregroundTimeoutSeconds: params.foreground_timeout_seconds,
         maxOutputSize: params.max_output_size,
         captureStderr: params.capture_stderr,
+        returnPartialOnTimeout: params.return_partial_on_timeout,
       };
 
       // オプショナルなプロパティを追加（undefinedでない場合のみ）

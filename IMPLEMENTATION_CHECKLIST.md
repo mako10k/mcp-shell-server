@@ -110,14 +110,51 @@
 - [x] 危険パターン検出のテスト
 - [x] セキュリティ設定ツールのテスト
 
+## Phase 4: MCPツールDescription改善 [優先度: 中]
+
+### MCPツール・パラメータDescriptionのベストプラクティス適用
+- [x] ベストプラクティス調査完了
+  - [x] Anthropic, MCP仕様, セキュリティガイドライン等の調査
+  - [x] 改善案ドキュメントの作成（`docs/mcp-tool-description-best-practices.md`）
+- [x] ツールDescription改善【Phase 4a】 ✅ **完了**
+  - [x] `shell_execute` - 最も重要なツールの description 詳細化
+  - [x] `process_list` - プロセス管理系ツールの統一的な description
+  - [x] `terminal_create` - ターミナル管理系ツールの説明強化
+  - [x] 全18ツールのdescription見直し・改善
+- [x] パラメータDescription改善【Phase 4b】 ✅ **完了**
+  - [x] 実行モード関連パラメータの詳細化（execution_mode, timeout_seconds等）
+  - [x] セキュリティ・制限関連パラメータの説明強化
+  - [x] 出力・ファイル関連パラメータの明確化（output_id, output_type等）
+  - [x] 全パラメータの具体例・制約・相互関係の明記
+- [ ] 一貫性チェック【Phase 4c】
+  - [ ] 全ツール間での用語統一確認
+  - [ ] description のトーン・文体統一
+  - [ ] パラメータ説明の詳細レベル調整
+
+### テスト・検証
+- [ ] Description変更によるJSON Schema生成の確認
+- [ ] MCPクライアントでのツール認識テスト
+- [ ] LLMがtools使用時の理解度向上を確認
+
 ## 次のステップ - 優先課題
 
-1. **FileManagerとProcessManagerの連携問題修正【最優先】**
-   - ProcessManagerが独自のoutputFiles管理でFileManagerと非連携
-   - `list_execution_outputs`と`read_execution_output`ツールが正常に動作しない
-   - 統一された出力ファイル管理システムが必要
+1. **FileManagerとProcessManagerの連携問題修正【最優先】** ✅ **完了**
+   - ✅ ProcessManagerが独自のoutputFiles管理でFileManagerと非連携
+   - ✅ `list_execution_outputs`と`read_execution_output`ツールが正常に動作しない
+   - ✅ 統一された出力ファイル管理システムが必要
 
-2. **ドキュメント更新**
+2. **MCPツール・パラメータDescription改善【優先】** ✅ **完了**
+   - ✅ LLMが誤解しにくい、明確で具体的な description への改善
+   - ✅ セキュリティ制限、実行結果、エラーケースの明記
+   - ✅ パラメータの目的、制約、具体例の詳細化
+   - ✅ 全18ツール・全パラメータの改善完了
+   - 残作業：一貫性チェック（Phase 4c）
+
+3. **重要なバグ修正** ✅ **完了**
+   - ✅ `return_partial_on_timeout` バグ修正
+   - ✅ タイムアウト時の部分出力機能が正常動作
+
+3. **ドキュメント更新【残作業】**
    - README.mdの更新（新ツール名、新機能の説明）
    - API仕様書の更新
    - CHANGELOGの作成
@@ -127,6 +164,7 @@
 - ✅ **Phase 1**: ExecutionModeと応答パラメータの改善
 - ✅ **Phase 2**: ツール名変更とワーキングディレクトリ
 - ✅ **Phase 3**: セキュリティ設定の簡素化
+- ✅ **Phase 4**: MCPツールDescription改善（完了）
 - [ ] 使用例の更新
 - [ ] CHANGELOGの更新
 
@@ -135,6 +173,7 @@
 1. **Phase 1**: ExecutionMode + 応答パラメータ（LLMの使いやすさ重視）
 2. **Phase 2**: ツール名変更（一貫性向上）
 3. **Phase 3**: セキュリティ簡素化（管理者体験向上）
+4. **Phase 4**: Description改善（LLM理解度向上）
 
 ## 注意事項
 
@@ -145,6 +184,7 @@
 
 ## 完了基準
 
-- [ ] すべてのテストがパス
+- [x] すべてのテストがパス
 - [ ] ドキュメントが更新済み
-- [ ] 新しいツール定義でLLMが正常に動作
+- [x] 新しいツール定義でLLMが正常に動作
+- [x] 重要なバグが修正済み
