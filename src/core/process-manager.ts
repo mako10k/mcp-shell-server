@@ -331,41 +331,225 @@ export class ProcessManager {
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
-    // adaptiveモード: 最初にforeground_timeout_secondsでフォアグラウンド実行し、
-    // タイムアウトした場合はバックグラウンドに移行してtimeout_secondsまで継続
+    // adaptiveモード: 1つのプロセスを起動し、以下の条件でバックグラウンドに移行
+    // 1. フォアグラウンドタイムアウトに達した場合
+    // 2. 出力サイズ制限に達した場合
     const returnPartialOnTimeout = options.returnPartialOnTimeout ?? true;
     const foregroundTimeout = options.foregroundTimeoutSeconds ?? 10;
 
-    try {
-      // フォアグラウンドで実行開始（foreground_timeout_secondsを使用）
-      const adaptiveOptions = { ...options, timeoutSeconds: foregroundTimeout };
-      return await this.executeForegroundCommand(executionId, adaptiveOptions);
-    } catch (error) {
-      if (error instanceof TimeoutError && returnPartialOnTimeout) {
-        // タイムアウトした場合、バックグラウンドに移行
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      let stdout = '';
+      let stderr = '';
+      let outputTruncated = false;
+      let backgroundTransitionReason: 'timeout' | 'output_size_limit' | null = null;
+
+      // 環境変数の準備
+      const env = getSafeEnvironment(
+        process.env as Record<string, string>,
+        options.environmentVariables
+      );
+
+      // プロセスの起動（バックグラウンド対応）
+      const childProcess = spawn('/bin/bash', ['-c', options.command], {
+        cwd: this.resolveWorkingDirectory(options.workingDirectory),
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      this.processes.set(childProcess.pid!, childProcess);
+
+      // フォアグラウンドタイムアウトの設定
+      const foregroundTimeoutHandle = setTimeout(() => {
+        if (!backgroundTransitionReason) {
+          backgroundTransitionReason = 'timeout';
+          transitionToBackground();
+        }
+      }, foregroundTimeout * 1000);
+
+      // 最終タイムアウトの設定
+      const finalTimeoutHandle = setTimeout(async () => {
+        childProcess.kill('SIGTERM');
+        setTimeout(() => {
+          if (!childProcess.killed) {
+            childProcess.kill('SIGKILL');
+          }
+        }, 5000);
+
         const executionInfo = this.executions.get(executionId);
         if (executionInfo) {
-          // 部分出力フラグを設定
-          executionInfo.output_truncated = true;
-          executionInfo.status = 'running'; // バックグラウンドで継続実行中
+          executionInfo.status = 'timeout';
+          executionInfo.stdout = sanitizeString(stdout);
+          executionInfo.stderr = sanitizeString(stderr);
+          executionInfo.output_truncated = outputTruncated;
+          executionInfo.completed_at = getCurrentTimestamp();
+          executionInfo.execution_time_ms = Date.now() - startTime;
+
+          // 出力をFileManagerに保存
+          try {
+            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            executionInfo.output_id = outputFileId;
+          } catch (error) {
+            // エラーログを内部ログに記録
+          }
+
           this.executions.set(executionId, executionInfo);
-          
-          // バックグラウンドで継続実行（残り時間でタイムアウト設定）
-          const remainingTime = Math.max(1, options.timeoutSeconds - foregroundTimeout);
-          const backgroundOptions = { 
-            ...options, 
-            executionMode: 'background' as ExecutionMode,
-            timeoutSeconds: remainingTime
-          };
-          this.executeBackgroundCommand(executionId, backgroundOptions).catch(() => {
-            // バックグラウンド実行でエラーが発生した場合の処理
-          });
-          
-          return executionInfo;
+
+          if (returnPartialOnTimeout) {
+            resolve(executionInfo);
+            return;
+          }
         }
+
+        reject(new TimeoutError(options.timeoutSeconds));
+      }, options.timeoutSeconds * 1000);
+
+      // バックグラウンドに移行する関数
+      const transitionToBackground = async () => {
+        clearTimeout(foregroundTimeoutHandle);
+
+        const executionInfo = this.executions.get(executionId);
+        if (executionInfo) {
+          executionInfo.output_truncated = outputTruncated;
+          executionInfo.status = 'running';
+          executionInfo.stdout = sanitizeString(stdout);
+          executionInfo.stderr = sanitizeString(stderr);
+          
+          // 移行理由を記録
+          if (backgroundTransitionReason === 'timeout') {
+            executionInfo.transition_reason = 'foreground_timeout';
+          } else if (backgroundTransitionReason === 'output_size_limit') {
+            executionInfo.transition_reason = 'output_size_limit';
+          }
+
+          if (childProcess.pid !== undefined) {
+            executionInfo.process_id = childProcess.pid;
+          }
+
+          // 出力をFileManagerに保存
+          try {
+            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            executionInfo.output_id = outputFileId;
+          } catch (error) {
+            // エラーログを内部ログに記録
+          }
+
+          this.executions.set(executionId, executionInfo);
+
+          // バックグラウンド処理の継続設定（adaptive mode専用）
+          this.handleAdaptiveBackgroundTransition(executionId, childProcess, {
+            ...options,
+            timeoutSeconds: Math.max(1, options.timeoutSeconds - Math.floor((Date.now() - startTime) / 1000))
+          });
+
+          resolve(executionInfo);
+        }
+      };
+
+      // 標準入力の送信
+      if (options.inputData) {
+        childProcess.stdin?.write(options.inputData);
+        childProcess.stdin?.end();
+      } else {
+        childProcess.stdin?.end();
       }
-      throw error;
-    }
+
+      // 標準出力の処理
+      childProcess.stdout?.on('data', (data: Buffer) => {
+        const output = data.toString();
+        if (stdout.length + output.length <= options.maxOutputSize) {
+          stdout += output;
+        } else {
+          stdout += output.substring(0, options.maxOutputSize - stdout.length);
+          outputTruncated = true;
+          
+          // 出力サイズ制限に達した場合、バックグラウンドに移行
+          if (!backgroundTransitionReason) {
+            backgroundTransitionReason = 'output_size_limit';
+            transitionToBackground();
+          }
+        }
+      });
+
+      // 標準エラー出力の処理
+      if (options.captureStderr) {
+        childProcess.stderr?.on('data', (data: Buffer) => {
+          const output = data.toString();
+          if (stderr.length + output.length <= options.maxOutputSize) {
+            stderr += output;
+          } else {
+            stderr += output.substring(0, options.maxOutputSize - stderr.length);
+            outputTruncated = true;
+            
+            // 出力サイズ制限に達した場合、バックグラウンドに移行
+            if (!backgroundTransitionReason) {
+              backgroundTransitionReason = 'output_size_limit';
+              transitionToBackground();
+            }
+          }
+        });
+      }
+
+      // プロセス終了時の処理
+      childProcess.on('close', async (code) => {
+        clearTimeout(foregroundTimeoutHandle);
+        clearTimeout(finalTimeoutHandle);
+        this.processes.delete(childProcess.pid!);
+
+        // バックグラウンドに移行していない場合のみ処理
+        if (!backgroundTransitionReason) {
+          const executionTime = Date.now() - startTime;
+          const executionInfo = this.executions.get(executionId);
+
+          if (executionInfo) {
+            executionInfo.status = 'completed';
+            executionInfo.exit_code = code || 0;
+            executionInfo.stdout = sanitizeString(stdout);
+            executionInfo.stderr = sanitizeString(stderr);
+            executionInfo.output_truncated = outputTruncated;
+            executionInfo.execution_time_ms = executionTime;
+            if (childProcess.pid !== undefined) {
+              executionInfo.process_id = childProcess.pid;
+            }
+            executionInfo.completed_at = getCurrentTimestamp();
+
+            // 出力をFileManagerに保存
+            try {
+              const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+              executionInfo.output_id = outputFileId;
+            } catch (error) {
+              // エラーログを内部ログに記録
+            }
+
+            this.executions.set(executionId, executionInfo);
+            resolve(executionInfo);
+          }
+        }
+      });
+
+      // エラー処理
+      childProcess.on('error', (error) => {
+        clearTimeout(foregroundTimeoutHandle);
+        clearTimeout(finalTimeoutHandle);
+        this.processes.delete(childProcess.pid!);
+
+        if (!backgroundTransitionReason) {
+          const executionInfo = this.executions.get(executionId);
+          if (executionInfo) {
+            executionInfo.status = 'failed';
+            executionInfo.completed_at = getCurrentTimestamp();
+            executionInfo.execution_time_ms = Date.now() - startTime;
+            this.executions.set(executionId, executionInfo);
+          }
+
+          reject(
+            new ExecutionError(`Process execution failed: ${error.message}`, {
+              originalError: error.message,
+            })
+          );
+        }
+      });
+    });
   }
 
   private async executeBackgroundCommand(
@@ -483,6 +667,70 @@ export class ProcessManager {
         executionInfo.status = 'failed';
         executionInfo.execution_time_ms = Date.now() - startTime;
         executionInfo.completed_at = getCurrentTimestamp();
+        this.executions.set(executionId, executionInfo);
+      }
+    });
+  }
+
+  // adaptive modeでバックグラウンドに移行したプロセスの処理
+  private handleAdaptiveBackgroundTransition(
+    executionId: string,
+    childProcess: ChildProcess,
+    options: ExecutionOptions
+  ): void {
+    // タイムアウトの設定（最終タイムアウト）
+    const timeout = setTimeout(async () => {
+      childProcess.kill('SIGTERM');
+      setTimeout(() => {
+        if (!childProcess.killed) {
+          childProcess.kill('SIGKILL');
+        }
+      }, 5000);
+
+      const executionInfo = this.executions.get(executionId);
+      if (executionInfo) {
+        executionInfo.status = 'timeout';
+        executionInfo.completed_at = getCurrentTimestamp();
+        
+        // 既存の出力は保持（adaptive modeで既にキャプチャ済み）
+        this.executions.set(executionId, executionInfo);
+      }
+    }, options.timeoutSeconds * 1000);
+
+    // プロセス終了時の処理
+    childProcess.on('close', async (code) => {
+      clearTimeout(timeout);
+      this.processes.delete(childProcess.pid!);
+
+      const executionInfo = this.executions.get(executionId);
+      if (executionInfo) {
+        executionInfo.status = 'completed';
+        executionInfo.exit_code = code || 0;
+        executionInfo.completed_at = getCurrentTimestamp();
+        
+        // 実行時間は全体（フォアグラウンド + バックグラウンド）で計算
+        if (executionInfo.started_at) {
+          const startTime = new Date(executionInfo.started_at).getTime();
+          executionInfo.execution_time_ms = Date.now() - startTime;
+        }
+
+        this.executions.set(executionId, executionInfo);
+      }
+    });
+
+    childProcess.on('error', () => {
+      clearTimeout(timeout);
+      this.processes.delete(childProcess.pid!);
+      const executionInfo = this.executions.get(executionId);
+      if (executionInfo) {
+        executionInfo.status = 'failed';
+        executionInfo.completed_at = getCurrentTimestamp();
+        
+        if (executionInfo.started_at) {
+          const startTime = new Date(executionInfo.started_at).getTime();
+          executionInfo.execution_time_ms = Date.now() - startTime;
+        }
+        
         this.executions.set(executionId, executionInfo);
       }
     });

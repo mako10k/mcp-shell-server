@@ -346,15 +346,24 @@ Regular command execution:
 }
 ```
 
-Adaptive execution with timeout handling:
+Adaptive execution with intelligent background transition:
 ```json
 {
   "command": "long-running-process",
   "execution_mode": "adaptive",
   "foreground_timeout_seconds": 10,
+  "timeout_seconds": 300,
   "return_partial_on_timeout": true
 }
 ```
+
+**Adaptive Mode Features:**
+- Automatically transitions to background when `foreground_timeout_seconds` is reached
+- Transitions to background when `max_output_size` is reached (for efficiency)
+- Returns `transition_reason` in response: `"foreground_timeout"` or `"output_size_limit"`
+- Captures partial output during transitions and saves to FileManager
+- Single process execution (no duplicate commands)
+- Respects total `timeout_seconds` limit for background phase
 
 Create new terminal session:
 ```json

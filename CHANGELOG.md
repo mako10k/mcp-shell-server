@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2025-07-15
+
+### Fixed
+- **Issue #5**: Output file creation functionality
+  - Fixed ProcessManager FileManager integration in server initialization
+  - All command outputs (regardless of size) now consistently managed by FileManager
+  - All outputs accessible via `list_execution_outputs` and `read_execution_output` tools
+  - Added synchronous directory initialization to prevent timing issues
+
+- **Issue #3**: Timeout behavior and execution mode improvements
+  - Fixed adaptive mode timeout behavior to respect user-specified `timeout_seconds`
+  - Improved adaptive mode to properly transition from foreground to background
+  - Added background process timeout handling for comprehensive execution time limits
+  - Fixed foreground timeout vs total timeout confusion
+
+- **Issue #4**: Execution mode validation and documentation
+  - Enhanced execution_mode parameter documentation with detailed behavior descriptions
+  - Improved schema validation error messages for invalid execution modes
+  - Added comprehensive usage examples for each execution mode
+
+### Added
+- **Enhanced Adaptive Mode**:
+  - `transition_reason` property in execution results (`foreground_timeout` | `output_size_limit`)
+  - Intelligent background transition when output size limit is reached
+  - Partial output capture and return during transitions
+  - Improved efficiency by avoiding unnecessary waits after output truncation
+
+### Changed
+- **Adaptive Mode Behavior**:
+  - Now uses single process instance with intelligent foreground/background transition
+  - Eliminates duplicate command execution during mode transitions
+  - More predictable and efficient resource usage
+  - Better user experience with clear transition reasons
+
 ## [2.1.1] - 2025-07-14
 
 ### Added

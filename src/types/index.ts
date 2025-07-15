@@ -87,6 +87,7 @@ export interface ExecutionInfo {
   output_truncated?: boolean;
   output_id?: string;
   terminal_id?: string;
+  transition_reason?: 'foreground_timeout' | 'output_size_limit'; // adaptive modeでバックグラウンドに移行した理由
   created_at: string;
   started_at?: string;
   completed_at?: string;
