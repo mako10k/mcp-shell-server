@@ -331,13 +331,13 @@ export class ProcessManager {
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
-    // adaptiveモード: 最初に短時間フォアグラウンドで実行し、
-    // タイムアウトした場合はバックグラウンドに移行
+    // adaptiveモード: 最初にforeground_timeout_secondsでフォアグラウンド実行し、
+    // タイムアウトした場合はバックグラウンドに移行してtimeout_secondsまで継続
     const returnPartialOnTimeout = options.returnPartialOnTimeout ?? true;
     const foregroundTimeout = options.foregroundTimeoutSeconds ?? 10;
 
     try {
-      // フォアグラウンドで実行開始（短いタイムアウトを使用）
+      // フォアグラウンドで実行開始（foreground_timeout_secondsを使用）
       const adaptiveOptions = { ...options, timeoutSeconds: foregroundTimeout };
       return await this.executeForegroundCommand(executionId, adaptiveOptions);
     } catch (error) {
@@ -350,8 +350,14 @@ export class ProcessManager {
           executionInfo.status = 'running'; // バックグラウンドで継続実行中
           this.executions.set(executionId, executionInfo);
           
-          // バックグラウンドで継続実行
-          this.executeBackgroundCommand(executionId, { ...options, executionMode: 'background' as ExecutionMode }).catch(() => {
+          // バックグラウンドで継続実行（残り時間でタイムアウト設定）
+          const remainingTime = Math.max(1, options.timeoutSeconds - foregroundTimeout);
+          const backgroundOptions = { 
+            ...options, 
+            executionMode: 'background' as ExecutionMode,
+            timeoutSeconds: remainingTime
+          };
+          this.executeBackgroundCommand(executionId, backgroundOptions).catch(() => {
             // バックグラウンド実行でエラーが発生した場合の処理
           });
           
@@ -403,6 +409,36 @@ export class ProcessManager {
     let stdout = '';
     let stderr = '';
 
+    // タイムアウトの設定（backgroundプロセス用）
+    const timeout = setTimeout(async () => {
+      childProcess.kill('SIGTERM');
+      setTimeout(() => {
+        if (!childProcess.killed) {
+          childProcess.kill('SIGKILL');
+        }
+      }, 5000);
+
+      const executionInfo = this.executions.get(executionId);
+      if (executionInfo) {
+        executionInfo.status = 'timeout';
+        executionInfo.stdout = stdout;
+        executionInfo.stderr = stderr;
+        executionInfo.output_truncated = true;
+        executionInfo.completed_at = getCurrentTimestamp();
+        executionInfo.execution_time_ms = Date.now() - startTime;
+
+        // 出力をFileManagerに保存
+        try {
+          const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+          executionInfo.output_id = outputFileId;
+        } catch (error) {
+          // エラーログを内部ログに記録
+        }
+
+        this.executions.set(executionId, executionInfo);
+      }
+    }, options.timeoutSeconds * 1000);
+
     // 出力の収集
     childProcess.stdout?.on('data', (data: Buffer) => {
       stdout += data.toString();
@@ -416,6 +452,7 @@ export class ProcessManager {
 
     // プロセス終了時の処理
     childProcess.on('close', async (code) => {
+      clearTimeout(timeout);
       this.processes.delete(childProcess.pid!);
 
       const executionInfo = this.executions.get(executionId);
@@ -439,6 +476,7 @@ export class ProcessManager {
     });
 
     childProcess.on('error', () => {
+      clearTimeout(timeout);
       this.processes.delete(childProcess.pid!);
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
