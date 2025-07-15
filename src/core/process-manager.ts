@@ -218,19 +218,13 @@ export class ProcessManager {
             executionInfo.process_id = childProcess.pid;
           }
 
-          // 大きな出力の場合はファイルに保存
-          if (
-            outputTruncated ||
-            stdout.length > options.maxOutputSize ||
-            stderr.length > options.maxOutputSize
-          ) {
-            try {
-              const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
-              executionInfo.output_id = outputFileId;
-            } catch (error) {
-              // エラーログを内部ログに記録（標準出力を避ける）
-              // console.error('Failed to save output to file:', error);
-            }
+          // 出力をFileManagerに保存（サイズに関係なく）
+          try {
+            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            executionInfo.output_id = outputFileId;
+          } catch (error) {
+            // エラーログを内部ログに記録（標準出力を避ける）
+            // console.error('Failed to save output to file:', error);
           }
 
           this.executions.set(executionId, executionInfo);
@@ -297,19 +291,13 @@ export class ProcessManager {
           }
           executionInfo.completed_at = getCurrentTimestamp();
 
-          // 大きな出力の場合はファイルに保存
-          if (
-            outputTruncated ||
-            stdout.length > options.maxOutputSize ||
-            stderr.length > options.maxOutputSize
-          ) {
-            try {
-              const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
-              executionInfo.output_id = outputFileId;
-            } catch (error) {
-              // エラーログを内部ログに記録（標準出力を避ける）
-              // console.error('Failed to save output to file:', error);
-            }
+          // 出力をFileManagerに保存（サイズに関係なく）
+          try {
+            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            executionInfo.output_id = outputFileId;
+          } catch (error) {
+            // エラーログを内部ログに記録（標準出力を避ける）
+            // console.error('Failed to save output to file:', error);
           }
 
           this.executions.set(executionId, executionInfo);

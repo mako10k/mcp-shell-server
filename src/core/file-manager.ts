@@ -6,7 +6,7 @@ import {
   getCurrentTimestamp,
   getFileSize,
   safeReadFile,
-  ensureDirectory,
+  ensureDirectorySync,
 } from '../utils/helpers.js';
 import { ResourceNotFoundError } from '../utils/errors.js';
 
@@ -18,14 +18,14 @@ export class FileManager {
   constructor(baseDir = '/tmp/mcp-shell-files', maxFiles = 10000) {
     this.baseDir = baseDir;
     this.maxFiles = maxFiles;
-    this.initializeBaseDirectory();
+    this.initializeBaseDirectorySync();
   }
 
-  private async initializeBaseDirectory(): Promise<void> {
-    await ensureDirectory(this.baseDir);
-    await ensureDirectory(path.join(this.baseDir, 'output'));
-    await ensureDirectory(path.join(this.baseDir, 'log'));
-    await ensureDirectory(path.join(this.baseDir, 'temp'));
+  private initializeBaseDirectorySync(): void {
+    ensureDirectorySync(this.baseDir);
+    ensureDirectorySync(path.join(this.baseDir, 'output'));
+    ensureDirectorySync(path.join(this.baseDir, 'log'));
+    ensureDirectorySync(path.join(this.baseDir, 'temp'));
   }
 
   async registerFile(

@@ -69,18 +69,15 @@ export class MCPShellServer {
       }
     );
 
-    // マネージャーの初期化
-    this.processManager = new ProcessManager();
-    this.terminalManager = new TerminalManager();
+    // マネージャーの初期化（FileManagerを最初に初期化）
     this.fileManager = new FileManager();
+    this.processManager = new ProcessManager(50, '/tmp/mcp-shell-outputs', this.fileManager);
+    this.terminalManager = new TerminalManager();
     this.monitoringManager = new MonitoringManager();
     this.securityManager = new SecurityManager();
 
     // ProcessManagerにTerminalManagerの参照を設定
     this.processManager.setTerminalManager(this.terminalManager);
-    
-    // ProcessManagerにFileManagerの参照を設定
-    this.processManager.setFileManager(this.fileManager);
 
     // ツールハンドラーの初期化
     this.shellTools = new ShellTools(

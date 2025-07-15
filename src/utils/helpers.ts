@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
@@ -96,6 +97,15 @@ export async function ensureDirectory(dirPath: string): Promise<void> {
     await fs.access(dirPath);
   } catch {
     await fs.mkdir(dirPath, { recursive: true });
+  }
+}
+
+// ディレクトリの作成（同期版）
+export function ensureDirectorySync(dirPath: string): void {
+  try {
+    fsSync.accessSync(dirPath);
+  } catch {
+    fsSync.mkdirSync(dirPath, { recursive: true });
   }
 }
 
