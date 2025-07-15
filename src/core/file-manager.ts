@@ -1,5 +1,4 @@
 import * as fs from 'fs/promises';
-import * as fsSync from 'fs';
 import * as path from 'path';
 import { FileInfo, OutputType } from '../types/index.js';
 import {
@@ -7,7 +6,6 @@ import {
   getCurrentTimestamp,
   getFileSize,
   safeReadFile,
-  ensureDirectory,
   ensureDirectorySync,
 } from '../utils/helpers.js';
 import { ResourceNotFoundError } from '../utils/errors.js';
