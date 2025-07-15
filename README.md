@@ -321,11 +321,15 @@ Execute shell commands with various execution modes. Can also create new interac
 
 **Parameters:**
 - `command` (required): Command to execute
-- `execution_mode`: 'foreground', 'background', 'detached', or 'adaptive' (default)
+- `execution_mode`: Execution strategy for the command:
+  - `'foreground'`: Wait for command completion within timeout_seconds. Best for quick commands
+  - `'background'`: Run asynchronously, monitor via process_list. Best for long-running processes
+  - `'detached'`: Fire-and-forget execution, minimal monitoring. Best for independent processes
+  - `'adaptive'` (default): Start foreground for foreground_timeout_seconds, then switch to background if needed. Best for unknown execution times
 - `working_directory`: Working directory
 - `environment_variables`: Environment variables
-- `timeout_seconds`: Execution timeout for foreground mode
-- `foreground_timeout_seconds`: Timeout for adaptive mode foreground phase
+- `timeout_seconds`: Maximum execution timeout (all modes respect this limit)
+- `foreground_timeout_seconds`: For adaptive mode: initial foreground phase timeout (default: 10s)
 - `return_partial_on_timeout`: Return partial output on timeout
 - `max_output_size`: Maximum output size
 - `create_terminal`: Create new interactive terminal session
@@ -342,15 +346,24 @@ Regular command execution:
 }
 ```
 
-Adaptive execution with timeout handling:
+Adaptive execution with intelligent background transition:
 ```json
 {
   "command": "long-running-process",
   "execution_mode": "adaptive",
   "foreground_timeout_seconds": 10,
+  "timeout_seconds": 300,
   "return_partial_on_timeout": true
 }
 ```
+
+**Adaptive Mode Features:**
+- Automatically transitions to background when `foreground_timeout_seconds` is reached
+- Transitions to background when `max_output_size` is reached (for efficiency)
+- Returns `transition_reason` in response: `"foreground_timeout"` or `"output_size_limit"`
+- Captures partial output during transitions and saves to FileManager
+- Single process execution (no duplicate commands)
+- Respects total `timeout_seconds` limit for background phase
 
 Create new terminal session:
 ```json

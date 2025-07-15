@@ -59,7 +59,8 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
   "execution_time_ms": "number - 実行時間（ミリ秒）",
   "process_id": "number (optional) - プロセスID（async/backgroundモードの場合）",
   "terminal_id": "string (optional) - ターミナルID（create_terminal=trueの場合）",
-  "output_file_id": "string (optional) - 出力ファイルID（大きな出力の場合）",
+  "output_id": "string (optional) - 出力ファイルID（FileManagerで管理される場合）",
+  "transition_reason": "string (optional) - adaptiveモードでのバックグラウンド移行理由: 'foreground_timeout' | 'output_size_limit'",
   "created_at": "string - 実行開始時刻（ISO8601形式）",
   "completed_at": "string (optional) - 実行完了時刻（ISO8601形式）"
 }
