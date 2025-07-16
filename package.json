@@ -1,9 +1,19 @@
 {
-  "name": "mcp-shell-server",
+  "name": "@mako10k/mcp-shell-server",
   "version": "2.1.2",
-  "description": "MCP Shell Server - Secure shell operations and terminal management",
+  "description": "MCP Shell Server - Secure shell operations and terminal management for Model Context Protocol",
   "main": "dist/index.js",
   "type": "module",
+  "bin": {
+    "mcp-shell-server": "./dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE",
+    "examples/",
+    "docs/"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",

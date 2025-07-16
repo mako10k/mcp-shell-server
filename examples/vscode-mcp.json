@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "mcp-shell-server": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@mako10k/mcp-shell-server"],
+      "env": {
+        "MCP_SHELL_DEFAULT_WORKDIR": "${workspaceFolder}",
+        "MCP_SHELL_ALLOWED_WORKDIRS": "${workspaceFolder},/tmp"
+      }
+    }
+  }
+}

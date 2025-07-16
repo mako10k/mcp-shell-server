@@ -5,8 +5,61 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-0.6.0-purple.svg)](https://modelcontextprotocol.io/)
+[![npm](https://img.shields.io/npm/v/@mako10k/mcp-shell-server.svg)](https://www.npmjs.com/package/@mako10k/mcp-shell-server)
 
 A secure and comprehensive Model Context Protocol (MCP) server for shell operations, terminal management, and process control.
+
+## 🚀 Quick Start
+
+### Installation
+
+```bash
+npm install -g @mako10k/mcp-shell-server
+```
+
+### Configuration for Popular MCP Clients
+
+#### Claude Desktop
+```json
+{
+  "mcpServers": {
+    "mcp-shell-server": {
+      "command": "npx",
+      "args": ["@mako10k/mcp-shell-server"]
+    }
+  }
+}
+```
+
+#### VS Code with GitHub Copilot
+Create `.vscode/mcp.json`:
+```json
+{
+  "servers": {
+    "mcp-shell-server": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@mako10k/mcp-shell-server"]
+    }
+  }
+}
+```
+
+#### Cursor
+Add to MCP settings:
+```json
+{
+  "servers": {
+    "mcp-shell-server": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@mako10k/mcp-shell-server"]
+    }
+  }
+}
+```
+
+📚 **[Detailed Setup Guides](docs/setup/)** | 📁 **[Configuration Examples](examples/)**
 
 ## 🎉 Status: Production Ready
 
