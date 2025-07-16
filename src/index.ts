@@ -36,10 +36,9 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error) => {
-    // console.error('Fatal error:', error);
-    logger.error('Fatal error', { error: String(error) }, 'main');
-    process.exit(1);
-  });
-}
+// メイン実行時の判定 - 常に実行（ライブラリとして使用される場合は除く）
+main().catch((error) => {
+  // console.error('Fatal error:', error);
+  logger.error('Fatal error', { error: String(error) }, 'main');
+  process.exit(1);
+});

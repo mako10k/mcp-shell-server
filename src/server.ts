@@ -342,6 +342,20 @@ export class MCPShellServer {
     await this.server.connect(transport);
     // console.error('MCP Shell Server running on stdio');
     logger.info('MCP Shell Server running on stdio', {}, 'server');
+    
+    // MCPサーバーを実行し続けるために無限に待機
+    // MCPクライアントとの接続が切れるまで待機し続ける
+    return new Promise<void>((resolve) => {
+      // プロセス終了時にresolveする
+      process.on('SIGINT', resolve);
+      process.on('SIGTERM', resolve);
+      
+      // transportの終了を監視
+      transport.onclose = () => {
+        logger.info('Transport closed, shutting down server', {}, 'server');
+        resolve();
+      };
+    });
   }
 
   async cleanup(): Promise<void> {
