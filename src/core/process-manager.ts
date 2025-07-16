@@ -8,6 +8,7 @@ import {
   ExecutionStatus,
   ProcessSignal,
   EnvironmentVariables,
+  OutputTruncationReason,
 } from '../types/index.js';
 import {
   generateId,
@@ -211,7 +212,6 @@ export class ProcessManager {
           executionInfo.status = 'timeout';
           executionInfo.stdout = sanitizeString(stdout);
           executionInfo.stderr = sanitizeString(stderr);
-          executionInfo.output_truncated = outputTruncated;
           executionInfo.completed_at = getCurrentTimestamp();
           executionInfo.execution_time_ms = executionTime;
           if (childProcess.pid !== undefined) {
@@ -219,13 +219,17 @@ export class ProcessManager {
           }
 
           // 出力をFileManagerに保存（サイズに関係なく）
+          let outputFileId: string | undefined;
           try {
-            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // エラーログを内部ログに記録（標準出力を避ける）
             // console.error('Failed to save output to file:', error);
           }
+
+          // 出力状態の詳細情報を設定
+          this.setOutputStatus(executionInfo, outputTruncated, 'timeout', outputFileId);
 
           this.executions.set(executionId, executionInfo);
 
@@ -284,7 +288,6 @@ export class ProcessManager {
           executionInfo.exit_code = code || 0;
           executionInfo.stdout = sanitizeString(stdout);
           executionInfo.stderr = sanitizeString(stderr);
-          executionInfo.output_truncated = outputTruncated;
           executionInfo.execution_time_ms = executionTime;
           if (childProcess.pid !== undefined) {
             executionInfo.process_id = childProcess.pid;
@@ -292,12 +295,21 @@ export class ProcessManager {
           executionInfo.completed_at = getCurrentTimestamp();
 
           // 出力をFileManagerに保存（サイズに関係なく）
+          let outputFileId: string | undefined;
           try {
-            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // エラーログを内部ログに記録（標準出力を避ける）
             // console.error('Failed to save output to file:', error);
+          }
+
+          // 出力状態の詳細情報を設定（完了時は出力サイズ制限による切り捨てのみチェック）
+          const truncationReason = outputTruncated ? 'size_limit' : undefined;
+          if (truncationReason) {
+            this.setOutputStatus(executionInfo, outputTruncated, truncationReason, outputFileId);
+          } else {
+            this.setOutputStatus(executionInfo, false, 'size_limit', outputFileId); // reasonは使用されない
           }
 
           this.executions.set(executionId, executionInfo);
@@ -410,7 +422,6 @@ export class ProcessManager {
 
         const executionInfo = this.executions.get(executionId);
         if (executionInfo) {
-          executionInfo.output_truncated = outputTruncated;
           executionInfo.status = 'running';
           executionInfo.stdout = sanitizeString(stdout);
           executionInfo.stderr = sanitizeString(stderr);
@@ -427,12 +438,16 @@ export class ProcessManager {
           }
 
           // 出力をFileManagerに保存
+          let outputFileId: string | undefined;
           try {
-            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // エラーログを内部ログに記録
           }
+
+          // 出力状態の詳細情報を設定（バックグラウンド移行）
+          this.setOutputStatus(executionInfo, outputTruncated, 'background_transition', outputFileId);
 
           this.executions.set(executionId, executionInfo);
 
@@ -829,6 +844,58 @@ export class ProcessManager {
     // FileManagerを使用して出力ファイルを作成
     const combinedOutput = stdout + (stderr ? '\n--- STDERR ---\n' + stderr : '');
     return await this.fileManager.createOutputFile(combinedOutput, executionId);
+  }
+
+  /**
+   * 出力状態の詳細情報を設定するヘルパー関数
+   */
+  private setOutputStatus(
+    executionInfo: ExecutionInfo, 
+    outputTruncated: boolean, 
+    reason: OutputTruncationReason,
+    outputId?: string
+  ): void {
+    executionInfo.output_truncated = outputTruncated;
+    
+    if (outputTruncated) {
+      executionInfo.truncation_reason = reason;
+      executionInfo.output_status = {
+        complete: false,
+        reason: reason,
+        available_via_output_id: !!outputId,
+        recommended_action: outputId ? 'use_read_execution_output' : undefined
+      };
+
+      // 状況に応じたメッセージとアクションの設定
+      switch (reason) {
+        case 'timeout':
+          executionInfo.message = `Command timed out. ${outputId ? 'Use read_execution_output with output_id for complete results.' : 'Partial output available.'}`;
+          if (outputId) {
+            executionInfo.next_steps = ['Use read_execution_output to get complete output'];
+          }
+          break;
+        case 'size_limit':
+          executionInfo.message = `Output exceeded size limit. ${outputId ? 'Complete output available via output_id.' : 'Output was truncated.'}`;
+          if (outputId) {
+            executionInfo.next_steps = ['Use read_execution_output to get complete output'];
+          }
+          break;
+        case 'background_transition':
+          executionInfo.message = 'Command moved to background execution. Use process_list to monitor progress.';
+          executionInfo.next_steps = ['Use process_list to check status', 'Use read_execution_output when completed'];
+          break;
+        default:
+          executionInfo.message = `Output truncated due to ${reason}. ${outputId ? 'Complete output may be available via output_id.' : ''}`;
+          if (outputId) {
+            executionInfo.next_steps = ['Use read_execution_output to get complete output'];
+          }
+      }
+    } else {
+      executionInfo.output_status = {
+        complete: true,
+        available_via_output_id: !!outputId
+      };
+    }
   }
 
   getExecution(executionId: string): ExecutionInfo | undefined {

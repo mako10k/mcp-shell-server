@@ -68,6 +68,17 @@ export interface TerminalOptions {
   autoSaveHistory?: boolean;
 }
 
+// 出力切り捨て理由
+export type OutputTruncationReason = 'size_limit' | 'timeout' | 'user_interrupt' | 'error' | 'background_transition';
+
+// 出力状態情報
+export interface OutputStatus {
+  complete: boolean;
+  reason?: OutputTruncationReason;
+  available_via_output_id: boolean;
+  recommended_action?: string | undefined;
+}
+
 // 実行情報
 export interface ExecutionInfo {
   execution_id: string;
@@ -84,10 +95,14 @@ export interface ExecutionInfo {
   cpu_usage_percent?: number;
   stdout?: string;
   stderr?: string;
-  output_truncated?: boolean;
+  output_truncated?: boolean; // 後方互換性のため残す
+  output_status?: OutputStatus; // 新しい詳細な出力状態
   output_id?: string;
   terminal_id?: string;
   transition_reason?: 'foreground_timeout' | 'output_size_limit'; // adaptive modeでバックグラウンドに移行した理由
+  truncation_reason?: OutputTruncationReason; // 出力切り捨ての具体的理由
+  next_steps?: string[]; // LLMへの推奨アクション
+  message?: string; // 状況説明メッセージ
   created_at: string;
   started_at?: string;
   completed_at?: string;
