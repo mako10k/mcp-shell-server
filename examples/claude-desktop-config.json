@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "mcp-shell-server": {
-      "command": "npx",
-      "args": ["@mako10k/mcp-shell-server"],
+      "command": "mcp-shell-server",
       "env": {
         "MCP_SHELL_DEFAULT_WORKDIR": "/Users/yourusername/projects",
         "MCP_SHELL_ALLOWED_WORKDIRS": "/Users/yourusername/projects,/tmp"

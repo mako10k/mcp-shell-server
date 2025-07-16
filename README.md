@@ -13,8 +13,19 @@ A secure and comprehensive Model Context Protocol (MCP) server for shell operati
 
 ### Installation
 
+Choose your preferred installation method:
+
+#### Global Installation (Recommended)
 ```bash
 npm install -g @mako10k/mcp-shell-server
+```
+
+#### Local Development Installation
+```bash
+git clone https://github.com/mako10k/mcp-shell-server.git
+cd mcp-shell-server
+npm install
+npm run build
 ```
 
 ### Configuration for Popular MCP Clients
@@ -24,12 +35,13 @@ npm install -g @mako10k/mcp-shell-server
 {
   "mcpServers": {
     "mcp-shell-server": {
-      "command": "npx",
-      "args": ["@mako10k/mcp-shell-server"]
+      "command": "mcp-shell-server"
     }
   }
 }
 ```
+
+*Note: After global installation, you can use `mcp-shell-server` directly or `npx @mako10k/mcp-shell-server`*
 
 #### VS Code with GitHub Copilot
 Create `.vscode/mcp.json`:
@@ -38,8 +50,7 @@ Create `.vscode/mcp.json`:
   "servers": {
     "mcp-shell-server": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["@mako10k/mcp-shell-server"]
+      "command": "mcp-shell-server"
     }
   }
 }
@@ -52,8 +63,7 @@ Add to MCP settings:
   "servers": {
     "mcp-shell-server": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["@mako10k/mcp-shell-server"]
+      "command": "mcp-shell-server"
     }
   }
 }
