@@ -14,6 +14,7 @@ import { MonitoringManager } from './core/monitoring-manager.js';
 import { SecurityManager } from './security/manager.js';
 import { ShellTools } from './tools/shell-tools.js';
 import { logger } from './utils/helpers.js';
+import { ExecutionInfo } from './types/index.js';
 
 import {
   ShellExecuteParamsSchema,
@@ -65,6 +66,7 @@ export class MCPShellServer {
       {
         capabilities: {
           tools: {},
+          logging: {}, // ログ通知機能を有効化
         },
       }
     );
@@ -78,6 +80,19 @@ export class MCPShellServer {
 
     // ProcessManagerにTerminalManagerの参照を設定
     this.processManager.setTerminalManager(this.terminalManager);
+
+    // バックグラウンドプロセス終了時のコールバックを設定
+    this.processManager.setBackgroundProcessCallbacks({
+      onComplete: async (executionId: string, executionInfo) => {
+        await this.notifyBackgroundProcessComplete(executionId, executionInfo);
+      },
+      onError: async (executionId: string, executionInfo, error) => {
+        await this.notifyBackgroundProcessError(executionId, executionInfo, error);
+      },
+      onTimeout: async (executionId: string, executionInfo) => {
+        await this.notifyBackgroundProcessTimeout(executionId, executionInfo);
+      }
+    });
 
     // ツールハンドラーの初期化
     this.shellTools = new ShellTools(
@@ -335,6 +350,109 @@ export class MCPShellServer {
         throw error;
       }
     });
+  }
+
+  // バックグラウンドプロセス終了時の通知メソッド
+  private async notifyBackgroundProcessComplete(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
+    // コマンドの先頭40文字で識別しやすくする
+    const commandPreview = executionInfo.command.length > 40 
+      ? `${executionInfo.command.substring(0, 37)}...`
+      : executionInfo.command;
+    
+    // 出力サイズを計算
+    const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);
+    const outputSizeStr = outputSize > 0 ? ` (${outputSize} bytes)` : '';
+    
+    const message = `✅ Background process completed: ${commandPreview} | Exit: ${executionInfo.exit_code || 0} | Time: ${executionInfo.execution_time_ms}ms${outputSizeStr}`;
+    
+    logger.info('Background process completed successfully', {
+      execution_id: executionId,
+      command: executionInfo.command,
+      exit_code: executionInfo.exit_code,
+      execution_time_ms: executionInfo.execution_time_ms,
+      output_size: outputSize
+    }, 'background-process');
+    
+    // MCPクライアントに通知を送信
+    try {
+      await this.server.notification({
+        method: 'notifications/message',
+        params: {
+          level: 'info',
+          data: message
+        }
+      });
+    } catch (error) {
+      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
+      console.error(`[INFO] ${message}`);
+    }
+  }
+
+  private async notifyBackgroundProcessError(executionId: string, executionInfo: ExecutionInfo, error?: Error): Promise<void> {
+    const commandPreview = executionInfo.command.length > 40 
+      ? `${executionInfo.command.substring(0, 37)}...`
+      : executionInfo.command;
+    
+    const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);
+    const outputSizeStr = outputSize > 0 ? ` (${outputSize} bytes)` : '';
+    
+    const message = `❌ Background process failed: ${commandPreview} | Status: ${executionInfo.status} | Time: ${executionInfo.execution_time_ms}ms${outputSizeStr}`;
+    
+    logger.error('Background process failed', {
+      execution_id: executionId,
+      command: executionInfo.command,
+      status: executionInfo.status,
+      execution_time_ms: executionInfo.execution_time_ms,
+      error: error?.message,
+      output_size: outputSize
+    }, 'background-process');
+    
+    // MCPクライアントに通知を送信
+    try {
+      await this.server.notification({
+        method: 'notifications/message',
+        params: {
+          level: 'error',
+          data: message
+        }
+      });
+    } catch (notificationError) {
+      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
+      console.error(`[ERROR] ${message}`);
+    }
+  }
+
+  private async notifyBackgroundProcessTimeout(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
+    const commandPreview = executionInfo.command.length > 40 
+      ? `${executionInfo.command.substring(0, 37)}...`
+      : executionInfo.command;
+    
+    const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);
+    const outputSizeStr = outputSize > 0 ? ` (${outputSize} bytes)` : '';
+    
+    const message = `⏰ Background process timeout: ${commandPreview} | Time: ${executionInfo.execution_time_ms}ms${outputSizeStr}`;
+    
+    logger.warn('Background process timed out', {
+      execution_id: executionId,
+      command: executionInfo.command,
+      status: executionInfo.status,
+      execution_time_ms: executionInfo.execution_time_ms,
+      output_size: outputSize
+    }, 'background-process');
+    
+    // MCPクライアントに通知を送信
+    try {
+      await this.server.notification({
+        method: 'notifications/message',
+        params: {
+          level: 'warning',
+          data: message
+        }
+      });
+    } catch (error) {
+      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
+      console.error(`[WARN] ${message}`);
+    }
   }
 
   async run(): Promise<void> {

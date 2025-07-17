@@ -1,6 +1,6 @@
 {
   "name": "@mako10k/mcp-shell-server",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "description": "MCP Shell Server - Secure shell operations and terminal management for Model Context Protocol",
   "main": "dist/index.js",
   "type": "module",

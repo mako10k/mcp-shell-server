@@ -43,6 +43,13 @@ export interface ExecutionOptions {
   returnPartialOnTimeout?: boolean;
 }
 
+// バックグラウンドプロセス終了時のコールバック型
+interface BackgroundProcessCallback {
+  onComplete?: (executionId: string, executionInfo: ExecutionInfo) => void | Promise<void>;
+  onError?: (executionId: string, executionInfo: ExecutionInfo, error: any) => void | Promise<void>;
+  onTimeout?: (executionId: string, executionInfo: ExecutionInfo) => void | Promise<void>;
+}
+
 export class ProcessManager {
   private executions = new Map<string, ExecutionInfo>();
   private processes = new Map<number, ChildProcess>();
@@ -52,6 +59,7 @@ export class ProcessManager {
   private fileManager: FileManager | undefined; // FileManager への参照
   private defaultWorkingDirectory: string;
   private allowedWorkingDirectories: string[];
+  private backgroundProcessCallbacks: BackgroundProcessCallback = {}; // バックグラウンドプロセス終了コールバック
 
   constructor(maxConcurrentProcesses = 50, outputDir = '/tmp/mcp-shell-outputs', fileManager?: FileManager) {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
@@ -72,6 +80,11 @@ export class ProcessManager {
   // FileManager への参照を設定
   setFileManager(fileManager: FileManager): void {
     this.fileManager = fileManager;
+  }
+
+  // バックグラウンドプロセス終了時のコールバックを設定
+  setBackgroundProcessCallbacks(callbacks: BackgroundProcessCallback): void {
+    this.backgroundProcessCallbacks = callbacks;
   }
 
   private async initializeOutputDirectory(): Promise<void> {
@@ -635,6 +648,21 @@ export class ProcessManager {
         }
 
         this.executions.set(executionId, executionInfo);
+        
+        // バックグラウンドプロセスタイムアウトのコールバック呼び出し
+        if (this.backgroundProcessCallbacks.onTimeout) {
+          setImmediate(async () => {
+            try {
+              const result = this.backgroundProcessCallbacks.onTimeout!(executionId, executionInfo);
+              if (result instanceof Promise) {
+                await result;
+              }
+            } catch (callbackError) {
+              // コールバックエラーは内部ログに記録のみ
+              // console.error('Background process timeout callback error:', callbackError);
+            }
+          });
+        }
       }
     }, options.timeoutSeconds * 1000);
 
@@ -671,10 +699,25 @@ export class ProcessManager {
         }
 
         this.executions.set(executionId, executionInfo);
+        
+        // バックグラウンドプロセス正常終了のコールバック呼び出し
+        if (this.backgroundProcessCallbacks.onComplete) {
+          setImmediate(async () => {
+            try {
+              const result = this.backgroundProcessCallbacks.onComplete!(executionId, executionInfo);
+              if (result instanceof Promise) {
+                await result;
+              }
+            } catch (callbackError) {
+              // コールバックエラーは内部ログに記録のみ
+              // console.error('Background process completion callback error:', callbackError);
+            }
+          });
+        }
       }
     });
 
-    childProcess.on('error', () => {
+    childProcess.on('error', (error) => {
       clearTimeout(timeout);
       this.processes.delete(childProcess.pid!);
       const executionInfo = this.executions.get(executionId);
@@ -683,6 +726,21 @@ export class ProcessManager {
         executionInfo.execution_time_ms = Date.now() - startTime;
         executionInfo.completed_at = getCurrentTimestamp();
         this.executions.set(executionId, executionInfo);
+        
+        // バックグラウンドプロセスエラーのコールバック呼び出し
+        if (this.backgroundProcessCallbacks.onError) {
+          setImmediate(async () => {
+            try {
+              const result = this.backgroundProcessCallbacks.onError!(executionId, executionInfo, error);
+              if (result instanceof Promise) {
+                await result;
+              }
+            } catch (callbackError) {
+              // コールバックエラーは内部ログに記録のみ
+              // console.error('Background process error callback error:', callbackError);
+            }
+          });
+        }
       }
     });
   }
@@ -730,10 +788,25 @@ export class ProcessManager {
         }
 
         this.executions.set(executionId, executionInfo);
+        
+        // adaptive modeバックグラウンドプロセス正常終了のコールバック呼び出し
+        if (this.backgroundProcessCallbacks.onComplete) {
+          setImmediate(async () => {
+            try {
+              const result = this.backgroundProcessCallbacks.onComplete!(executionId, executionInfo);
+              if (result instanceof Promise) {
+                await result;
+              }
+            } catch (callbackError) {
+              // コールバックエラーは内部ログに記録のみ
+              // console.error('Adaptive background process completion callback error:', callbackError);
+            }
+          });
+        }
       }
     });
 
-    childProcess.on('error', () => {
+    childProcess.on('error', (error) => {
       clearTimeout(timeout);
       this.processes.delete(childProcess.pid!);
       const executionInfo = this.executions.get(executionId);
@@ -747,6 +820,21 @@ export class ProcessManager {
         }
         
         this.executions.set(executionId, executionInfo);
+        
+        // adaptive modeバックグラウンドプロセスエラーのコールバック呼び出し
+        if (this.backgroundProcessCallbacks.onError) {
+          setImmediate(async () => {
+            try {
+              const result = this.backgroundProcessCallbacks.onError!(executionId, executionInfo, error);
+              if (result instanceof Promise) {
+                await result;
+              }
+            } catch (callbackError) {
+              // コールバックエラーは内部ログに記録のみ
+              // console.error('Adaptive background process error callback error:', callbackError);
+            }
+          });
+        }
       }
     });
   }
@@ -811,6 +899,46 @@ export class ProcessManager {
         }
 
         this.executions.set(executionId, executionInfo);
+        
+        // detachedプロセス正常終了のコールバック呼び出し
+        if (this.backgroundProcessCallbacks.onComplete) {
+          setImmediate(async () => {
+            try {
+              const result = this.backgroundProcessCallbacks.onComplete!(executionId, executionInfo);
+              if (result instanceof Promise) {
+                await result;
+              }
+            } catch (callbackError) {
+              // コールバックエラーは内部ログに記録のみ
+              // console.error('Detached process completion callback error:', callbackError);
+            }
+          });
+        }
+      }
+    });
+
+    childProcess.on('error', (error) => {
+      const executionInfo = this.executions.get(executionId);
+      if (executionInfo) {
+        executionInfo.status = 'failed';
+        executionInfo.execution_time_ms = Date.now() - startTime;
+        executionInfo.completed_at = getCurrentTimestamp();
+        this.executions.set(executionId, executionInfo);
+        
+        // detachedプロセスエラーのコールバック呼び出し
+        if (this.backgroundProcessCallbacks.onError) {
+          setImmediate(async () => {
+            try {
+              const result = this.backgroundProcessCallbacks.onError!(executionId, executionInfo, error);
+              if (result instanceof Promise) {
+                await result;
+              }
+            } catch (callbackError) {
+              // コールバックエラーは内部ログに記録のみ
+              // console.error('Detached process error callback error:', callbackError);
+            }
+          });
+        }
       }
     });
 
