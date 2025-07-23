@@ -623,4 +623,267 @@ describe('MCP Shell Server Components', () => {
       }
     });
   });
+
+  // Issue #9対応: 出力データ取得の透明性問題の診断テスト
+  describe('Output Retrieval Transparency (Issue #9)', () => {
+    describe('FileManager output file registration', () => {
+      it('should correctly register output files in memory map', async () => {
+        const result = await processManager.executeCommand({
+          command: 'echo "test registration"',
+          executionMode: 'foreground',
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        // コマンドが成功していることを確認
+        expect(result.status).toBe('completed');
+        expect(result.exit_code).toBe(0);
+        expect(result.stdout).toContain('test registration');
+
+        // output_idが設定されていることを確認
+        expect(result.output_id).toBeDefined();
+        
+        if (result.output_id) {
+          // FileManagerにファイル情報が登録されていることを確認
+          const fileInfo = fileManager.getFile(result.output_id);
+          expect(fileInfo).toBeDefined();
+          expect(fileInfo.output_id).toBe(result.output_id);
+          expect(fileInfo.output_type).toBe('combined');
+          
+          console.log('FileManager registration test - File info:', JSON.stringify(fileInfo, null, 2));
+        }
+      });
+
+      it('should create actual files on filesystem', async () => {
+        const result = await processManager.executeCommand({
+          command: 'echo "filesystem test"',
+          executionMode: 'foreground',
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        expect(result.output_id).toBeDefined();
+        
+        if (result.output_id) {
+          const fileInfo = fileManager.getFile(result.output_id);
+          
+          // 実際のファイルが存在することを確認
+          const fs = await import('fs/promises');
+          const exists = await fs.access(fileInfo.path).then(() => true).catch(() => false);
+          expect(exists).toBe(true);
+          
+          // ファイル内容が期待通りであることを確認
+          const content = await fs.readFile(fileInfo.path, 'utf-8');
+          expect(content).toContain('filesystem test');
+          
+          console.log('Filesystem test - File path:', fileInfo.path);
+          console.log('Filesystem test - File content:', content);
+        }
+      });
+    });
+
+    describe('read_execution_output functionality', () => {
+      it('should retrieve output content correctly', async () => {
+        const testContent = 'output retrieval test';
+        const result = await processManager.executeCommand({
+          command: `echo "${testContent}"`,
+          executionMode: 'foreground',
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        expect(result.output_id).toBeDefined();
+        
+        if (result.output_id) {
+          // ShellToolsを使って出力を読み取り
+          const readResult = await shellTools.readFile({
+            output_id: result.output_id,
+            offset: 0,
+            size: 8192,
+            encoding: 'utf-8',
+          });
+
+          console.log('Read execution output test - Result:', JSON.stringify(readResult, null, 2));
+          
+          // 内容が正しく取得できることを確認
+          expect(readResult.content).toContain(testContent);
+          expect(readResult.output_id).toBe(result.output_id);
+          expect(readResult.size).toBeGreaterThan(0);
+          expect(readResult.total_size).toBeGreaterThan(0);
+        }
+      });
+
+      it('should handle timing issues properly', async () => {
+        const result = await processManager.executeCommand({
+          command: 'echo "timing test" && sleep 0.1',
+          executionMode: 'foreground',
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        expect(result.output_id).toBeDefined();
+        
+        if (result.output_id) {
+          // 即座に読み取り
+          const immediateRead = await shellTools.readFile({
+            output_id: result.output_id,
+            offset: 0,
+            size: 8192,
+            encoding: 'utf-8',
+          });
+
+          // 少し待ってから再度読み取り
+          await new Promise(resolve => setTimeout(resolve, 200));
+          const delayedRead = await shellTools.readFile({
+            output_id: result.output_id,
+            offset: 0,
+            size: 8192,
+            encoding: 'utf-8',
+          });
+
+          console.log('Timing test - Immediate read:', JSON.stringify(immediateRead, null, 2));
+          console.log('Timing test - Delayed read:', JSON.stringify(delayedRead, null, 2));
+          
+          // 両方とも内容が取得できることを確認
+          expect(immediateRead.content).toContain('timing test');
+          expect(delayedRead.content).toContain('timing test');
+          expect(immediateRead.content).toBe(delayedRead.content);
+        }
+      });
+
+      it('should provide clear error messages for invalid output_id', async () => {
+        const invalidId = 'invalid-output-id-12345';
+        
+        await expect(shellTools.readFile({
+          output_id: invalidId,
+          offset: 0,
+          size: 8192,
+          encoding: 'utf-8',
+        })).rejects.toThrow();
+      });
+
+      it('should handle empty command output transparently', async () => {
+        const result = await processManager.executeCommand({
+          command: 'true', // コマンドは成功するが出力は空
+          executionMode: 'foreground',
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        expect(result.status).toBe('completed');
+        expect(result.exit_code).toBe(0);
+        expect(result.stdout).toBe(''); // 出力は空
+        expect(result.output_id).toBeDefined();
+        
+        if (result.output_id) {
+          const readResult = await shellTools.readFile({
+            output_id: result.output_id,
+            offset: 0,
+            size: 8192,
+            encoding: 'utf-8',
+          });
+
+          console.log('Empty output test - Result:', JSON.stringify(readResult, null, 2));
+          
+          // 空の内容でも正常に処理されることを確認
+          expect(readResult.content).toBe('');
+          expect(readResult.size).toBe(0);
+          expect(readResult.total_size).toBe(0);
+          expect(readResult.output_id).toBe(result.output_id);
+        }
+      });
+    });
+
+    describe('Specific lint command scenarios', () => {
+      it('should handle eslint command output correctly', async () => {
+        const result = await processManager.executeCommand({
+          command: 'npx eslint --version',
+          executionMode: 'foreground',
+          timeoutSeconds: 10,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        console.log('ESLint version test - Command result:', JSON.stringify(result, null, 2));
+
+        if (result.output_id) {
+          const readResult = await shellTools.readFile({
+            output_id: result.output_id,
+            offset: 0,
+            size: 8192,
+            encoding: 'utf-8',
+          });
+
+          console.log('ESLint version test - Read result:', JSON.stringify(readResult, null, 2));
+          
+          // 出力が取得できることを確認
+          expect(readResult.content).toBeTruthy();
+          expect(readResult.size).toBeGreaterThan(0);
+        }
+      });
+
+      it('should handle lint command with stderr output', async () => {
+        // 存在しないファイルをlintして意図的にエラーを発生
+        const result = await processManager.executeCommand({
+          command: 'npx eslint nonexistent-file.js',
+          executionMode: 'foreground',
+          timeoutSeconds: 10,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        console.log('ESLint error test - Command result:', JSON.stringify(result, null, 2));
+
+        // コマンドはエラーで終了するが、出力は取得できるはず
+        expect(result.status).toBe('completed');
+        expect(result.output_id).toBeDefined();
+
+        if (result.output_id) {
+          const readResult = await shellTools.readFile({
+            output_id: result.output_id,
+            offset: 0,
+            size: 8192,
+            encoding: 'utf-8',
+          });
+
+          console.log('ESLint error test - Read result:', JSON.stringify(readResult, null, 2));
+          
+          // エラー出力も含めて取得できることを確認
+          expect(readResult.content).toBeTruthy();
+        }
+      });
+
+      it('should handle long-running lint command', async () => {
+        // 全てのファイルをlintして時間のかかる処理をテスト
+        const result = await processManager.executeCommand({
+          command: 'npx eslint src/**/*.ts --format compact --no-warn-ignored 2>&1 || true',
+          executionMode: 'foreground',
+          timeoutSeconds: 30,
+          maxOutputSize: 16384,
+          captureStderr: true,
+        });
+
+        console.log('Long lint test - Command result:', JSON.stringify(result, null, 2));
+
+        if (result.output_id) {
+          const readResult = await shellTools.readFile({
+            output_id: result.output_id,
+            offset: 0,
+            size: 16384,
+            encoding: 'utf-8',
+          });
+
+          console.log('Long lint test - Read result:', JSON.stringify(readResult, null, 2));
+          
+          // 長い出力も取得できることを確認
+          expect(readResult.output_id).toBe(result.output_id);
+        }
+      });
+    });
+  });
 });
