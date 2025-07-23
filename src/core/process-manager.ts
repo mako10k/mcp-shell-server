@@ -25,6 +25,10 @@ import {
 } from '../utils/errors.js';
 import type { TerminalManager } from './terminal-manager.js';
 import type { FileManager } from './file-manager.js';
+import { StreamPublisher } from './stream-publisher.js';
+import { FileStorageSubscriber } from './file-storage-subscriber.js';
+import { StreamingPipelineReader } from './streaming-pipeline-reader.js';
+import { RealtimeStreamSubscriber } from './realtime-stream-subscriber.js';
 
 export interface ExecutionOptions {
   command: string;
@@ -61,6 +65,12 @@ export class ProcessManager {
   private defaultWorkingDirectory: string;
   private allowedWorkingDirectories: string[];
   private backgroundProcessCallbacks: BackgroundProcessCallback = {}; // バックグラウンドプロセス終了コールバック
+  
+  // Issue #13: PUB/SUB統合 - Feature Flag付きで段階的統合
+  private streamPublisher: StreamPublisher;
+  private fileStorageSubscriber: FileStorageSubscriber | undefined;
+  private realtimeStreamSubscriber: RealtimeStreamSubscriber | undefined;
+  private enableStreaming: boolean = false; // Feature Flag
 
   constructor(maxConcurrentProcesses = 50, outputDir = '/tmp/mcp-shell-outputs', fileManager?: FileManager) {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
@@ -70,6 +80,20 @@ export class ProcessManager {
     this.allowedWorkingDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS'] 
       ? process.env['MCP_SHELL_ALLOWED_WORKDIRS'].split(',').map(dir => dir.trim())
       : [process.cwd()];
+    
+    // StreamPublisher初期化
+    this.streamPublisher = new StreamPublisher({
+      enableRealtimeStreaming: false, // 初期状態は無効
+      bufferSize: 8192,
+      notificationInterval: 100
+    });
+    
+    // 環境変数でStreaming機能を制御（段階的展開、デフォルト有効）
+    this.enableStreaming = process.env['MCP_SHELL_ENABLE_STREAMING'] !== 'false';
+    
+    if (this.enableStreaming) {
+      this.initializeStreamingComponents();
+    }
     this.initializeOutputDirectory();
   }
 
@@ -81,11 +105,72 @@ export class ProcessManager {
   // FileManager への参照を設定
   setFileManager(fileManager: FileManager): void {
     this.fileManager = fileManager;
+    
+    // FileManagerが設定された時にStreaming機能を再初期化
+    if (this.enableStreaming) {
+      this.initializeStreamingComponents();
+    }
   }
 
   // バックグラウンドプロセス終了時のコールバックを設定
   setBackgroundProcessCallbacks(callbacks: BackgroundProcessCallback): void {
     this.backgroundProcessCallbacks = callbacks;
+  }
+  
+  // Issue #13: Streaming コンポーネントの初期化
+  private initializeStreamingComponents(): void {
+    if (!this.fileManager) {
+      console.error('ProcessManager: FileManager is required for streaming components');
+      return;
+    }
+    
+    // FileStorageSubscriber初期化（既存FileManager機能を代替）
+    this.fileStorageSubscriber = new FileStorageSubscriber(this.fileManager, this.outputDir);
+    this.streamPublisher.subscribe(this.fileStorageSubscriber);
+    
+    // RealtimeStreamSubscriber初期化
+    this.realtimeStreamSubscriber = new RealtimeStreamSubscriber({
+      bufferSize: 8192,
+      notificationInterval: 100,
+      maxRetentionSeconds: 3600,
+      maxBuffers: 1000
+    });
+    this.streamPublisher.subscribe(this.realtimeStreamSubscriber);
+    
+    console.error('ProcessManager: Streaming components initialized');
+  }
+  
+  // Issue #13: Streaming機能の有効/無効切り替え
+  enableStreamingFeature(enable: boolean = true): void {
+    this.enableStreaming = enable;
+    
+    if (enable && this.fileManager) {
+      this.initializeStreamingComponents();
+    } else if (!enable) {
+      // Streaming無効化時のクリーンアップ
+      if (this.realtimeStreamSubscriber) {
+        this.streamPublisher.unsubscribe(this.realtimeStreamSubscriber.id);
+        this.realtimeStreamSubscriber.destroy();
+        this.realtimeStreamSubscriber = undefined;
+      }
+      
+      if (this.fileStorageSubscriber) {
+        this.streamPublisher.unsubscribe(this.fileStorageSubscriber.id);
+        this.fileStorageSubscriber = undefined;
+      }
+    }
+  }
+  
+  // Issue #13: RealtimeStreamSubscriber への参照を取得（新しいMCPツール用）
+  getRealtimeStreamSubscriber(): RealtimeStreamSubscriber | undefined {
+    return this.realtimeStreamSubscriber;
+  }
+
+  /**
+   * Issue #13: output_idから実行IDを取得
+   */
+  private findExecutionIdByOutputId(outputId: string): string | undefined {
+    return this.fileManager?.getExecutionIdByOutputId(outputId);
   }
 
   private async initializeOutputDirectory(): Promise<void> {
@@ -102,8 +187,10 @@ export class ProcessManager {
       throw new ResourceLimitError('concurrent processes', this.maxConcurrentProcesses);
     }
 
-    // 入力データの準備 - input_output_idが指定された場合はファイルから読み取り
+    // 入力データの準備 - input_output_idが指定された場合の処理
     let resolvedInputData: string | undefined = options.inputData;
+    let inputStream: StreamingPipelineReader | undefined = undefined;
+    
     if (options.inputOutputId) {
       if (!this.fileManager) {
         throw new ExecutionError('FileManager is not available for input_output_id processing', {
@@ -111,20 +198,40 @@ export class ProcessManager {
         });
       }
       
-      try {
-        // FileManagerの既存readFileメソッドを使用してファイル全体を読み取り
-        const result = await this.fileManager.readFile(
-          options.inputOutputId,
-          0,
-          100 * 1024 * 1024, // 100MB まで読み取り
-          'utf-8'
-        );
-        resolvedInputData = result.content;
-      } catch (error) {
-        throw new ExecutionError(`Failed to read input from output_id: ${options.inputOutputId}`, {
-          inputOutputId: options.inputOutputId,
-          originalError: String(error),
-        });
+      // output_idから実行IDを特定
+      const sourceExecutionId = this.findExecutionIdByOutputId(options.inputOutputId);
+      
+      if (sourceExecutionId && this.realtimeStreamSubscriber) {
+        // 実行中プロセスの場合: StreamingPipelineReaderを使用
+        const streamState = this.realtimeStreamSubscriber.getStreamState(sourceExecutionId);
+        if (streamState && streamState.isActive) {
+          console.error(`ProcessManager: Using streaming pipeline for active process ${sourceExecutionId}`);
+          inputStream = new StreamingPipelineReader(
+            this.fileManager,
+            this.realtimeStreamSubscriber,
+            options.inputOutputId,
+            sourceExecutionId
+          );
+        }
+      }
+      
+      // 実行中プロセスでない場合、または失敗した場合: 従来のファイル読み取り
+      if (!inputStream) {
+        try {
+          console.error(`ProcessManager: Using traditional file read for ${options.inputOutputId}`);
+          const result = await this.fileManager.readFile(
+            options.inputOutputId,
+            0,
+            100 * 1024 * 1024, // 100MB まで読み取り
+            'utf-8'
+          );
+          resolvedInputData = result.content;
+        } catch (error) {
+          throw new ExecutionError(`Failed to read input from output_id: ${options.inputOutputId}`, {
+            inputOutputId: options.inputOutputId,
+            originalError: String(error),
+          });
+        }
       }
     }
 
@@ -188,13 +295,17 @@ export class ProcessManager {
     }
 
     try {
-      // resolvedInputDataを各実行モードに渡すためにoptionsを更新
-      // inputOutputIdは既に処理済みなので削除し、inputDataのみ設定
+      // 実行オプションを準備
       const { inputOutputId, ...baseOptions } = options;
       const updatedOptions: ExecutionOptions = { 
         ...baseOptions,
         ...(resolvedInputData !== undefined && { inputData: resolvedInputData })
       };
+      
+      // StreamingPipelineReaderがある場合は特別処理
+      if (inputStream) {
+        return await this.executeCommandWithInputStream(executionId, updatedOptions, inputStream);
+      }
       
       switch (options.executionMode) {
         case 'foreground':
@@ -218,6 +329,153 @@ export class ProcessManager {
       }
       throw error;
     }
+  }
+
+  /**
+   * Issue #13: StreamingPipelineReaderを使用したコマンド実行
+   */
+  private async executeCommandWithInputStream(
+    executionId: string,
+    options: ExecutionOptions,
+    inputStream: StreamingPipelineReader
+  ): Promise<ExecutionInfo> {
+    console.error(`ProcessManager: Executing command with input stream for ${executionId}`);
+    
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      let stdout = '';
+      let stderr = '';
+      let outputTruncated = false;
+
+      // 環境変数の準備
+      const env = getSafeEnvironment(
+        process.env as Record<string, string>,
+        options.environmentVariables
+      );
+
+      // プロセスの起動
+      const child = spawn('sh', ['-c', options.command], {
+        cwd: this.resolveWorkingDirectory(options.workingDirectory),
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      // StreamingPipelineReaderをSTDINに接続
+      inputStream.pipe(child.stdin!);
+      
+      inputStream.on('error', (error) => {
+        console.error(`StreamingPipelineReader error for ${executionId}: ${error.message}`);
+        child.kill('SIGTERM');
+      });
+
+      // StreamPublisher通知
+      if (this.streamPublisher) {
+        this.streamPublisher.notifyProcessStart(executionId, options.command);
+      }
+
+      // STDOUT処理
+      child.stdout!.on('data', (data) => {
+        const chunk = data.toString();
+        if (stdout.length + chunk.length <= options.maxOutputSize) {
+          stdout += chunk;
+        } else {
+          outputTruncated = true;
+        }
+
+        // StreamPublisher通知
+        if (this.streamPublisher) {
+          this.streamPublisher.notifyOutputData(executionId, chunk, false);
+        }
+      });
+
+      // STDERR処理
+      if (options.captureStderr) {
+        child.stderr!.on('data', (data) => {
+          const chunk = data.toString();
+          if (stderr.length + chunk.length <= options.maxOutputSize) {
+            stderr += chunk;
+          } else {
+            outputTruncated = true;
+          }
+
+          // StreamPublisher通知
+          if (this.streamPublisher) {
+            this.streamPublisher.notifyOutputData(executionId, chunk, true);
+          }
+        });
+      }
+
+      // プロセス終了処理
+      child.on('close', async (code) => {
+        const executionInfo = this.executions.get(executionId);
+        if (!executionInfo) {
+          reject(new ExecutionError('Execution info not found', { executionId }));
+          return;
+        }
+
+        // 実行時間の計算
+        const executionTime = Date.now() - startTime;
+
+        // 実行情報の更新
+        executionInfo.status = code === 0 ? 'completed' : 'failed';
+        executionInfo.completed_at = getCurrentTimestamp();
+        if (code !== null) {
+          executionInfo.exit_code = code;
+        }
+        executionInfo.execution_time_ms = executionTime;
+
+        // 出力の保存
+        if (this.fileManager) {
+          try {
+            const combinedOutput = stdout + (options.captureStderr ? stderr : '');
+            if (combinedOutput) {
+              const outputId = await this.fileManager.createOutputFile(combinedOutput, executionId);
+              executionInfo.output_id = outputId;
+              executionInfo.output_truncated = outputTruncated;
+            }
+          } catch (error) {
+            console.error(`Failed to save output for ${executionId}: ${error}`);
+          }
+        }
+
+        this.executions.set(executionId, executionInfo);
+
+        // StreamPublisher通知
+        if (this.streamPublisher) {
+          this.streamPublisher.notifyProcessEnd(executionId, code);
+        }
+
+        console.error(`Command completed: ${options.command} (exit code: ${code})`);
+        resolve(executionInfo);
+      });
+
+      child.on('error', (error) => {
+        console.error(`Process error for ${executionId}: ${error.message}`);
+        
+        // StreamPublisher通知
+        if (this.streamPublisher) {
+          this.streamPublisher.notifyError(executionId, error);
+        }
+
+        reject(new ExecutionError(`Process error: ${error.message}`, { originalError: String(error) }));
+      });
+
+      // タイムアウト処理
+      const timeout = setTimeout(() => {
+        console.error(`Process timeout for ${executionId}`);
+        child.kill('SIGTERM');
+        
+        setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, 5000);
+      }, options.timeoutSeconds * 1000);
+
+      child.on('close', () => {
+        clearTimeout(timeout);
+      });
+    });
   }
 
   private async executeForegroundCommand(

@@ -5,7 +5,7 @@ export const ExecutionModeSchema = z.enum(['foreground', 'background', 'detached
 export type ExecutionMode = z.infer<typeof ExecutionModeSchema>;
 
 // 実行状態
-export const ExecutionStatusSchema = z.enum(['completed', 'running', 'failed', 'timeout']);
+const ExecutionStatusSchema = z.enum(['completed', 'running', 'failed', 'timeout']);
 export type ExecutionStatus = z.infer<typeof ExecutionStatusSchema>;
 
 // シェルタイプ
@@ -13,7 +13,7 @@ export const ShellTypeSchema = z.enum(['bash', 'zsh', 'fish', 'cmd', 'powershell
 export type ShellType = z.infer<typeof ShellTypeSchema>;
 
 // ターミナル状態
-export const TerminalStatusSchema = z.enum(['active', 'idle', 'closed']);
+const TerminalStatusSchema = z.enum(['active', 'idle', 'closed']);
 export type TerminalStatus = z.infer<typeof TerminalStatusSchema>;
 
 // シグナル
@@ -25,7 +25,7 @@ export const OutputTypeSchema = z.enum(['stdout', 'stderr', 'combined', 'log', '
 export type OutputType = z.infer<typeof OutputTypeSchema>;
 
 // エラーカテゴリ
-export const ErrorCategorySchema = z.enum([
+const ErrorCategorySchema = z.enum([
   'AUTH',
   'PARAM',
   'RESOURCE',
@@ -44,29 +44,6 @@ export const DimensionsSchema = z.object({
   height: z.number().int().min(1).max(200).describe('Height in lines'),
 }).describe('Terminal dimensions');
 export type Dimensions = z.infer<typeof DimensionsSchema>;
-
-// 実行オプション
-export interface ExecutionOptions {
-  command: string;
-  executionMode: ExecutionMode;
-  workingDirectory?: string;
-  environmentVariables?: EnvironmentVariables;
-  inputData?: string;
-  timeoutSeconds: number;
-  maxOutputSize: number;
-  captureStderr: boolean;
-  sessionId?: string;
-}
-
-// ターミナルオプション
-export interface TerminalOptions {
-  sessionName?: string;
-  shellType?: ShellType;
-  dimensions?: Dimensions;
-  workingDirectory?: string;
-  environmentVariables?: EnvironmentVariables;
-  autoSaveHistory?: boolean;
-}
 
 // 出力切り捨て理由
 export type OutputTruncationReason = 'size_limit' | 'timeout' | 'user_interrupt' | 'error' | 'background_transition';

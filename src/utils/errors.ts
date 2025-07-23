@@ -68,24 +68,6 @@ export class MCPShellError extends Error {
 }
 
 // 定義済みエラー
-export class AuthenticationError extends MCPShellError {
-  constructor(message = 'Authentication required', requestId?: string) {
-    super('AUTH_001', message, 'AUTH', undefined, requestId);
-  }
-}
-
-export class AuthorizationError extends MCPShellError {
-  constructor(message = 'Insufficient permissions', requestId?: string) {
-    super('AUTH_003', message, 'AUTH', undefined, requestId);
-  }
-}
-
-export class ParameterError extends MCPShellError {
-  constructor(message: string, details?: Record<string, unknown>, requestId?: string) {
-    super('PARAM_002', message, 'PARAM', details, requestId);
-  }
-}
-
 export class ResourceNotFoundError extends MCPShellError {
   constructor(resourceType: string, id: string, requestId?: string) {
     super(

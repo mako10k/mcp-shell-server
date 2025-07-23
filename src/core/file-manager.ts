@@ -301,4 +301,12 @@ export class FileManager {
 
     this.files.clear();
   }
+
+  /**
+   * Issue #13: output_idから実行IDを取得
+   */
+  getExecutionIdByOutputId(outputId: string): string | undefined {
+    const fileInfo = this.files.get(outputId);
+    return fileInfo?.execution_id;
+  }
 }
