@@ -62,7 +62,10 @@ export class ShellTools {
         executionOptions.inputData = params.input_data;
       }
       if (params.input_output_id !== undefined) {
+        console.log(`[DEBUG] shell-tools: input_output_id受信 = ${params.input_output_id}`);
         executionOptions.inputOutputId = params.input_output_id;
+      } else {
+        console.log(`[DEBUG] shell-tools: input_output_id未指定`);
       }
       if (params.session_id !== undefined) {
         executionOptions.sessionId = params.session_id;
