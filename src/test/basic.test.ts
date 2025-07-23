@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ProcessManager } from '../core/process-manager.js';
 import { SecurityManager } from '../security/manager.js';
 import { TerminalManager } from '../core/terminal-manager.js';
@@ -513,6 +513,113 @@ describe('MCP Shell Server Components', () => {
         });
 
         expect(fileContent.content).toContain('ShellTools integration test');
+      }
+    });
+  });
+
+  // Issue #8対応: サイレントデグレード防止のテスト
+  describe('Silent Degradation Prevention (Issue #8)', () => {
+    it('should log errors when output file save fails', async () => {
+      // コンソールエラーをキャプチャ
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      
+      try {
+        // FileManagerのcreateOutputFileメソッドをモックしてエラーを強制発生
+        const originalCreateOutputFile = fileManager.createOutputFile;
+        fileManager.createOutputFile = vi.fn().mockRejectedValue(new Error('Permission denied'));
+
+        const result = await processManager.executeCommand({
+          command: 'echo "test output"',
+          executionMode: 'foreground',
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        // デバッグ用：実際の結果を確認
+        console.log('Test result:', JSON.stringify(result, null, 2));
+        
+        // エラーメッセージが実行情報に含まれていることを確認
+        expect(result.message || '').toContain('Output file save failed');
+        
+        // コンソールにエラーが出力されていることを確認
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('[CRITICAL] Failed to save output file for execution'),
+          expect.any(Error)
+        );
+
+        // ファイル保存に失敗しているが、メインの処理は成功していることを確認
+        expect(result.status).toBe('completed');
+        expect(result.stdout).toContain('test output');
+        expect(result.output_id).toBeUndefined(); // ファイル保存に失敗したため
+        
+        // FileManagerの元のメソッドを復元
+        fileManager.createOutputFile = originalCreateOutputFile;
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
+    });
+
+    it('should not silently fail when data directory is missing', async () => {
+      // コンソールエラーをキャプチャ
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      
+      try {
+        // FileManagerのcreateOutputFileメソッドをモックしてエラーを強制発生
+        const originalCreateOutputFile = fileManager.createOutputFile;
+        fileManager.createOutputFile = vi.fn().mockRejectedValue(new Error('Directory not found'));
+
+        const result = await processManager.executeCommand({
+          command: 'echo "test"',
+          executionMode: 'foreground',
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        // エラーメッセージが実行情報に含まれていることを確認
+        expect(result.message || '').toContain('Output file save failed');
+        
+        // output_idが設定されていないことを確認
+        expect(result.output_id).toBeUndefined();
+        
+        // サイレント失敗でないことを確認（エラーログが出力されている）
+        expect(consoleErrorSpy).toHaveBeenCalled();
+        
+        // FileManagerの元のメソッドを復元
+        fileManager.createOutputFile = originalCreateOutputFile;
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
+    });
+
+    it('should preserve user data even when output file save fails', async () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      
+      try {
+        // FileManagerのcreateOutputFileメソッドをモックしてエラーを強制発生
+        const originalCreateOutputFile = fileManager.createOutputFile;
+        fileManager.createOutputFile = vi.fn().mockRejectedValue(new Error('Disk full'));
+
+        const result = await processManager.executeCommand({
+          command: 'echo "important data"',
+          executionMode: 'foreground',
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+
+        // ファイル保存は失敗したが、出力データは保持されている
+        expect(result.stdout).toContain('important data');
+        expect(result.status).toBe('completed');
+        
+        // エラーメッセージでファイル保存失敗が明示されている
+        expect(result.message || '').toContain('Output file save failed');
+        
+        // FileManagerの元のメソッドを復元
+        fileManager.createOutputFile = originalCreateOutputFile;
+      } finally {
+        consoleErrorSpy.mockRestore();
       }
     });
   });

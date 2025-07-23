@@ -51,3 +51,6 @@ jspm_packages/
 
 # MCP Shell Server data directory
 data/
+*.db
+*.db-shm
+*.db-wal

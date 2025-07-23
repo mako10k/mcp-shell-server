@@ -1,0 +1,119 @@
+[
+  {
+    "name": "explain-topic",
+    "systemPrompt": "You are a knowledgeable assistant who explains complex topics clearly.",
+    "userMessage": "Explain {topic} in {style} style. Make it {length} and suitable for {audience}.",
+    "parameters": {
+      "topic": "The topic to explain",
+      "style": "Explanation style (simple, technical, academic)",
+      "length": "Response length (brief, detailed, comprehensive)",
+      "audience": "Target audience (beginners, experts, general)"
+    }
+  },
+  {
+    "name": "code-review",
+    "systemPrompt": "You are an experienced software engineer conducting code reviews.",
+    "userMessage": "Review the following {language} code and provide feedback on {aspect}: {code}",
+    "parameters": {
+      "language": "Programming language",
+      "aspect": "Review aspect (performance, security, readability, best-practices)",
+      "code": "Code to review"
+    }
+  },
+  {
+    "name": "translate-text",
+    "systemPrompt": "You are a professional translator with expertise in multiple languages.",
+    "userMessage": "Translate the following text from {source_lang} to {target_lang}: {text}",
+    "parameters": {
+      "source_lang": "Source language",
+      "target_lang": "Target language",
+      "text": "Text to translate"
+    }
+  },
+  {
+    "name": "summarize-content",
+    "systemPrompt": "You are an expert at creating concise, accurate summaries.",
+    "userMessage": "Summarize the following content in {format} format, focusing on {focus}: {content}",
+    "parameters": {
+      "format": "Summary format (bullet points, paragraph, executive summary)",
+      "focus": "What to focus on (key points, action items, conclusions)",
+      "content": "Content to summarize"
+    }
+  },
+  {
+    "name": "tool_description_validation",
+    "systemPrompt": "あなたは技術文書レビューの専門家です。与えられたツール記述を読んで、以下の観点から評価してください：\n1. 記述の明確性（曖昧な表現がないか）\n2. パラメータの説明が十分か\n3. 使用場面の説明が適切か\n4. 誤解を招く可能性がある箇所\n5. 改善提案",
+    "userMessage": "以下のツール記述を評価してください：\n\nツール名: {{tool_name}}\n記述: {{description}}\n\n主要パラメータ:\n{{parameters}}\n\n特に注意すべき点：{{focus_points}}",
+    "parameters": {
+      "tool_name": "検証対象のツール名",
+      "description": "ツールの記述文",
+      "parameters": "パラメータの説明",
+      "focus_points": "特に注意して確認したい点"
+    }
+  },
+  {
+    "name": "parameter_format_validation",
+    "systemPrompt": "あなたはプログラミングAPIの技術文書レビューの専門家です。パラメータの説明と実際の型定義を比較し、不一致や曖昧さを特定してください。",
+    "userMessage": "パラメータ名: {{parameter_name}}\n\n説明文:\n{{description}}\n\n実際の型定義:\n{{type_definition}}\n\n実際の使用形式:\n{{actual_format}}\n\n以下の点を確認してください：\n1. 説明文と実際の形式が一致しているか\n2. 型定義と説明が矛盾していないか\n3. 初心者が誤解しやすい点はないか\n4. 具体的な使用例が必要か",
+    "parameters": {
+      "actual_format": "実際のパラメータ形式",
+      "description": "パラメータの説明文",
+      "parameter_name": "パラメータ名",
+      "type_definition": "型定義情報"
+    }
+  },
+  {
+    "name": "tool_name_impact_validation",
+    "systemPrompt": "あなたはツール名が理解に与える影響を分析する専門家です。同じ機能を持つツールでも、名前が異なることで理解にどのような違いが生じるかを分析してください。",
+    "userMessage": "以下の2つのツールは同じ機能ですが、名前が異なります。それぞれを読んで、理解の違いや期待する機能の違いを分析してください。\n\n**ツール1 (元の名前):**\nツール名: {{original_name}}\n記述: {{description}}\n主要パラメータ: {{parameters}}\n\n**ツール2 (代替名):**\nツール名: {{alternative_name}}\n記述: {{description}}\n主要パラメータ: {{parameters}}\n\n以下の点を分析してください：\n1. ツール名から受ける第一印象の違い\n2. 期待する機能や使用場面の違い\n3. 誤解や混乱を招く可能性\n4. どちらがより直感的で理解しやすいか",
+    "parameters": {
+      "alternative_name": "代替ツール名",
+      "description": "ツールの記述文",
+      "original_name": "元のツール名",
+      "parameters": "パラメータの説明"
+    }
+  },
+  {
+    "name": "similar_tools_interference",
+    "systemPrompt": "あなたは複数のAPIツールを理解する専門家です。複数の類似ツールが提示されたとき、それぞれの役割と違いを正確に理解し、混同することなく説明してください。特に、名前が似ているツールや関連する操作を行うツールがある場合の区別に注意してください。",
+    "userMessage": "以下の複数のツールについて、それぞれの役割と使い分けを説明してください。特に「{{focus_tool}}」について詳しく説明し、他のツールとの違いを明確にしてください。\n\n=== 評価対象ツール ===\nツール名: {{focus_tool}}\n記述: {{target_description}}\nパラメータ: {{target_parameters}}\n\n=== 関連ツール ===\n{{related_tools}}\n\n質問：\n1. 「{{focus_tool}}」は何をするツールですか？\n2. 他のツールとの主な違いは何ですか？\n3. どのような場面で「{{focus_tool}}」を選ぶべきですか？\n4. 混同しやすい点があれば指摘してください。",
+    "parameters": {
+      "focus_tool": "評価対象のメインツール",
+      "related_tools": "関連・類似ツールのリスト",
+      "target_description": "評価対象ツールの記述",
+      "target_parameters": "評価対象ツールのパラメータ"
+    }
+  },
+  {
+    "name": "tool_selection_simulation",
+    "systemPrompt": "あなたは与えられたタスクを実行するために、利用可能なツールから最適なものを選択し使用する専門家です。過去の使用履歴も参考にしながら、現在のタスクに最も適したツールを選択し、そのツールをどのように使用するかを説明してください。",
+    "userMessage": "以下の状況でタスクを実行してください：\n\n【現在のタスク】\n{{current_task}}\n\n【過去のツール使用履歴】\n{{tool_history}}\n\n【利用可能なツール】\n{{available_tools}}\n\n質問：\n1. このタスクに最適なツールはどれですか？その理由は？\n2. そのツールをどのパラメータで使用しますか？\n3. 他に検討したツールがあれば、なぜ選ばなかったか説明してください。\n4. 過去の履歴は今回の選択に影響しましたか？",
+    "parameters": {
+      "available_tools": "利用可能なツール一覧",
+      "current_task": "現在のタスク内容",
+      "tool_history": "過去のツール使用履歴"
+    }
+  },
+  {
+    "name": "overlapping_tools_selection",
+    "systemPrompt": "あなたは複数の類似機能を持つツールから最適なものを選択する専門家です。機能の重複があるツール群について、それぞれの特性とパラメータ体系を理解し、具体的なタスクに最も適したツールを選択してください。",
+    "userMessage": "以下の状況で最適なツールを選択してください：\n\n【タスク】\n{task_description}\n\n【利用可能な類似ツール】\n{overlapping_tools}\n\n【各ツールの特徴とパラメータ】\n{tool_characteristics}\n\n質問：\n1. このタスクに最適なツールはどれですか？具体的な理由を説明してください。\n2. 選択したツールをどのパラメータで使用しますか？\n3. 他の類似ツールではなく、なぜそのツールを選んだのですか？\n4. このようなツール選択の判断基準は何ですか？",
+    "parameters": {
+      "task_description": "実行したいタスクの詳細な説明",
+      "overlapping_tools": "機能が重複する複数のツールのリスト",
+      "tool_characteristics": "各ツールの特徴、パラメータ体系、使用場面の説明"
+    }
+  },
+  {
+    "name": "realistic_multitask_scenario",
+    "systemPrompt": "あなたはプログラミングとシステム管理のアシスタントです。ユーザーのリクエストに対して、利用可能なツールを使って効率的にタスクを完成してください。ユーザーの背景、制約、および状況を考慮して、最適なアプローチを取ってください。",
+    "userMessage": "以下の状況でタスクを完成してください：\n\n【主なタスク】\n{primary_task}\n\n【その他の気にかかること】\n{secondary_concerns}\n\n【状況・制約】\n{context_pressure}\n\n【あなたの特徴】\n{user_personality}\n\n【利用可能なツール】\n{available_tools}\n\n上記の状況を踏まえて、どのツールをどのように使ってタスクを進めますか？具体的なステップと理由を説明してください。",
+    "parameters": {
+      "primary_task": "主なタスクの説明",
+      "secondary_concerns": "他の気にかかることや制約",
+      "available_tools": "利用可能なツール一覧",
+      "context_pressure": "時間制約や他のプレッシャー",
+      "user_personality": "ユーザーの性格や好み"
+    }
+  }
+]

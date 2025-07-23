@@ -237,8 +237,9 @@ export class ProcessManager {
             outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
-            // エラーログを内部ログに記録（標準出力を避ける）
-            // console.error('Failed to save output to file:', error);
+            // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+            console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+            executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
           // 出力状態の詳細情報を設定
@@ -313,8 +314,9 @@ export class ProcessManager {
             outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
-            // エラーログを内部ログに記録（標準出力を避ける）
-            // console.error('Failed to save output to file:', error);
+            // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+            console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+            executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
           // 出力状態の詳細情報を設定（完了時は出力サイズ制限による切り捨てのみチェック）
@@ -415,7 +417,9 @@ export class ProcessManager {
             const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
-            // エラーログを内部ログに記録
+            // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+            console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+            executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
           this.executions.set(executionId, executionInfo);
@@ -456,7 +460,9 @@ export class ProcessManager {
             outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
             executionInfo.output_id = outputFileId;
           } catch (error) {
-            // エラーログを内部ログに記録
+            // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+            console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+            executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
           // 出力状態の詳細情報を設定（バックグラウンド移行）
@@ -546,7 +552,9 @@ export class ProcessManager {
               const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
               executionInfo.output_id = outputFileId;
             } catch (error) {
-              // エラーログを内部ログに記録
+              // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+              console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+              executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
             }
 
             this.executions.set(executionId, executionInfo);
@@ -644,7 +652,9 @@ export class ProcessManager {
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
           executionInfo.output_id = outputFileId;
         } catch (error) {
-          // エラーログを内部ログに記録
+          // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+          console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+          executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
         }
 
         this.executions.set(executionId, executionInfo);
@@ -694,8 +704,9 @@ export class ProcessManager {
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
           executionInfo.output_id = outputFileId;
         } catch (error) {
-          // エラーログを内部ログに記録（標準出力を避ける）
-          // console.error('Failed to save background process output:', error);
+          // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+          console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+          executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
         }
 
         this.executions.set(executionId, executionInfo);
@@ -895,7 +906,9 @@ export class ProcessManager {
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
           executionInfo.output_id = outputFileId;
         } catch (error) {
-          // エラーログを内部ログに記録
+          // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
+          console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+          executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
         }
 
         this.executions.set(executionId, executionInfo);
