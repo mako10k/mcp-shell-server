@@ -11,7 +11,7 @@ import {
 
 // Shell Operations
 export const ShellExecuteParamsSchema = z.object({
-  command: z.string().min(1).describe('Shell command to execute (e.g., "ls -la", "npm install", "python script.py"). Command will be validated against security restrictions.'),
+  command: z.string().min(1).describe('Shell command to execute (e.g., "ls -la", "npm install", "python script.py"). Command will be validated against security restrictions. NOTE: This is MCP Shell Server - do NOT use VS Code internal run_in_terminal parameters like "explanation".'),
   execution_mode: ExecutionModeSchema.default('adaptive').describe('How the command should be executed: "foreground" (wait for completion), "background" (run async), "detached" (fire-and-forget), "adaptive" (start foreground, switch to background for long-running commands)'),
   working_directory: z.string().optional().describe('Directory where the command should be executed. If not specified, uses the default working directory set by shell_set_default_workdir or the initial server directory.'),
   environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables to set for this command execution. These are added to or override the current environment.'),
@@ -32,7 +32,7 @@ export const ShellExecuteParamsSchema = z.object({
   create_terminal: z.boolean().default(false).describe('Create a new interactive terminal session instead of running command directly. Use for commands requiring interactive input/output.'),
   terminal_shell: ShellTypeSchema.optional().describe('Shell type for the new terminal (bash, zsh, fish, cmd, powershell). Only used when create_terminal is true.'),
   terminal_dimensions: DimensionsSchema.optional().describe('Terminal dimensions in characters (width x height). Only used when create_terminal is true. Default: 120x30.'),
-}).refine(
+}).strict().refine(
   (data) => !(data.input_data && data.input_output_id),
   {
     message: "input_data and input_output_id cannot be specified simultaneously.",

@@ -114,7 +114,7 @@ export class MCPShellServer {
         // Shell Operations
         {
           name: 'shell_execute',
-          description: 'Execute shell commands securely with intelligent output handling. When output_truncated=true, use output_id with read_execution_output to get complete results. Returns partial output for immediate context while preserving full results in files. Supports adaptive execution mode that automatically switches to background for long-running commands. New: Support pipeline operations with input_output_id to use previous command output as input.',
+          description: 'Execute shell commands securely with intelligent output handling. When output_truncated=true, use output_id with read_execution_output to get complete results. Returns partial output for immediate context while preserving full results in files. Supports adaptive execution mode that automatically switches to background for long-running commands. New: Support pipeline operations with input_output_id to use previous command output as input. NOTE: This is MCP Shell Server tool - do NOT use VS Code internal run_in_terminal parameters like "explanation" or "isBackground".',
           inputSchema: zodToJsonSchema(ShellExecuteParamsSchema, { target: 'jsonSchema7' })
         },
         {
@@ -233,12 +233,22 @@ export class MCPShellServer {
               return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
             } catch (e) {
               if (e instanceof ZodError) {
+                // Check for common VS Code internal tool parameter confusion
+                const isExplanationError = args && typeof args === 'object' && 'explanation' in args;
+                const isBackgroundError = args && typeof args === 'object' && 'isBackground' in args;
+                
+                let specificMessage = 'Invalid parameters provided to shell_execute';
+                if (isExplanationError || isBackgroundError) {
+                  specificMessage = 'IMPORTANT: You are confusing MCP Shell Server with VS Code internal tools. This is "shell_execute" (MCP Shell Server), NOT "run_in_terminal" (VS Code internal). Do NOT use parameters like "explanation" or "isBackground". Use only the parameters defined in shell_execute schema.';
+                }
+                
                 const errorDetails = {
                   error: 'Validation Error',
-                  message: 'Invalid parameters provided to shell_execute',
+                  message: specificMessage,
                   receivedArgs: args,
                   validationErrors: e.errors,
-                  timestamp: new Date().toISOString()
+                  timestamp: new Date().toISOString(),
+                  hint: isExplanationError || isBackgroundError ? 'Use MCP Shell Server parameters only: command, execution_mode, working_directory, etc.' : 'Check the shell_execute schema for valid parameters'
                 };
                 console.error('[SHELL_EXECUTE_VALIDATION_ERROR]', JSON.stringify(errorDetails, null, 2));
               }
