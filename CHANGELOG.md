@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.8] - 2025-07-23
+
+### Added
+- **GitHub Issue #14**: Enhanced guidance messages for adaptive mode transitions
+  - Intelligent guidance when commands automatically transition to background execution
+  - Pipeline processing instructions with specific `input_output_id` usage examples
+  - Suggested commands for real-time monitoring (tail -f equivalent, grep, awk)
+  - Background processing guidance with status checking instructions
+  - Contextual help displayed only when guidance is needed (timeout or size limit transitions)
+- **GitHub Issue #15**: Automatic cleanup functionality for output file management
+  - `get_cleanup_suggestions` tool for analyzing old files and disk usage
+  - `perform_auto_cleanup` tool with configurable retention policies
+  - Smart cleanup recommendations based on file age and size thresholds
+  - Dry-run mode for safe cleanup testing
+  - Automatic preservation of recent files regardless of age
+
+### Fixed
+- Guidance display logic for normal command completion (no unnecessary guidance shown)
+- Boolean parameter logic improved with `actuallyTruncated` for clearer state representation
+- Reason-based early returns in `setOutputStatus` method for better code maintainability
+
+### Technical Improvements
+- Enhanced `ProcessManager.setOutputStatus` method with refined logic
+- New `GuidanceInfo` type interface for structured guidance information
+- Added comprehensive cleanup functionality to `FileManager`
+- Improved MCP tool registration for new cleanup features
+
 ## [2.1.6] - 2025-07-23
 
 ### Fixed

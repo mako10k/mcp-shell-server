@@ -102,6 +102,7 @@ Add to MCP settings:
 ### 🔧 Shell Operations
 - Multiple execution modes: foreground, background, detached, adaptive
 - **🆕 Pipeline Feature**: Command chaining with `input_output_id` parameter
+- **🆕 Intelligent Guidance**: Adaptive mode provides usage hints when commands transition to background
 - Background process management with timeout handling
 - Configurable timeouts and output limits
 - Environment variable control
@@ -128,6 +129,8 @@ Add to MCP settings:
 
 ### 📁 File Operations
 - Output file management
+- **🆕 Automatic Cleanup**: Smart suggestions for old file cleanup with configurable retention policies
+- **🆕 Storage Analysis**: Real-time disk usage monitoring and optimization recommendations
 - Log file handling
 - Temporary file storage
 - Safe file reading with encoding support
@@ -197,7 +200,59 @@ const result = await client.request({
 console.log(result);
 ```
 
-### 🆕 New Features in v2.1.0
+### 🆕 New Features in v2.1.8
+
+#### Intelligent Command Guidance
+Automatic guidance when commands transition to background execution:
+```typescript
+// When a command times out or exceeds size limits, get helpful guidance
+const result = await client.request({
+  method: 'tools/call',
+  params: {
+    name: 'shell_execute',
+    arguments: {
+      command: 'find /usr -name "*.so"',
+      execution_mode: 'adaptive',
+      max_output_size: 1024
+    }
+  }
+});
+
+// Response includes guidance for pipeline processing
+console.log(result.guidance.pipeline_usage);
+// "Background process active. Use "input_output_id": "xyz" for real-time processing"
+```
+
+#### Automatic File Cleanup
+Smart cleanup suggestions and automated maintenance:
+```typescript
+// Get cleanup suggestions
+const suggestions = await client.request({
+  method: 'tools/call',
+  params: {
+    name: 'get_cleanup_suggestions',
+    arguments: {
+      max_age_hours: 24,
+      max_size_mb: 50
+    }
+  }
+});
+
+// Perform automatic cleanup with retention policies
+const cleanup = await client.request({
+  method: 'tools/call',
+  params: {
+    name: 'perform_auto_cleanup',
+    arguments: {
+      dry_run: false,
+      max_age_hours: 24,
+      preserve_recent: 10
+    }
+  }
+});
+```
+
+### 🆕 Previous Features in v2.1.0
 
 #### Control Code Support
 ```typescript
