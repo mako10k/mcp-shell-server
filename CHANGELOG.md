@@ -13,10 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added strict schema validation with `.strict()` to reject unknown parameters
   - Enhanced error messages to clearly distinguish between VS Code internal tools and MCP Shell Server tools
   - Added comprehensive test coverage for parameter validation scenarios
+- **Pipeline Feature**: Confirmed proper functionality and cleaned up debugging artifacts
+  - Removed debug console.log statements from ProcessManager
+  - Pipeline functionality working correctly with `input_output_id` parameter
+  - Proper command chaining between separate `shell_execute` calls
 
 ### Added
 - Enhanced error handling with specific messages for VS Code parameter confusion
 - Comprehensive test suite for explanation parameter validation (5 test cases)
+- **Documentation**: Added comprehensive Pipeline feature documentation to README.md
+  - Clear usage examples for command chaining with `input_output_id`
+  - Important distinctions between Pipeline feature and shell pipes
+  - Added Pipeline feature to main features list
+  - Enhanced `shell_execute` parameter documentation
 
 ## [2.1.2] - 2025-07-15
 

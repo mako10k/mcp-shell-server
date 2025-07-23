@@ -101,6 +101,7 @@ Add to MCP settings:
 
 ### 🔧 Shell Operations
 - Multiple execution modes: foreground, background, detached, adaptive
+- **🆕 Pipeline Feature**: Command chaining with `input_output_id` parameter
 - Background process management with timeout handling
 - Configurable timeouts and output limits
 - Environment variable control
@@ -389,6 +390,7 @@ Execute shell commands with various execution modes. Can also create new interac
   - `'background'`: Run asynchronously, monitor via process_list. Best for long-running processes
   - `'detached'`: Fire-and-forget execution, minimal monitoring. Best for independent processes
   - `'adaptive'` (default): Start foreground for foreground_timeout_seconds, then switch to background if needed. Best for unknown execution times
+- `input_output_id`: Use output from another command as input (Pipeline feature)
 - `working_directory`: Working directory
 - `environment_variables`: Environment variables
 - `timeout_seconds`: Maximum execution timeout (all modes respect this limit)
@@ -419,6 +421,32 @@ Adaptive execution with intelligent background transition:
   "return_partial_on_timeout": true
 }
 ```
+
+**Pipeline Feature - Command Chaining:**
+The MCP Shell Server supports command chaining through the Pipeline feature, allowing output from one command to be used as input for another command:
+
+```json
+// Step 1: Execute first command and get output_id
+{
+  "command": "cat input.txt",
+  "execution_mode": "foreground"
+}
+// Response includes: "output_id": "abc123..."
+
+// Step 2: Use output from first command as input for second command
+{
+  "command": "grep 'pattern'",
+  "execution_mode": "foreground",
+  "input_output_id": "abc123..."
+}
+```
+
+**Important Notes:**
+- Pipeline feature is different from shell pipes (`|`)
+- Each command requires a separate `shell_execute` call
+- Use `output_id` from first command's response as `input_output_id` for second command
+- FileManager automatically handles data transfer between commands
+- Supports large output files (up to 100MB)
 
 **Adaptive Mode Features:**
 - Automatically transitions to background when `foreground_timeout_seconds` is reached
