@@ -612,12 +612,12 @@ export class ProcessManager {
             executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
-          // 出力状態の詳細情報を設定（完了時は出力サイズ制限による切り捨てのみチェック）
-          const truncationReason = outputTruncated ? 'size_limit' : undefined;
-          if (truncationReason) {
-            this.setOutputStatus(executionInfo, outputTruncated, truncationReason, outputFileId);
+          // 出力状態の詳細情報を設定
+          if (outputTruncated) {
+            this.setOutputStatus(executionInfo, true, 'size_limit', outputFileId);
           } else {
-            this.setOutputStatus(executionInfo, false, 'size_limit', outputFileId); // reasonは使用されない
+            // 通常完了時 - actuallyTruncated=false, 適当なreasonで完了時ガイダンスを表示
+            this.setOutputStatus(executionInfo, false, 'size_limit', outputFileId);
           }
 
           this.executions.set(executionId, executionInfo);
@@ -1283,16 +1283,21 @@ export class ProcessManager {
   /**
    * 出力状態の詳細情報を設定するヘルパー関数
    * Issue #14: Enhanced guidance messages for adaptive mode transitions
+   * 改善: outputTruncated の代わりに reason ベースで状態を判定
    */
   private setOutputStatus(
     executionInfo: ExecutionInfo, 
-    outputTruncated: boolean, 
+    actuallyTruncated: boolean, // 実際に出力が切り捨てられたか
     reason: OutputTruncationReason,
     outputId?: string
   ): void {
-    executionInfo.output_truncated = outputTruncated;
+    // reasonに基づいて出力状態を設定
+    const needsGuidance = !!outputId; // output_idがあれば常にガイダンスを提供
     
-    // Issue #14: バックグラウンド移行の場合は、truncationに関係なくガイダンスを提供
+    // 後方互換性のため outputTruncated を設定
+    executionInfo.output_truncated = actuallyTruncated || reason === 'timeout' || reason === 'background_transition';
+    
+    // Issue #14: バックグラウンド移行とタイムアウトは特別扱い
     if (reason === 'background_transition') {
       executionInfo.truncation_reason = reason;
       executionInfo.output_status = {
@@ -1308,7 +1313,7 @@ export class ProcessManager {
         'Use read_execution_output when completed',
         'Use output_id for real-time pipeline processing'
       ];
-      if (outputId) {
+      if (needsGuidance) {
         executionInfo.guidance = {
           pipeline_usage: `Background process active. Use "input_output_id": "${outputId}" for real-time processing`,
           suggested_commands: [
@@ -1322,10 +1327,38 @@ export class ProcessManager {
           }
         };
       }
-      return; // Early return for background transition
+      return;
     }
     
-    if (outputTruncated) {
+    if (reason === 'timeout') {
+      executionInfo.truncation_reason = reason;
+      executionInfo.output_status = {
+        complete: false, // タイムアウトは未完了
+        reason: reason,
+        available_via_output_id: !!outputId,
+        recommended_action: outputId ? 'use_read_execution_output' : undefined
+      };
+
+      executionInfo.message = `Command timed out. ${outputId ? 'Use read_execution_output with output_id for complete results.' : 'Partial output available.'}`;
+      if (needsGuidance) {
+        executionInfo.next_steps = [
+          'Use read_execution_output to get complete output',
+          'Use output_id for pipeline processing with grep/sed/awk commands'
+        ];
+        executionInfo.guidance = {
+          pipeline_usage: `Use "input_output_id": "${outputId}" parameter for further processing`,
+          suggested_commands: [
+            'grep pattern search using input_output_id',
+            'sed text transformations using input_output_id',
+            'awk data processing using input_output_id'
+          ]
+        };
+      }
+      return;
+    }
+    
+    // 実際に出力が切り捨てられた場合
+    if (actuallyTruncated) {
       executionInfo.truncation_reason = reason;
       executionInfo.output_status = {
         complete: false,
@@ -1336,26 +1369,9 @@ export class ProcessManager {
 
       // 状況に応じたメッセージとアクションの設定
       switch (reason) {
-        case 'timeout':
-          executionInfo.message = `Command timed out. ${outputId ? 'Use read_execution_output with output_id for complete results.' : 'Partial output available.'}`;
-          if (outputId) {
-            executionInfo.next_steps = [
-              'Use read_execution_output to get complete output',
-              'Use output_id for pipeline processing with grep/sed/awk commands'
-            ];
-            executionInfo.guidance = {
-              pipeline_usage: `Use "input_output_id": "${outputId}" parameter for further processing`,
-              suggested_commands: [
-                'grep pattern search using input_output_id',
-                'sed text transformations using input_output_id',
-                'awk data processing using input_output_id'
-              ]
-            };
-          }
-          break;
         case 'size_limit':
           executionInfo.message = `Output exceeded size limit. ${outputId ? 'Complete output available via output_id.' : 'Output was truncated.'}`;
-          if (outputId) {
+          if (needsGuidance) {
             executionInfo.next_steps = [
               'Use read_execution_output to get complete output',
               'Use output_id for streaming pipeline processing'
@@ -1372,7 +1388,7 @@ export class ProcessManager {
           break;
         default:
           executionInfo.message = `Output truncated due to ${reason}. ${outputId ? 'Complete output may be available via output_id.' : ''}`;
-          if (outputId) {
+          if (needsGuidance) {
             executionInfo.next_steps = [
               'Use read_execution_output to get complete output',
               'Use output_id for pipeline processing'
@@ -1388,13 +1404,14 @@ export class ProcessManager {
           }
       }
     } else {
+      // 完了した場合（切り捨てなし）
       executionInfo.output_status = {
         complete: true,
         available_via_output_id: !!outputId
       };
       
       // Issue #14: Add guidance even for complete outputs to promote pipeline usage
-      if (outputId) {
+      if (needsGuidance) {
         executionInfo.guidance = {
           pipeline_usage: `Output saved. Use "input_output_id": "${outputId}" for further processing`,
           suggested_commands: [
