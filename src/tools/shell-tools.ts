@@ -61,6 +61,9 @@ export class ShellTools {
       if (params.input_data !== undefined) {
         executionOptions.inputData = params.input_data;
       }
+      if (params.input_output_id !== undefined) {
+        executionOptions.inputOutputId = params.input_output_id;
+      }
       if (params.session_id !== undefined) {
         executionOptions.sessionId = params.session_id;
       }

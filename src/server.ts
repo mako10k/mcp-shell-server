@@ -114,7 +114,7 @@ export class MCPShellServer {
         // Shell Operations
         {
           name: 'shell_execute',
-          description: 'Execute shell commands securely with intelligent output handling. When output_truncated=true, use output_id with read_execution_output to get complete results. Returns partial output for immediate context while preserving full results in files. Supports adaptive execution mode that automatically switches to background for long-running commands.',
+          description: 'Execute shell commands securely with intelligent output handling. When output_truncated=true, use output_id with read_execution_output to get complete results. Returns partial output for immediate context while preserving full results in files. Supports adaptive execution mode that automatically switches to background for long-running commands. New: Support pipeline operations with input_output_id to use previous command output as input.',
           inputSchema: zodToJsonSchema(ShellExecuteParamsSchema, { target: 'jsonSchema7' })
         },
         {

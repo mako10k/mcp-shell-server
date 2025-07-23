@@ -32,6 +32,7 @@ export interface ExecutionOptions {
   workingDirectory?: string;
   environmentVariables?: EnvironmentVariables;
   inputData?: string;
+  inputOutputId?: string;
   timeoutSeconds: number;
   foregroundTimeoutSeconds?: number;
   maxOutputSize: number;
@@ -101,6 +102,32 @@ export class ProcessManager {
       throw new ResourceLimitError('concurrent processes', this.maxConcurrentProcesses);
     }
 
+    // 入力データの準備 - input_output_idが指定された場合はファイルから読み取り
+    let resolvedInputData: string | undefined = options.inputData;
+    if (options.inputOutputId) {
+      if (!this.fileManager) {
+        throw new ExecutionError('FileManager is not available for input_output_id processing', {
+          inputOutputId: options.inputOutputId,
+        });
+      }
+      
+      try {
+        // FileManagerの既存readFileメソッドを使用してファイル全体を読み取り
+        const result = await this.fileManager.readFile(
+          options.inputOutputId,
+          0,
+          100 * 1024 * 1024, // 100MB まで読み取り
+          'utf-8'
+        );
+        resolvedInputData = result.content;
+      } catch (error) {
+        throw new ExecutionError(`Failed to read input from output_id: ${options.inputOutputId}`, {
+          inputOutputId: options.inputOutputId,
+          originalError: String(error),
+        });
+      }
+    }
+
     const executionId = generateId();
     const startTime = getCurrentTimestamp();
 
@@ -161,15 +188,23 @@ export class ProcessManager {
     }
 
     try {
+      // resolvedInputDataを各実行モードに渡すためにoptionsを更新
+      // inputOutputIdは既に処理済みなので削除し、inputDataのみ設定
+      const { inputOutputId, ...baseOptions } = options;
+      const updatedOptions: ExecutionOptions = { 
+        ...baseOptions,
+        ...(resolvedInputData !== undefined && { inputData: resolvedInputData })
+      };
+      
       switch (options.executionMode) {
         case 'foreground':
-          return await this.executeForegroundCommand(executionId, options);
+          return await this.executeForegroundCommand(executionId, updatedOptions);
         case 'adaptive':
-          return await this.executeAdaptiveCommand(executionId, options);
+          return await this.executeAdaptiveCommand(executionId, updatedOptions);
         case 'background':
-          return await this.executeBackgroundCommand(executionId, options);
+          return await this.executeBackgroundCommand(executionId, updatedOptions);
         case 'detached':
-          return await this.executeDetachedCommand(executionId, options);
+          return await this.executeDetachedCommand(executionId, updatedOptions);
         default:
           throw new ExecutionError('Unsupported execution mode', { mode: options.executionMode });
       }

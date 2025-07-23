@@ -16,6 +16,7 @@ export const ShellExecuteParamsSchema = z.object({
   working_directory: z.string().optional().describe('Directory where the command should be executed. If not specified, uses the default working directory set by shell_set_default_workdir or the initial server directory.'),
   environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables to set for this command execution. These are added to or override the current environment.'),
   input_data: z.string().optional().describe('Standard input data to provide to the command. Useful for commands that read from stdin.'),
+  input_output_id: z.string().optional().describe('Output ID from previous command execution to use as input. Alternative to input_data for pipeline operations.'),
   timeout_seconds: z.number().int().min(1).max(3600).default(30).describe('Maximum time in seconds to wait for foreground execution before switching to background or failing. Range: 1-3600 seconds.'),
   foreground_timeout_seconds: z.number().int().min(1).max(300).default(10).describe('For adaptive mode: timeout in seconds for the initial foreground phase before switching to background execution. Range: 1-300 seconds.'),
   return_partial_on_timeout: z.boolean().default(true).describe('When timeout occurs, return partial output collected so far instead of an error. Useful for monitoring long-running commands.'),
@@ -31,7 +32,13 @@ export const ShellExecuteParamsSchema = z.object({
   create_terminal: z.boolean().default(false).describe('Create a new interactive terminal session instead of running command directly. Use for commands requiring interactive input/output.'),
   terminal_shell: ShellTypeSchema.optional().describe('Shell type for the new terminal (bash, zsh, fish, cmd, powershell). Only used when create_terminal is true.'),
   terminal_dimensions: DimensionsSchema.optional().describe('Terminal dimensions in characters (width x height). Only used when create_terminal is true. Default: 120x30.'),
-});
+}).refine(
+  (data) => !(data.input_data && data.input_output_id),
+  {
+    message: "input_data and input_output_id cannot be specified simultaneously.",
+    path: ["input_data", "input_output_id"],
+  }
+);
 
 export const ShellGetExecutionParamsSchema = z.object({
   execution_id: z.string().min(1).describe('Unique execution ID returned by shell_execute. Use this to retrieve detailed information about a specific command execution.'),
