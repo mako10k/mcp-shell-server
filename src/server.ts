@@ -36,6 +36,8 @@ import {
   TerminalCloseParamsSchema,
   SecuritySetRestrictionsParamsSchema,
   MonitoringGetStatsParamsSchema,
+  CleanupSuggestionsParamsSchema,
+  AutoCleanupParamsSchema,
 } from './types/schemas.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
@@ -160,6 +162,18 @@ export class MCPShellServer {
           name: 'delete_execution_outputs',
           description: 'Delete one or more output files by their output_ids. Requires explicit confirmation flag to prevent accidental deletion. Useful for cleanup after processing results.',
           inputSchema: zodToJsonSchema(FileDeleteParamsSchema, { target: 'jsonSchema7' })
+        },
+        
+        // Issue #15: クリーンアップ機能の追加
+        {
+          name: 'get_cleanup_suggestions',
+          description: 'Get automatic cleanup suggestions for output file management. Analyzes current directory size and file age to recommend cleanup candidates. Helps manage disk usage by identifying old or large files.',
+          inputSchema: zodToJsonSchema(CleanupSuggestionsParamsSchema, { target: 'jsonSchema7' })
+        },
+        {
+          name: 'perform_auto_cleanup',  
+          description: 'Perform automatic cleanup of old output files based on age and retention policies. Supports dry-run mode for safety. Automatically preserves recent files while cleaning up old ones to manage disk space.',
+          inputSchema: zodToJsonSchema(AutoCleanupParamsSchema, { target: 'jsonSchema7' })
         },
 
         // Terminal Management
@@ -303,6 +317,19 @@ export class MCPShellServer {
           case 'delete_execution_outputs': {
             const params = FileDeleteParamsSchema.parse(args);
             const result = await this.shellTools.deleteFiles(params);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          // Issue #15: クリーンアップ機能のハンドラー
+          case 'get_cleanup_suggestions': {
+            const params = CleanupSuggestionsParamsSchema.parse(args);
+            const result = await this.shellTools.getCleanupSuggestions(params);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          case 'perform_auto_cleanup': {
+            const params = AutoCleanupParamsSchema.parse(args);
+            const result = await this.shellTools.performAutoCleanup(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 

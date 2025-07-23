@@ -56,6 +56,16 @@ export interface OutputStatus {
   recommended_action?: string | undefined;
 }
 
+// Issue #14: ガイダンス情報の型定義
+export interface GuidanceInfo {
+  pipeline_usage: string;
+  suggested_commands: string[];
+  background_processing?: {
+    status_check: string;
+    monitoring: string;
+  };
+}
+
 // 実行情報
 export interface ExecutionInfo {
   execution_id: string;
@@ -80,6 +90,7 @@ export interface ExecutionInfo {
   truncation_reason?: OutputTruncationReason; // 出力切り捨ての具体的理由
   next_steps?: string[]; // LLMへの推奨アクション
   message?: string; // 状況説明メッセージ
+  guidance?: GuidanceInfo; // Issue #14: パイプライン処理のガイダンス
   created_at: string;
   started_at?: string;
   completed_at?: string;

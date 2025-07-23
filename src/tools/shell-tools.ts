@@ -17,6 +17,8 @@ import {
   TerminalCloseParams,
   SecuritySetRestrictionsParams,
   MonitoringGetStatsParams,
+  CleanupSuggestionsParams,
+  AutoCleanupParams,
 } from '../types/schemas.js';
 import { ProcessManager } from '../core/process-manager.js';
 import { TerminalManager } from '../core/terminal-manager.js';
@@ -440,6 +442,38 @@ export class ShellTools {
         default_working_directory: this.processManager.getDefaultWorkingDirectory(),
         allowed_working_directories: this.processManager.getAllowedWorkingDirectories(),
       };
+    } catch (error) {
+      throw MCPShellError.fromError(error);
+    }
+  }
+
+  // Issue #15: クリーンアップ提案機能
+  async getCleanupSuggestions(params?: CleanupSuggestionsParams) {
+    try {
+      const options: Parameters<typeof this.fileManager.getCleanupSuggestions>[0] = {};
+      
+      if (params?.max_size_mb !== undefined) options.maxSizeMB = params.max_size_mb;
+      if (params?.max_age_hours !== undefined) options.maxAgeHours = params.max_age_hours;
+      if (params?.include_warnings !== undefined) options.includeWarnings = params.include_warnings;
+
+      const result = await this.fileManager.getCleanupSuggestions(options);
+      return result;
+    } catch (error) {
+      throw MCPShellError.fromError(error);
+    }
+  }
+
+  // Issue #15: 自動クリーンアップ実行機能
+  async performAutoCleanup(params?: AutoCleanupParams) {
+    try {
+      const options: Parameters<typeof this.fileManager.performAutoCleanup>[0] = {};
+      
+      if (params?.max_age_hours !== undefined) options.maxAgeHours = params.max_age_hours;
+      if (params?.dry_run !== undefined) options.dryRun = params.dry_run;
+      if (params?.preserve_recent !== undefined) options.preserveRecent = params.preserve_recent;
+
+      const result = await this.fileManager.performAutoCleanup(options);
+      return result;
     } catch (error) {
       throw MCPShellError.fromError(error);
     }

@@ -163,6 +163,19 @@ export const ShellSetDefaultWorkdirParamsSchema = z.object({
   working_directory: z.string().describe('Absolute path to set as the default working directory for all subsequent command executions. Must be an existing, accessible directory.'),
 });
 
+// Issue #15: クリーンアップ機能のスキーマ
+export const CleanupSuggestionsParamsSchema = z.object({
+  max_size_mb: z.number().positive().optional().describe('Size threshold in MB for cleanup warnings. Default: 50MB.'),
+  max_age_hours: z.number().positive().optional().describe('Age threshold in hours for cleanup candidates. Default: 24 hours.'),
+  include_warnings: z.boolean().optional().describe('Whether to include cleanup recommendations. Default: true.'),
+});
+
+export const AutoCleanupParamsSchema = z.object({
+  max_age_hours: z.number().positive().optional().describe('Files older than this (in hours) will be deleted. Default: 24 hours.'),
+  dry_run: z.boolean().optional().describe('If true, simulate cleanup without deleting files. Default: true for safety.'),
+  preserve_recent: z.number().int().positive().optional().describe('Number of most recent files to preserve regardless of age. Default: 10.'),
+});
+
 // Type exports
 export type ShellExecuteParams = z.infer<typeof ShellExecuteParamsSchema>;
 export type ShellGetExecutionParams = z.infer<typeof ShellGetExecutionParamsSchema>;
@@ -182,3 +195,5 @@ export type TerminalResizeParams = z.infer<typeof TerminalResizeParamsSchema>;
 export type TerminalCloseParams = z.infer<typeof TerminalCloseParamsSchema>;
 export type SecuritySetRestrictionsParams = z.infer<typeof SecuritySetRestrictionsParamsSchema>;
 export type MonitoringGetStatsParams = z.infer<typeof MonitoringGetStatsParamsSchema>;
+export type CleanupSuggestionsParams = z.infer<typeof CleanupSuggestionsParamsSchema>;
+export type AutoCleanupParams = z.infer<typeof AutoCleanupParamsSchema>;

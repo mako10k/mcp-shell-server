@@ -309,4 +309,164 @@ export class FileManager {
     const fileInfo = this.files.get(outputId);
     return fileInfo?.execution_id;
   }
+
+  /**
+   * Issue #15: ディレクトリサイズベースのクリーンアップ提案
+   */
+  async getCleanupSuggestions(options?: {
+    maxSizeMB?: number;
+    maxAgeHours?: number;
+    includeWarnings?: boolean;
+  }): Promise<{
+    current_directory_size_mb: number;
+    current_file_count: number;
+    recommendations?: {
+      warning?: string;
+      suggested_action?: string;
+      cleanup_candidates: string[];
+      estimated_savings_mb: number;
+    };
+  }> {
+    const maxSizeMB = options?.maxSizeMB || 50; // Default: 50MB threshold
+    const maxAgeHours = options?.maxAgeHours || 24; // Default: 24 hours
+    const includeWarnings = options?.includeWarnings ?? true;
+
+    // 現在のディレクトリサイズと情報を取得
+    const stats = this.getUsageStats();
+    const currentSizeMB = stats.total_size_bytes / (1024 * 1024);
+    const currentTime = Date.now();
+
+    const result = {
+      current_directory_size_mb: Math.round(currentSizeMB * 100) / 100,
+      current_file_count: stats.total_files,
+    };
+
+    // 閾値チェックとクリーンアップ候補の特定
+    if (includeWarnings && (currentSizeMB > maxSizeMB || stats.total_files > 1000)) {
+      const cleanupCandidates: string[] = [];
+      let estimatedSavings = 0;
+
+      // 古いファイルを特定
+      for (const [outputId, fileInfo] of this.files) {
+        const fileAge = currentTime - new Date(fileInfo.created_at).getTime();
+        const fileAgeHours = fileAge / (1000 * 60 * 60);
+
+        if (fileAgeHours > maxAgeHours) {
+          cleanupCandidates.push(outputId);
+          estimatedSavings += fileInfo.size;
+        }
+      }
+
+      // 大きなファイルも候補に追加（サイズが平均の3倍以上）
+      if (cleanupCandidates.length < 10 && stats.average_file_size > 0) {
+        const largeSizeThreshold = stats.average_file_size * 3;
+        for (const [outputId, fileInfo] of this.files) {
+          if (fileInfo.size > largeSizeThreshold && !cleanupCandidates.includes(outputId)) {
+            cleanupCandidates.push(outputId);
+            estimatedSavings += fileInfo.size;
+          }
+        }
+      }
+
+      if (cleanupCandidates.length > 0) {
+        const estimatedSavingsMB = Math.round((estimatedSavings / (1024 * 1024)) * 100) / 100;
+        
+        let warning: string;
+        if (currentSizeMB > maxSizeMB) {
+          warning = `Output directory size: ${result.current_directory_size_mb}MB exceeds threshold (${maxSizeMB}MB). Consider cleanup.`;
+        } else {
+          warning = `High file count: ${result.current_file_count} files. Consider cleanup for better performance.`;
+        }
+
+        return {
+          ...result,
+          recommendations: {
+            warning,
+            suggested_action: 'Use delete_execution_outputs with cleanup_candidates for automatic cleanup',
+            cleanup_candidates: cleanupCandidates.slice(0, 20), // Limit to top 20 candidates
+            estimated_savings_mb: estimatedSavingsMB,
+          },
+        };
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Issue #15: 年齢ベースの自動クリーンアップ
+   */
+  async performAutoCleanup(options?: {
+    maxAgeHours?: number;
+    dryRun?: boolean;
+    preserveRecent?: number;
+  }): Promise<{
+    deleted_files: string[];
+    preserved_files: string[];
+    space_freed_mb: number;
+    dry_run: boolean;
+  }> {
+    const maxAgeHours = options?.maxAgeHours || 24;
+    const dryRun = options?.dryRun ?? true; // Default to dry run for safety
+    const preserveRecent = options?.preserveRecent || 10; // Keep at least 10 recent files
+
+    const currentTime = Date.now();
+    const deleteCandidates: string[] = [];
+    const preserveCandidates: string[] = [];
+    let spaceFeed = 0;
+
+    // ファイルを作成時間でソート（新しい順）
+    const sortedFiles = Array.from(this.files.entries()).sort(
+      ([, a], [, b]) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    // 最新のN個は保持、残りは年齢でチェック
+    for (let i = 0; i < sortedFiles.length; i++) {
+      const entry = sortedFiles[i];
+      if (!entry) continue;
+      
+      const [outputId, fileInfo] = entry;
+      
+      if (i < preserveRecent) {
+        // 最新のN個は保持
+        preserveCandidates.push(outputId);
+      } else {
+        // 古いファイルかチェック
+        const fileAge = currentTime - new Date(fileInfo.created_at).getTime();
+        const fileAgeHours = fileAge / (1000 * 60 * 60);
+
+        if (fileAgeHours > maxAgeHours) {
+          deleteCandidates.push(outputId);
+          spaceFeed += fileInfo.size;
+        } else {
+          preserveCandidates.push(outputId);
+        }
+      }
+    }
+
+    const spaceFreedMB = Math.round((spaceFeed / (1024 * 1024)) * 100) / 100;
+
+    // 実際の削除実行（dryRunでない場合）
+    if (!dryRun && deleteCandidates.length > 0) {
+      try {
+        await this.deleteFiles(deleteCandidates, true);
+      } catch (error) {
+        console.error('Auto cleanup failed:', error);
+        // エラーの場合は削除されなかった扱い
+        return {
+          deleted_files: [],
+          preserved_files: Array.from(this.files.keys()),
+          space_freed_mb: 0,
+          dry_run: dryRun,
+        };
+      }
+    }
+
+    return {
+      deleted_files: deleteCandidates,
+      preserved_files: preserveCandidates,
+      space_freed_mb: spaceFreedMB,
+      dry_run: dryRun,
+    };
+  }
 }
