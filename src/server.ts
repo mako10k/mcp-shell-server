@@ -6,6 +6,7 @@ import {
   ErrorCode,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
+import { ZodError } from 'zod';
 
 import { ProcessManager } from './core/process-manager.js';
 import { TerminalManager } from './core/terminal-manager.js';
@@ -226,9 +227,23 @@ export class MCPShellServer {
         switch (name) {
           // Shell Operations
           case 'shell_execute': {
-            const params = ShellExecuteParamsSchema.parse(args);
-            const result = await this.shellTools.executeShell(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+            try {
+              const params = ShellExecuteParamsSchema.parse(args);
+              const result = await this.shellTools.executeShell(params);
+              return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+            } catch (e) {
+              if (e instanceof ZodError) {
+                const errorDetails = {
+                  error: 'Validation Error',
+                  message: 'Invalid parameters provided to shell_execute',
+                  receivedArgs: args,
+                  validationErrors: e.errors,
+                  timestamp: new Date().toISOString()
+                };
+                console.error('[SHELL_EXECUTE_VALIDATION_ERROR]', JSON.stringify(errorDetails, null, 2));
+              }
+              throw e;
+            }
           }
 
           case 'process_get_execution': {
