@@ -20,6 +20,7 @@ import {
   CleanupSuggestionsParams,
   AutoCleanupParams,
 } from '../types/schemas.js';
+import { TerminalOperateParams } from '../types/quick-schemas.js';
 import { ProcessManager } from '../core/process-manager.js';
 import { TerminalManager } from '../core/terminal-manager.js';
 import { FileManager } from '../core/file-manager.js';
@@ -320,6 +321,8 @@ export class ShellTools {
         line_count: result.line_count,
         total_lines: result.total_lines,
         has_more: result.has_more,
+        start_line: result.start_line,
+        next_start_line: result.next_start_line,
       };
 
       if (params.include_foreground_process) {
@@ -474,6 +477,131 @@ export class ShellTools {
 
       const result = await this.fileManager.performAutoCleanup(options);
       return result;
+    } catch (error) {
+      throw MCPShellError.fromError(error);
+    }
+  }
+
+  // 統合ターミナル操作 (create + send_input + get_output を統合)
+  async terminalOperate(params: TerminalOperateParams) {
+    try {
+      let terminalId = params.terminal_id;
+      let terminalInfo = null;
+
+      // 1. ターミナルの準備 (新規作成 or 既存利用)
+      if (!terminalId) {
+        if (!params.command) {
+          throw new Error('Either terminal_id or command must be provided');
+        }
+        
+        // 新規ターミナル作成
+        const createOptions: any = {
+          shellType: params.shell_type || 'bash',
+          dimensions: params.dimensions || { width: 120, height: 30 },
+          autoSaveHistory: true,
+        };
+
+        if (params.session_name) createOptions.sessionName = params.session_name;
+        if (params.working_directory) createOptions.workingDirectory = params.working_directory;
+        if (params.environment_variables) createOptions.environmentVariables = params.environment_variables;
+
+        terminalInfo = await this.terminalManager.createTerminal(createOptions);
+        terminalId = terminalInfo.terminal_id;
+
+        // 作成後にコマンドを自動実行
+        if (params.command) {
+          await this.terminalManager.sendInput(
+            terminalId,
+            params.command,
+            true, // execute
+            params.control_codes || false,
+            false, // raw_bytes
+            params.send_to // program guard
+          );
+        }
+      } else {
+        // 既存ターミナル使用
+        terminalInfo = await this.terminalManager.getTerminal(terminalId);
+        
+        // dimensionsが指定されている場合、現在のサイズと比較してリサイズ
+        if (params.dimensions) {
+          const currentDimensions = terminalInfo.dimensions;
+          const newDimensions = params.dimensions;
+          
+          if (currentDimensions.width !== newDimensions.width || 
+              currentDimensions.height !== newDimensions.height) {
+            // サイズが異なる場合はリサイズ実行
+            await this.terminalManager.resizeTerminal(terminalId, newDimensions);
+            // 最新のターミナル情報を再取得
+            terminalInfo = await this.terminalManager.getTerminal(terminalId);
+          }
+        }
+        
+        // inputまたはcommandが指定されていれば送信
+        const inputToSend = params.input || params.command;
+        if (inputToSend) {
+          await this.terminalManager.sendInput(
+            terminalId,
+            inputToSend,
+            params.execute !== false, // デフォルトtrue
+            params.control_codes || false,
+            false, // raw_bytes
+            params.send_to // program guard
+          );
+        }
+      }
+
+      // 2. 遅延処理（コマンド完了待ち）
+      if (params.output_delay_ms > 0) {
+        await new Promise(resolve => setTimeout(resolve, params.output_delay_ms));
+      }
+
+      // 3. 出力取得
+      let output = null;
+      if (params.get_output !== false) {
+        const outputResult = await this.terminalManager.getOutput(
+          terminalId,
+          undefined, // start_lineはデフォルト（連続読み取り）
+          params.output_lines || 20,
+          params.include_ansi || false,
+          false // include_foreground_process
+        );
+        output = outputResult;
+      }
+
+      // 4. レスポンス構築
+      const response: any = {
+        terminal_id: terminalId,
+        success: true,
+      };
+
+      if (params.return_terminal_info !== false && terminalInfo) {
+        response.terminal_info = terminalInfo;
+      }
+
+      if (output) {
+        response.output = output.output;
+        response.output_info = {
+          line_count: output.line_count,
+          total_lines: output.total_lines,
+          has_more: output.has_more,
+          start_line: output.start_line,
+          next_start_line: output.next_start_line,
+        };
+      }
+
+      // 応答レベルに応じて情報を調整
+      if (params.response_level === 'minimal') {
+        return {
+          terminal_id: terminalId,
+          success: true,
+          output: output?.output || null,
+        };
+      } else if (params.response_level === 'full') {
+        // フル情報を含める（すでにresponseに含まれている）
+      }
+
+      return response;
     } catch (error) {
       throw MCPShellError.fromError(error);
     }

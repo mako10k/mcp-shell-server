@@ -27,18 +27,15 @@ import {
   FileListParamsSchema,
   FileReadParamsSchema,
   FileDeleteParamsSchema,
-  TerminalCreateParamsSchema,
   TerminalListParamsSchema,
   TerminalGetParamsSchema,
-  TerminalInputParamsSchema,
-  TerminalOutputParamsSchema,
-  TerminalResizeParamsSchema,
   TerminalCloseParamsSchema,
   SecuritySetRestrictionsParamsSchema,
   MonitoringGetStatsParamsSchema,
   CleanupSuggestionsParamsSchema,
   AutoCleanupParamsSchema,
 } from './types/schemas.js';
+import { TerminalOperateParamsSchema } from './types/quick-schemas.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
 import { MCPShellError } from './utils/errors.js';
@@ -176,12 +173,14 @@ export class MCPShellServer {
           inputSchema: zodToJsonSchema(AutoCleanupParamsSchema, { target: 'jsonSchema7' })
         },
 
-        // Terminal Management
+        // Terminal Management - Unified Operations
         {
-          name: 'terminal_create',
-          description: 'Create a new interactive terminal session with persistent state. Supports different shell types (bash, zsh, fish), custom dimensions, and environment variables. Use for interactive workflows.',
-          inputSchema: zodToJsonSchema(TerminalCreateParamsSchema, { target: 'jsonSchema7' })
+          name: 'terminal_operate',
+          description: 'Unified terminal operations: create sessions, send input, get output with automatic position tracking. Combines terminal_create, terminal_send_input, and terminal_get_output into a single streamlined interface for efficient terminal workflows.',
+          inputSchema: zodToJsonSchema(TerminalOperateParamsSchema, { target: 'jsonSchema7' })
         },
+        
+        // Essential terminal operations that remain individual
         {
           name: 'terminal_list',
           description: 'List active terminal sessions',
@@ -191,21 +190,6 @@ export class MCPShellServer {
           name: 'terminal_get_info',
           description: 'Get terminal detailed information',
           inputSchema: zodToJsonSchema(TerminalGetParamsSchema, { target: 'jsonSchema7' })
-        },
-        {
-          name: 'terminal_send_input',
-          description: 'Send input to terminal',
-          inputSchema: zodToJsonSchema(TerminalInputParamsSchema, { target: 'jsonSchema7' })
-        },
-        {
-          name: 'terminal_get_output',
-          description: 'Get terminal output',
-          inputSchema: zodToJsonSchema(TerminalOutputParamsSchema, { target: 'jsonSchema7' })
-        },
-        {
-          name: 'terminal_resize',
-          description: 'Resize terminal',
-          inputSchema: zodToJsonSchema(TerminalResizeParamsSchema, { target: 'jsonSchema7' })
         },
         {
           name: 'terminal_close',
@@ -334,21 +318,18 @@ export class MCPShellServer {
           }
 
           // Terminal Management
+          // Terminal Management - Unified Operations
+          case 'terminal_operate': {
+            const params = TerminalOperateParamsSchema.parse(args);
+            const result = await this.shellTools.terminalOperate(params);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          // Terminal Management - Individual Operations (Legacy, commented out)
+          /*
           case 'terminal_create': {
             const params = TerminalCreateParamsSchema.parse(args);
             const result = await this.shellTools.createTerminal(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'terminal_list': {
-            const params = TerminalListParamsSchema.parse(args);
-            const result = await this.shellTools.listTerminals(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'terminal_get_info': {
-            const params = TerminalGetParamsSchema.parse(args);
-            const result = await this.shellTools.getTerminal(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
@@ -363,10 +344,18 @@ export class MCPShellServer {
             const result = await this.shellTools.getTerminalOutput(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
+          */
 
-          case 'terminal_resize': {
-            const params = TerminalResizeParamsSchema.parse(args);
-            const result = await this.shellTools.resizeTerminal(params);
+          // Essential terminal operations that remain individual
+          case 'terminal_list': {
+            const params = TerminalListParamsSchema.parse(args);
+            const result = await this.shellTools.listTerminals(params);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          case 'terminal_get_info': {
+            const params = TerminalGetParamsSchema.parse(args);
+            const result = await this.shellTools.getTerminal(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 

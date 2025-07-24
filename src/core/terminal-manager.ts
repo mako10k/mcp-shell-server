@@ -31,6 +31,7 @@ interface TerminalSession {
 
 export class TerminalManager {
   private terminals = new Map<string, TerminalSession>();
+  private terminalReadPositions = new Map<string, number>(); // Track last read position for each terminal
   private readonly maxTerminals: number;
   private readonly maxOutputLines: number;
   private readonly maxHistoryLines: number;
@@ -348,7 +349,7 @@ export class TerminalManager {
 
   async getOutput(
     terminalId: string,
-    startLine = 0,
+    startLine?: number,
     lineCount = 100,
     includeAnsi = false,
     includeForegroundProcess = false
@@ -357,6 +358,8 @@ export class TerminalManager {
     line_count: number;
     total_lines: number;
     has_more: boolean;
+    start_line: number;
+    next_start_line: number;
     foreground_process?: ForegroundProcessInfo;
   }> {
     const session = this.terminals.get(terminalId);
@@ -364,14 +367,19 @@ export class TerminalManager {
       throw new ResourceNotFoundError('terminal', terminalId);
     }
 
+    // startLineが指定されていない場合は、前回の読み取り位置を使用
+    const actualStartLine = startLine !== undefined 
+      ? startLine 
+      : (this.terminalReadPositions.get(terminalId) || 0);
+
     // フォアグラウンドプロセス情報を更新（要求された場合）
     if (includeForegroundProcess) {
       await this.updateForegroundProcess(session);
     }
 
     const totalLines = session.outputBuffer.length;
-    const endLine = Math.min(startLine + lineCount, totalLines);
-    const outputLines = session.outputBuffer.slice(startLine, endLine);
+    const endLine = Math.min(actualStartLine + lineCount, totalLines);
+    const outputLines = session.outputBuffer.slice(actualStartLine, endLine);
 
     let output = outputLines.join('\n');
 
@@ -380,11 +388,17 @@ export class TerminalManager {
       output = this.stripAnsiCodes(output);
     }
 
+    // 次回の読み取り位置を更新
+    const nextStartLine = endLine;
+    this.terminalReadPositions.set(terminalId, nextStartLine);
+
     const result: any = {
       output,
       line_count: outputLines.length,
       total_lines: totalLines,
       has_more: endLine < totalLines,
+      start_line: actualStartLine,
+      next_start_line: nextStartLine,
     };
 
     if (includeForegroundProcess) {
@@ -397,6 +411,55 @@ export class TerminalManager {
   private stripAnsiCodes(text: string): string {
     // ANSI制御コードを除去する正規表現
     return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+  }
+
+  /**
+   * Reset the read position for a terminal to start reading from the beginning again
+   */
+  resetReadPosition(terminalId: string): { success: boolean; reset_to: number } {
+    const session = this.terminals.get(terminalId);
+    if (!session) {
+      throw new ResourceNotFoundError('terminal', terminalId);
+    }
+
+    this.terminalReadPositions.set(terminalId, 0);
+    return {
+      success: true,
+      reset_to: 0,
+    };
+  }
+
+  /**
+   * Set the read position for a terminal to a specific line
+   */
+  setReadPosition(terminalId: string, position: number): { success: boolean; set_to: number } {
+    const session = this.terminals.get(terminalId);
+    if (!session) {
+      throw new ResourceNotFoundError('terminal', terminalId);
+    }
+
+    const clampedPosition = Math.max(0, Math.min(position, session.outputBuffer.length));
+    this.terminalReadPositions.set(terminalId, clampedPosition);
+    return {
+      success: true,
+      set_to: clampedPosition,
+    };
+  }
+
+  /**
+   * Get the current read position for a terminal
+   */
+  getReadPosition(terminalId: string): { current_position: number; total_lines: number } {
+    const session = this.terminals.get(terminalId);
+    if (!session) {
+      throw new ResourceNotFoundError('terminal', terminalId);
+    }
+
+    const currentPosition = this.terminalReadPositions.get(terminalId) || 0;
+    return {
+      current_position: currentPosition,
+      total_lines: session.outputBuffer.length,
+    };
   }
 
   resizeTerminal(
@@ -457,6 +520,9 @@ export class TerminalManager {
 
       // セッションをマップから削除
       this.terminals.delete(terminalId);
+      
+      // 読み取り位置もクリーンアップ
+      this.terminalReadPositions.delete(terminalId);
 
       return {
         success: true,

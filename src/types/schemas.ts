@@ -17,16 +17,16 @@ export const ShellExecuteParamsSchema = z.object({
   environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables to set for this command execution. These are added to or override the current environment.'),
   input_data: z.string().optional().describe('Standard input data to provide to the command. Useful for commands that read from stdin.'),
   input_output_id: z.string().optional().describe('Output ID from previous command execution to use as input. Alternative to input_data for pipeline operations.'),
-  timeout_seconds: z.number().int().min(1).max(3600).default(30).describe('Maximum time in seconds to wait for foreground execution before switching to background or failing. Range: 1-3600 seconds.'),
-  foreground_timeout_seconds: z.number().int().min(1).max(300).default(10).describe('For adaptive mode: timeout in seconds for the initial foreground phase before switching to background execution. Range: 1-300 seconds.'),
+  timeout_seconds: z.number().int().min(1).max(3600).default(60).describe('Maximum time in seconds to wait for foreground execution before switching to background or failing. Range: 1-3600 seconds.'),
+  foreground_timeout_seconds: z.number().int().min(1).max(300).default(15).describe('For adaptive mode: timeout in seconds for the initial foreground phase before switching to background execution. Range: 1-300 seconds.'),
   return_partial_on_timeout: z.boolean().default(true).describe('When timeout occurs, return partial output collected so far instead of an error. Useful for monitoring long-running commands.'),
   max_output_size: z
     .number()
     .int()
     .min(1024)
     .max(100 * 1024 * 1024)
-    .default(1048576)
-    .describe('Maximum output size in bytes (1KB-100MB). Output will be truncated if it exceeds this limit. Default: 1MB.'),
+    .default(5 * 1024 * 1024)
+    .describe('Maximum output size in bytes (1KB-100MB). Output will be truncated if it exceeds this limit. Default: 5MB.'),
   capture_stderr: z.boolean().default(true).describe('Whether to capture standard error output in addition to stdout. When false, stderr is discarded.'),
   session_id: z.string().optional().describe('Session ID for grouping related command executions. Used for process management and filtering in process_list.'),
   create_terminal: z.boolean().default(false).describe('Create a new interactive terminal session instead of running command directly. Use for commands requiring interactive input/output.'),
@@ -122,8 +122,8 @@ export const TerminalInputParamsSchema = z.object({
 
 export const TerminalOutputParamsSchema = z.object({
   terminal_id: z.string().min(1).describe('Unique terminal ID from terminal_create or terminal_list. The terminal must exist to retrieve output.'),
-  start_line: z.number().int().min(0).default(0).describe('Starting line number to read from (0-based). Use for reading specific portions of terminal history.'),
-  line_count: z.number().int().min(1).max(10000).default(100).describe('Number of lines to retrieve (1-10000). Balance between getting enough context and response size.'),
+  start_line: z.number().int().min(0).optional().describe('Starting line number to read from (0-based). If not specified, continues from the last read position for this terminal. Use for reading specific portions of terminal history.'),
+  line_count: z.number().int().min(1).max(10000).default(50).describe('Number of lines to retrieve (1-10000). Balance between getting enough context and response size.'),
   include_ansi: z.boolean().default(false).describe('Whether to include ANSI control codes for colors and formatting. Set to true if you need to preserve terminal appearance.'),
   include_foreground_process: z.boolean().default(false).describe('Whether to include information about the currently running foreground process in the terminal.'),
 });
