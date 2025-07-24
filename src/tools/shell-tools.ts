@@ -487,6 +487,9 @@ export class ShellTools {
     try {
       let terminalId = params.terminal_id;
       let terminalInfo = null;
+      let inputRejected = false;
+      let rejectionReason = "";
+      let unreadOutput: any = null;
 
       // 1. ターミナルの準備 (新規作成 or 既存利用)
       if (!terminalId) {
@@ -537,17 +540,42 @@ export class ShellTools {
           }
         }
         
-        // inputまたはcommandが指定されていれば送信
+        // inputまたはcommandが指定されていれば送信（未読出力チェック付き）
         const inputToSend = params.input || params.command;
+        
         if (inputToSend) {
-          await this.terminalManager.sendInput(
-            terminalId,
-            inputToSend,
-            params.execute !== false, // デフォルトtrue
-            params.control_codes || false,
-            false, // raw_bytes
-            params.send_to // program guard
-          );
+          // 制御コード送信時は自動的にforce_inputをtrueにする（Ctrl+C等の緊急操作のため）
+          const effectiveForceInput = params.force_input || params.control_codes;
+          
+          // 未読出力チェック（force_inputまたはcontrol_codesがfalseの場合のみ）
+          if (!effectiveForceInput) {
+            const unreadCheck = await this.terminalManager.getOutput(
+              terminalId,
+              undefined, // start_lineはデフォルト（連続読み取り）
+              1000, // 大きめの値で未読データを全取得
+              params.include_ansi || false,
+              false // include_foreground_process
+            );
+            
+            // 未読出力がある場合は入力を拒否（ただし処理は続行）
+            if (unreadCheck.output && unreadCheck.output.trim().length > 0) {
+              inputRejected = true;
+              rejectionReason = "Unread output exists. Read output first or use force_input=true to override.";
+              unreadOutput = unreadCheck;
+            }
+          }
+          
+          // 制約に引っかからなかった場合のみ入力送信
+          if (!inputRejected) {
+            await this.terminalManager.sendInput(
+              terminalId,
+              inputToSend,
+              params.execute !== false, // デフォルトtrue
+              params.control_codes || false,
+              false, // raw_bytes
+              params.send_to // program guard
+            );
+          }
         }
       }
 
@@ -572,8 +600,24 @@ export class ShellTools {
       // 4. レスポンス構築
       const response: any = {
         terminal_id: terminalId,
-        success: true,
+        success: !inputRejected, // 入力が拒否された場合はfalse
       };
+
+      // 入力拒否情報を追加
+      if (inputRejected) {
+        response.input_rejected = true;
+        response.reason = rejectionReason;
+        if (unreadOutput) {
+          response.unread_output = unreadOutput.output;
+          response.unread_output_info = {
+            line_count: unreadOutput.line_count,
+            total_lines: unreadOutput.total_lines,
+            has_more: unreadOutput.has_more,
+            start_line: unreadOutput.start_line,
+            next_start_line: unreadOutput.next_start_line,
+          };
+        }
+      }
 
       if (params.return_terminal_info !== false && terminalInfo) {
         response.terminal_info = terminalInfo;

@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-07-24
+
+### Added
+- **Terminal Tool Consolidation**: Unified terminal operations for better LLM usability
+  - Combined `terminal_create`, `terminal_send_input`, `terminal_get_output`, and `terminal_resize` into single `terminal_operate` tool
+  - Dynamic terminal resizing through `dimensions` parameter
+  - Automatic position tracking with `next_start_line` management
+  - Comprehensive response modes: minimal, standard, and full detail levels
+- **Input Constraint System**: Enhanced terminal safety and user experience
+  - Unread output detection to prevent input mixing
+  - Automatic input rejection when unread output exists
+  - `force_input` parameter for explicit constraint bypass
+  - Detailed rejection information with `input_rejected`, `reason`, and `unread_output` fields
+- **Control Codes Auto-Bypass**: Smart emergency operation handling
+  - Automatic `force_input=true` behavior when `control_codes=true`
+  - Immediate Ctrl+C and other control codes without constraint checks
+  - Emergency terminal control prioritized over safety constraints
+
+### Removed
+- **Tool Count Reduction**: Streamlined tool set to reduce LLM confusion (40% reduction)
+  - Removed process management tools: `process_list`, `process_terminate`, `monitoring_get_stats`
+  - Removed security tools: `security_set_restrictions` (runtime changes undermine security model)
+  - Consolidated 4 terminal tools into 1 unified `terminal_operate` tool
+  - Reduced from 20+ tools to 12 essential tools for better LLM decision-making
+
+### Enhanced
+- **Terminal Operations**: Comprehensive workflow management
+  - Single tool handles terminal creation, input, output, and resizing
+  - Consistent parameter patterns across all terminal operations
+  - Improved response structure with contextual information
+- **Safety Features**: Intelligent input handling
+  - Unread output protection prevents command mixing
+  - Smart bypass for emergency operations (control codes)
+  - Clear feedback when operations are constrained or bypassed
+
+### Technical Improvements
+- Enhanced `terminalOperate` method with unified parameter handling
+- Improved constraint checking logic with control codes integration
+- Better error messages and user guidance for constraint violations
+- Comprehensive test coverage for constraint and bypass scenarios
+
 ## [2.1.8] - 2025-07-23
 
 ### Added

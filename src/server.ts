@@ -21,17 +21,12 @@ import {
   ShellExecuteParamsSchema,
   ShellGetExecutionParamsSchema,
   ShellSetDefaultWorkdirParamsSchema,
-  ProcessListParamsSchema,
-  ProcessKillParamsSchema,
-  ProcessMonitorParamsSchema,
   FileListParamsSchema,
   FileReadParamsSchema,
   FileDeleteParamsSchema,
   TerminalListParamsSchema,
   TerminalGetParamsSchema,
   TerminalCloseParamsSchema,
-  SecuritySetRestrictionsParamsSchema,
-  MonitoringGetStatsParamsSchema,
   CleanupSuggestionsParamsSchema,
   AutoCleanupParamsSchema,
 } from './types/schemas.js';
@@ -127,23 +122,6 @@ export class MCPShellServer {
           inputSchema: zodToJsonSchema(ShellSetDefaultWorkdirParamsSchema, { target: 'jsonSchema7' })
         },
 
-        // Process Management
-        {
-          name: 'process_list',
-          description: 'List all active, completed, or failed processes with their status, command, execution time, and resource usage. Supports filtering by status, command pattern, or session.',
-          inputSchema: zodToJsonSchema(ProcessListParamsSchema, { target: 'jsonSchema7' })
-        },
-        {
-          name: 'process_terminate',
-          description: 'Safely terminate a running process by sending a signal (TERM, KILL, INT, etc.). Use force flag for immediate termination. Requires valid process_id from process_list.',
-          inputSchema: zodToJsonSchema(ProcessKillParamsSchema, { target: 'jsonSchema7' })
-        },
-        {
-          name: 'process_monitor',
-          description: 'Start real-time monitoring of a running process to track CPU, memory, I/O, and network usage. Returns periodic statistics until the process terminates.',
-          inputSchema: zodToJsonSchema(ProcessMonitorParamsSchema, { target: 'jsonSchema7' })
-        },
-
         // File Operations
         {
           name: 'list_execution_outputs',
@@ -195,18 +173,6 @@ export class MCPShellServer {
           name: 'terminal_close',
           description: 'Close terminal session',
           inputSchema: zodToJsonSchema(TerminalCloseParamsSchema, { target: 'jsonSchema7' })
-        },
-
-        // Security & Monitoring
-        {
-          name: 'security_set_restrictions',
-          description: 'Configure security restrictions for command execution using predefined modes (permissive, restrictive) or custom rules. Controls allowed commands, directories, and resource limits.',
-          inputSchema: zodToJsonSchema(SecuritySetRestrictionsParamsSchema, { target: 'jsonSchema7' })
-        },
-        {
-          name: 'monitoring_get_stats',
-          description: 'Retrieve system-wide statistics including process counts, terminal usage, file operations, and system resources over a specified time range.',
-          inputSchema: zodToJsonSchema(MonitoringGetStatsParamsSchema, { target: 'jsonSchema7' })
         }
       ].filter((tool) => !DISABLED_TOOLS.includes(tool.name))
     }));
@@ -263,25 +229,6 @@ export class MCPShellServer {
           case 'shell_set_default_workdir': {
             const params = ShellSetDefaultWorkdirParamsSchema.parse(args);
             const result = await this.shellTools.setDefaultWorkingDirectory(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Process Management
-          case 'process_list': {
-            const params = ProcessListParamsSchema.parse(args);
-            const result = await this.shellTools.listProcesses(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'process_terminate': {
-            const params = ProcessKillParamsSchema.parse(args);
-            const result = await this.shellTools.killProcess(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'process_monitor': {
-            const params = ProcessMonitorParamsSchema.parse(args);
-            const result = await this.shellTools.monitorProcess(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
@@ -362,19 +309,6 @@ export class MCPShellServer {
           case 'terminal_close': {
             const params = TerminalCloseParamsSchema.parse(args);
             const result = await this.shellTools.closeTerminal(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Security & Monitoring
-          case 'security_set_restrictions': {
-            const params = SecuritySetRestrictionsParamsSchema.parse(args);
-            const result = await this.shellTools.setSecurityRestrictions(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'monitoring_get_stats': {
-            const params = MonitoringGetStatsParamsSchema.parse(args);
-            const result = await this.shellTools.getMonitoringStats(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 

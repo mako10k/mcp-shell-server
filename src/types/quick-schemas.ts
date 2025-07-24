@@ -30,6 +30,7 @@ export const TerminalOperateParamsSchema = z.object({
   execute: z.boolean().default(true).describe('Whether to press Enter after sending input (execute command)'),
   control_codes: z.boolean().default(false).describe('Whether to interpret input as control codes'),
   send_to: z.string().optional().describe('Program guard target to ensure input is sent to the correct process. Can be process name, path, "pid:12345", "sessionleader:", or "*" for any process.'),
+  force_input: z.boolean().default(false).describe('Force input even if unread output exists. Default: false (input rejected if unread output exists).'),
   
   // Output retrieval
   get_output: z.boolean().default(true).describe('Whether to retrieve terminal output after operations'),
