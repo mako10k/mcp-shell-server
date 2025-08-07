@@ -10,7 +10,7 @@ import { getCurrentTimestamp, generateId } from '../utils/helpers.js';
 
 /**
  * Enhanced Command History Manager
- * コマンド実行履歴、評価結果、ユーザ確認パターンを管理
+ * Manages command execution history, evaluation results, and user confirmation patterns
  */
 export class CommandHistoryManager {
   private historyPath: string;
@@ -20,12 +20,12 @@ export class CommandHistoryManager {
 
   constructor(config: EnhancedSecurityConfig, historyPath?: string) {
     this.config = config;
-    // デフォルト履歴ファイルパス: $HOME/.mcp-shell-server/command-history.json
+    // Default history file path: $HOME/.mcp-shell-server/command-history.json
     this.historyPath = historyPath || this.getDefaultHistoryPath();
   }
 
   /**
-   * デフォルト履歴ファイルパスを取得
+   * Get default history file path
    */
   private getDefaultHistoryPath(): string {
     const homeDir = process.env['HOME'] || process.env['USERPROFILE'] || '.';
@@ -34,7 +34,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 履歴ファイルを読み込み
+   * Load history from file
    */
   async loadHistory(): Promise<void> {
     try {
@@ -42,19 +42,19 @@ export class CommandHistoryManager {
       const historyData = await fs.readFile(this.historyPath, 'utf-8');
       const rawHistory = JSON.parse(historyData);
       
-      // 各エントリをバリデーション
+      // Validate each entry
       this.history = rawHistory.entries?.map((entry: any) => 
         CommandHistoryEntrySchema.parse(entry)
       ) || [];
       
       this.userPatterns = rawHistory.userPatterns || [];
       
-      // 履歴のクリーンアップ（古いエントリを削除）
+      // Cleanup old entries
       await this.cleanupOldEntries();
       
     } catch (error) {
       if ((error as any).code === 'ENOENT') {
-        // ファイルが存在しない場合は空の履歴で開始
+        // Start with empty history if file doesn't exist
         this.history = [];
         this.userPatterns = [];
       } else {
@@ -64,7 +64,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 履歴ファイルを保存
+   * Save history to file
    */
   async saveHistory(): Promise<void> {
     try {
@@ -92,7 +92,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 新しいコマンド履歴エントリを追加
+   * Add new command history entry
    */
   async addHistoryEntry(entry: Omit<CommandHistoryEntry, 'execution_id' | 'timestamp'>): Promise<string> {
     const fullEntry: CommandHistoryEntry = {
@@ -101,17 +101,17 @@ export class CommandHistoryManager {
       timestamp: getCurrentTimestamp(),
     };
     
-    // バリデーション
+    // Validation
     const validatedEntry = CommandHistoryEntrySchema.parse(fullEntry);
     
-    this.history.unshift(validatedEntry); // 最新のものを先頭に追加
+    this.history.unshift(validatedEntry); // Add newest at front
     
-    // 最大エントリ数を超えた場合は古いものを削除
+    // Remove old entries if max exceeded
     if (this.history.length > this.config.max_history_entries) {
       this.history = this.history.slice(0, this.config.max_history_entries);
     }
     
-    // 自動保存（オプション）
+    // Auto-save (optional)
     if (this.config.command_history_enhanced) {
       await this.saveHistory();
     }
@@ -120,7 +120,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 履歴エントリを更新（評価結果の追加など）
+   * Update history entry (add evaluation results, etc.)
    */
   async updateHistoryEntry(
     executionId: string, 
@@ -137,7 +137,7 @@ export class CommandHistoryManager {
       return false;
     }
     
-    // 更新（必須フィールドは保持）
+    // Update (preserve required fields)
     const updatedEntry: CommandHistoryEntry = { 
       ...currentEntry, 
       ...updates,
@@ -149,10 +149,10 @@ export class CommandHistoryManager {
       resubmission_count: currentEntry.resubmission_count
     };
     
-    // バリデーション
+    // Validation
     this.history[entryIndex] = CommandHistoryEntrySchema.parse(updatedEntry);
     
-    // 自動保存
+    // Auto-save
     if (this.config.command_history_enhanced) {
       await this.saveHistory();
     }
@@ -161,7 +161,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 類似コマンドの履歴を検索
+   * Search for similar commands in history
    */
   findSimilarCommands(command: string, limit = 10): CommandHistoryEntry[] {
     const normalizedCommand = command.toLowerCase().trim();
@@ -169,7 +169,7 @@ export class CommandHistoryManager {
     return this.history
       .filter(entry => {
         const entryCommand = entry.command.toLowerCase().trim();
-        // 完全一致、部分一致、またはコマンドの最初の単語が一致
+        // Exact match, partial match, or first word match
         return entryCommand === normalizedCommand ||
                entryCommand.includes(normalizedCommand) ||
                normalizedCommand.includes(entryCommand) ||
@@ -179,7 +179,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * ユーザ確認パターンを学習
+   * Learn user confirmation patterns
    */
   learnUserConfirmationPattern(entry: CommandHistoryEntry): void {
     if (!entry.user_confirmation_context || !this.config.enable_resubmission_learning) {
@@ -190,18 +190,18 @@ export class CommandHistoryManager {
     const baseCommand = commandWords[0];
     
     if (!baseCommand) {
-      return; // コマンドが空の場合はスキップ
+      return; // Skip if command is empty
     }
     
-    // 既存パターンを検索
+    // Find existing pattern
     let pattern = this.userPatterns.find(p => 
       p.command_pattern === baseCommand || 
       new RegExp(p.command_pattern).test(entry.command)
     );
     
     if (pattern) {
-      // 既存パターンを更新
-      const totalCount = pattern.confidence * 10; // 仮の重み
+      // Update existing pattern
+      const totalCount = pattern.confidence * 10; // Arbitrary weight
       const newCount = totalCount + 1;
       const confirmations = totalCount * pattern.confirmation_rate + 
                           (entry.user_confirmation_context.user_response ? 1 : 0);
@@ -209,30 +209,30 @@ export class CommandHistoryManager {
       pattern.confirmation_rate = confirmations / newCount;
       pattern.confidence = Math.min(1.0, newCount / 10);
       
-      // 理由を追加（重複を避ける）
+      // Add reasoning (avoid duplicates)
       const reasoning = entry.user_confirmation_context.user_reasoning;
       if (reasoning && !pattern.typical_reasoning.includes(reasoning)) {
         pattern.typical_reasoning.push(reasoning);
-        // 最大5個まで保持
+        // Keep maximum 5 entries
         if (pattern.typical_reasoning.length > 5) {
           pattern.typical_reasoning = pattern.typical_reasoning.slice(-5);
         }
       }
     } else {
-      // 新しいパターンを作成
+      // Create new pattern
       const newPattern: UserConfirmationPattern = {
         command_pattern: baseCommand,
         confirmation_rate: entry.user_confirmation_context.user_response ? 1.0 : 0.0,
         typical_reasoning: entry.user_confirmation_context.user_reasoning ? 
                           [entry.user_confirmation_context.user_reasoning] : [],
-        confidence: 0.1, // 初期信頼度は低く設定
+        confidence: 0.1, // Low initial confidence
       };
       this.userPatterns.push(newPattern);
     }
   }
 
   /**
-   * コマンドのユーザ確認予測
+   * Predict user confirmation for a command
    */
   predictUserConfirmation(command: string): {
     likely_to_confirm: boolean;
@@ -242,7 +242,7 @@ export class CommandHistoryManager {
     const commandWords = command.toLowerCase().trim().split(/\s+/);
     const baseCommand = commandWords[0];
     
-    // マッチするパターンを検索
+    // Find matching patterns
     const matchingPatterns = this.userPatterns.filter(pattern => {
       try {
         return pattern.command_pattern === baseCommand ||
@@ -260,7 +260,7 @@ export class CommandHistoryManager {
       };
     }
     
-    // 重み付き平均で予測
+    // Weighted average prediction
     let totalWeight = 0;
     let weightedConfirmationRate = 0;
     const allReasoning: string[] = [];
@@ -278,12 +278,12 @@ export class CommandHistoryManager {
     return {
       likely_to_confirm: avgConfirmationRate > 0.5,
       confidence,
-      reasoning: [...new Set(allReasoning)], // 重複除去
+      reasoning: [...new Set(allReasoning)], // Remove duplicates
     };
   }
 
   /**
-   * 古い履歴エントリをクリーンアップ
+   * Cleanup old history entries
    */
   private async cleanupOldEntries(): Promise<void> {
     const cutoffDate = new Date();
@@ -302,7 +302,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 履歴統計を取得
+   * Get history statistics
    */
   getHistoryStats(): {
     totalEntries: number;
@@ -316,24 +316,24 @@ export class CommandHistoryManager {
     let entriesWithConfirmation = 0;
     
     this.history.forEach(entry => {
-      // コマンドカウント
+      // Count commands
       const baseCommand = entry.command.split(' ')[0];
       if (baseCommand) {
         commandCounts.set(baseCommand, (commandCounts.get(baseCommand) || 0) + 1);
       }
       
-      // 評価結果有無
+      // Check evaluation results
       if (entry.llm_evaluation_result || entry.safety_classification) {
         entriesWithEvaluation++;
       }
       
-      // 確認有無
+      // Check confirmations
       if (entry.user_confirmation_context) {
         entriesWithConfirmation++;
       }
     });
     
-    // トップコマンドを取得
+    // Get top commands
     const topCommands = Array.from(commandCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
@@ -349,7 +349,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 履歴を検索
+   * Search history
    */
   searchHistory(query: {
     command?: string;
@@ -389,7 +389,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 履歴をクリア
+   * Clear all history
    */
   async clearHistory(): Promise<void> {
     this.history = [];
@@ -398,7 +398,7 @@ export class CommandHistoryManager {
   }
 
   /**
-   * 履歴パスを取得
+   * Get history file path
    */
   getHistoryPath(): string {
     return this.historyPath;
