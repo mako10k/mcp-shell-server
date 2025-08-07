@@ -44,6 +44,24 @@ interface LLMEvaluationResult {
   evaluation_time_ms: number;
 }
 
+// Extended context for re-audit analysis
+interface ExtendedContext {
+  target_analysis: string;
+  directory_contents: string;
+  filesystem_status: string;
+  process_context: string;
+  recent_file_operations: string;
+}
+
+// User intent data from elicitation
+interface UserIntentData {
+  intent: string;
+  justification: string;
+  timestamp: string;
+  confidence_level: 'low' | 'medium' | 'high';
+  elicitation_id: string;
+}
+
 /**
  * Enhanced Safety Evaluator
  * Integrates basic classification with contextual analysis for comprehensive command safety evaluation
@@ -53,6 +71,7 @@ export class EnhancedSafetyEvaluator {
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
   private createMessageCallback?: CreateMessageCallback;
+  private enablePatternFiltering: boolean = false; // デフォルト: パターンフィルタリング無効
 
   constructor(securityManager: SecurityManager, historyManager: CommandHistoryManager) {
     this.securityManager = securityManager;
@@ -67,6 +86,13 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
+   * Set pattern filtering configuration
+   */
+  setPatternFiltering(enabled: boolean): void {
+    this.enablePatternFiltering = enabled;
+  }
+
+  /**
    * Comprehensive command safety evaluation with LLM Sampler integration
    */
   async evaluateCommand(
@@ -74,8 +100,14 @@ export class EnhancedSafetyEvaluator {
     workingDirectory: string,
     contextSize: number = 10
   ): Promise<SafetyEvaluation> {
-    // Basic safety classification
-    const basicClassification = this.securityManager.classifyCommandSafety(command);
+    // Basic safety classification (only if pattern filtering is enabled)
+    let basicClassification: string;
+    if (this.enablePatternFiltering) {
+      basicClassification = this.securityManager.classifyCommandSafety(command);
+    } else {
+      // デフォルト: 全てのコマンドをLLM評価にかける
+      basicClassification = 'llm_required';
+    }
     
     // Get command history for context
     const historyEntries = await this.historyManager.searchHistory({
@@ -117,16 +149,49 @@ export class EnhancedSafetyEvaluator {
   private async performLLMEvaluation(
     command: string,
     workingDirectory: string,
-    history: CommandHistoryEntry[]
+    history: CommandHistoryEntry[],
+    isReaudit: boolean = false,
+    extendedContext?: ExtendedContext,
+    userIntentData?: UserIntentData
   ): Promise<LLMEvaluationResult> {
     if (!this.createMessageCallback) {
       throw new Error('LLM evaluation callback not available');
     }
 
     try {
+      // Check if this command requires re-audit with extended context
+      const requiresReaudit = this.checkIfRequiresReaudit(command);
+      
+      if (requiresReaudit && !isReaudit) {
+        // Collect extended context and re-evaluate
+        const extendedContextData = await this.collectExtendedContext(command, workingDirectory);
+        const reauditResult = await this.performLLMEvaluation(command, workingDirectory, history, true, extendedContextData);
+        
+        // Check if user intent elicitation is needed after re-audit
+        const needsUserIntent = await this.requiresUserIntentElicitation(command, reauditResult);
+        if (needsUserIntent) {
+          const userIntent = await this.elicitUserIntent(command, workingDirectory, extendedContextData);
+          if (userIntent) {
+            // Inject user intent into history and re-evaluate with full context
+            const enhancedHistory = await this.injectUserIntentIntoHistory(history, userIntent);
+            return this.performLLMEvaluation(command, workingDirectory, enhancedHistory, true, extendedContextData, userIntent);
+          } else {
+            // User intent elicitation failed or timed out - fallback to CONDITIONAL_DENY
+            return {
+              ...reauditResult,
+              evaluation_result: 'CONDITIONAL_DENY',
+              llm_reasoning: `${reauditResult.llm_reasoning}. User intent confirmation required but not provided - defaulting to CONDITIONAL_DENY`,
+              confidence: Math.min(0.6, reauditResult.confidence)
+            };
+          }
+        }
+        
+        return reauditResult;
+      }
+
       // Prepare context for LLM evaluation
       const historyContext = history
-        .slice(0, 5)
+        .slice(0, isReaudit ? 20 : 5) // More history for re-audit
         .map(entry => `${entry.command} (${entry.working_directory})`)
         .join('\n');
 
@@ -135,15 +200,42 @@ export class EnhancedSafetyEvaluator {
         workingDirectory.startsWith(dir)
       );
 
-      // Create evaluation prompt
-      const evaluationPrompt = `Evaluate the safety of this shell command:
+      // Create evaluation prompt with extended context if available
+      let evaluationPrompt = `Evaluate the safety of this shell command:
 
 Command: ${command}
 Working Directory: ${workingDirectory}
 Is Sensitive Directory: ${isSensitiveDir}
+${isReaudit ? 'RE-AUDIT: Extended context analysis' : ''}
+${userIntentData ? 'USER INTENT CONFIRMED: User has provided explicit intent justification' : ''}
 
-Recent Command History:
-${historyContext || 'No recent history'}
+Recent Command History (${history.length} entries):
+${historyContext || 'No recent history'}`;
+
+      // Add extended context for re-audit
+      if (isReaudit && extendedContext) {
+        evaluationPrompt += `
+
+EXTENDED CONTEXT ANALYSIS:
+Target Analysis: ${extendedContext.target_analysis}
+Directory Contents: ${extendedContext.directory_contents}
+File System Status: ${extendedContext.filesystem_status}
+Process Context: ${extendedContext.process_context}
+Recent File Operations: ${extendedContext.recent_file_operations}`;
+      }
+
+      // Add user intent data if available
+      if (userIntentData) {
+        evaluationPrompt += `
+
+USER INTENT CONFIRMATION:
+Intent: ${userIntentData.intent}
+Justification: ${userIntentData.justification}
+Confirmed At: ${userIntentData.timestamp}
+Confidence Level: ${userIntentData.confidence_level}`;
+      }
+
+      evaluationPrompt += `
 
 SECURITY GUIDELINES:
 - Commands modifying user environment (.bashrc, .profile, etc.) should be CONDITIONAL_DENY
@@ -151,7 +243,10 @@ SECURITY GUIDELINES:
 - Network downloads with execution (curl|bash, wget|sh) should be DENY
 - System file modifications (/etc, /var, /usr) should be CONDITIONAL_DENY or DENY
 - Privilege escalation (sudo, su) should be CONDITIONAL_DENY
-- Destructive operations (rm -rf, dd, mkfs) should be DENY
+- Destructive operations (rm -rf, dd, mkfs) require careful target analysis:
+  * If target is clearly safe (temp files, user-owned files): ALLOW
+  * If target is unclear or potentially dangerous: CONDITIONAL_DENY
+  * If target is system critical: DENY
 
 Please evaluate this command and respond with EXACTLY one of these classifications:
 - ALLOW: Safe to execute without confirmation
@@ -163,7 +258,8 @@ Consider:
 2. Potential for system damage or data loss
 3. Security risks and privilege escalation
 4. Working directory and file access patterns
-5. Network access and remote code execution risks`;
+5. Network access and remote code execution risks
+${isReaudit ? '6. Extended context analysis of target files/directories' : ''}`;
 
       // Call LLM via MCP sampling protocol
       const response = await this.createMessageCallback({
@@ -176,9 +272,9 @@ Consider:
             }
           }
         ],
-        maxTokens: 150,
+        maxTokens: isReaudit ? 200 : 150,
         temperature: 0.1, // Low temperature for consistent evaluation
-        systemPrompt: 'You are a strict security evaluator focused on protecting user environments and preventing unauthorized system modifications. Prioritize user consent for any environment changes. Be conservative in your evaluations.',
+        systemPrompt: 'You are a strict security evaluator focused on protecting user environments and preventing unauthorized system modifications. Prioritize user consent for any environment changes. Be conservative in your evaluations. For re-audits, carefully analyze the extended context to make precise safety determinations.',
         includeContext: 'none'
       });
 
@@ -222,6 +318,323 @@ Consider:
       };
     }
   }
+  /**
+   * Check if command requires re-audit with extended context
+   */
+  private checkIfRequiresReaudit(command: string): boolean {
+    const reauditPatterns = [
+      /rm\s+.*-rf?\s+/, // rm -rf patterns
+      /dd\s+.*of=/, // dd commands with output
+      /mkfs/, // filesystem creation
+      /fdisk/, // disk partitioning
+      /parted/, // partition editing  
+      /format/, // format commands
+      /del\s+.*\/s/, // Windows delete with subdirs
+    ];
+
+    return reauditPatterns.some(pattern => pattern.test(command.toLowerCase()));
+  }
+
+  /**
+   * Collect extended context for re-audit analysis
+   */
+  private async collectExtendedContext(command: string, workingDirectory: string): Promise<ExtendedContext> {
+    try {
+      // Extract target paths from command
+      const targets = this.extractTargetPaths(command);
+      
+      // Analyze targets
+      const targetAnalysis = await this.analyzeTargets(targets, workingDirectory);
+      
+      // Get directory contents of working directory
+      const directoryContents = await this.getDirectoryContents(workingDirectory);
+      
+      // Get filesystem status
+      const filesystemStatus = await this.getFilesystemStatus(workingDirectory);
+      
+      // Get process context
+      const processContext = await this.getProcessContext();
+      
+      // Get recent file operations from history
+      const recentFileOps = await this.getRecentFileOperations();
+
+      return {
+        target_analysis: targetAnalysis,
+        directory_contents: directoryContents,
+        filesystem_status: filesystemStatus,
+        process_context: processContext,
+        recent_file_operations: recentFileOps
+      };
+    } catch (error) {
+      console.warn('Failed to collect extended context:', error);
+      return {
+        target_analysis: 'Context collection failed',
+        directory_contents: 'Unable to analyze',
+        filesystem_status: 'Unknown',
+        process_context: 'Unknown',
+        recent_file_operations: 'Unknown'
+      };
+    }
+  }
+
+  /**
+   * Extract target paths from dangerous commands
+   */
+  private extractTargetPaths(command: string): string[] {
+    const targets: string[] = [];
+    
+    // For rm commands
+    const rmMatch = command.match(/rm\s+.*?(-rf?\s+)?([^\s;|&]+)/);
+    if (rmMatch && rmMatch[2]) {
+      targets.push(rmMatch[2]);
+    }
+    
+    // For dd commands
+    const ddMatch = command.match(/dd\s+.*?of=([^\s;|&]+)/);
+    if (ddMatch && ddMatch[1]) {
+      targets.push(ddMatch[1]);
+    }
+    
+    // For mkfs commands
+    const mkfsMatch = command.match(/mkfs\s+([^\s;|&]+)/);
+    if (mkfsMatch && mkfsMatch[1]) {
+      targets.push(mkfsMatch[1]);
+    }
+    
+    return targets;
+  }
+
+  /**
+   * Analyze target paths for safety
+   */
+  private async analyzeTargets(targets: string[], workingDirectory: string): Promise<string> {
+    if (targets.length === 0) {
+      return 'No specific targets identified';
+    }
+
+    const analyses: string[] = [];
+    
+    for (const target of targets) {
+      // Check if target is absolute or relative
+      const isAbsolute = target.startsWith('/');
+      const fullPath = isAbsolute ? target : `${workingDirectory}/${target}`;
+      
+      // Analyze path characteristics
+      if (fullPath.startsWith('/tmp/') || fullPath.startsWith('/var/tmp/')) {
+        analyses.push(`${target}: Temporary directory (relatively safe)`);
+      } else if (fullPath.startsWith('/etc/') || fullPath.startsWith('/usr/') || fullPath.startsWith('/var/')) {
+        analyses.push(`${target}: System directory (HIGH RISK)`);
+      } else if (fullPath.startsWith('/home/') || fullPath.startsWith(workingDirectory)) {
+        analyses.push(`${target}: User directory (moderate risk)`);
+      } else if (fullPath.includes('*') || fullPath.includes('?')) {
+        analyses.push(`${target}: Wildcard pattern (HIGH RISK - affects multiple files)`);
+      } else {
+        analyses.push(`${target}: Standard file/directory (needs verification)`);
+      }
+    }
+    
+    return analyses.join('; ');
+  }
+
+  /**
+   * Get directory contents for context
+   */
+  private async getDirectoryContents(workingDirectory: string): Promise<string> {
+    try {
+      // This is a simplified version - in real implementation,
+      // you might want to use fs operations or subprocess calls
+      return `Directory: ${workingDirectory} (contents analysis would require fs access)`;
+    } catch (error) {
+      return 'Unable to access directory contents';
+    }
+  }
+
+  /**
+   * Get filesystem status
+   */
+  private async getFilesystemStatus(workingDirectory: string): Promise<string> {
+    try {
+      // Simplified implementation
+      return `Filesystem status for ${workingDirectory}: OK`;
+    } catch (error) {
+      return 'Unable to check filesystem status';
+    }
+  }
+
+  /**
+   * Get current process context
+   */
+  private async getProcessContext(): Promise<string> {
+    try {
+      return 'Process context: MCP Shell Server';
+    } catch (error) {
+      return 'Unable to determine process context';
+    }
+  }
+
+  /**
+   * Get recent file operations from command history
+   */
+  private async getRecentFileOperations(): Promise<string> {
+    try {
+      const recentHistory = await this.historyManager.searchHistory({ limit: 10 });
+      const fileOps = recentHistory
+        .filter(entry => {
+          const cmd = entry.command.toLowerCase();
+          return cmd.includes('rm ') || cmd.includes('mv ') || cmd.includes('cp ') || 
+                 cmd.includes('dd ') || cmd.includes('touch ') || cmd.includes('mkdir ');
+        })
+        .slice(0, 5)
+        .map(entry => `${entry.command} (${entry.working_directory})`)
+        .join('; ');
+      
+      return fileOps || 'No recent file operations detected';
+    } catch (error) {
+      return 'Unable to analyze recent file operations';
+    }
+  }
+
+  /**
+   * Check if user intent elicitation is required after re-audit using LLM evaluation
+   */
+  private async requiresUserIntentElicitation(command: string, reauditResult: LLMEvaluationResult): Promise<boolean> {
+    if (!this.createMessageCallback) {
+      return false; // Cannot perform LLM evaluation
+    }
+
+    try {
+      // Only proceed if re-audit still shows significant risk
+      if (reauditResult.evaluation_result === 'ALLOW') {
+        return false; // Already deemed safe
+      }
+
+      // Ask LLM to determine if user intent elicitation is needed
+      const intentEvaluationPrompt = `Analyze whether this command requires explicit user intent confirmation:
+
+Command: ${command}
+Re-audit Result: ${reauditResult.evaluation_result}
+LLM Reasoning: ${reauditResult.llm_reasoning}
+
+INTENT ELICITATION CRITERIA:
+- Commands that are rarely used in normal workflows (dd, mkfs, fdisk, etc.)
+- Commands with potential for significant system impact despite extended analysis
+- Commands where user explicit intent would provide crucial context for safety determination
+- Commands that could be accidental or automated without proper justification
+
+Please respond with EXACTLY one of:
+- ELICIT_INTENT: User intent confirmation is needed for safe execution
+- NO_INTENT_NEEDED: Re-audit provides sufficient context for safety determination
+
+Consider:
+1. Is this a command typically used by experienced users with specific intent?
+2. Would user intent significantly improve safety evaluation accuracy?
+3. Is the risk level high enough to warrant additional confirmation?
+4. Could this command reasonably be executed accidentally or without full understanding?`;
+
+      const response = await this.createMessageCallback({
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: intentEvaluationPrompt
+            }
+          }
+        ],
+        maxTokens: 100,
+        temperature: 0.1,
+        systemPrompt: 'You are a security evaluator determining whether user intent elicitation is necessary. Be precise and conservative - only request intent when it would meaningfully improve safety evaluation.',
+        includeContext: 'none'
+      });
+
+      const llmResponse = response.content.text.trim().toUpperCase();
+      const requiresIntent = llmResponse.includes('ELICIT_INTENT');
+
+      if (requiresIntent) {
+        console.log(`LLM determined user intent elicitation is needed for: ${command}`);
+        console.log(`Reasoning: ${response.content.text}`);
+      }
+
+      return requiresIntent;
+
+    } catch (error) {
+      console.error('Failed to evaluate intent elicitation requirement:', error);
+      // Conservative fallback: require intent for high-risk commands
+      return reauditResult.evaluation_result === 'DENY' || 
+             (reauditResult.evaluation_result === 'CONDITIONAL_DENY' && reauditResult.confidence < 0.7);
+    }
+  }
+
+  /**
+   * Elicit user intent using mcp-confirm
+   */
+  private async elicitUserIntent(command: string, workingDirectory: string, extendedContext: ExtendedContext): Promise<UserIntentData | null> {
+    try {
+      // Import mcp-confirm functions (this would need to be properly imported)
+      // For now, we'll simulate the elicitation process
+      
+      // TODO: Use actual mcp-confirm elicit_custom function
+      // const response = await mcp_confirm_elicit_custom({
+      //   message: elicitationMessage,
+      //   schema: elicitationSchema
+      // });
+
+      // For now, simulate timeout/failure since we can't actually call mcp-confirm yet
+      console.warn('User intent elicitation would be triggered here for command:', command);
+      console.warn('Working Directory:', workingDirectory);
+      console.warn('Target Analysis:', extendedContext.target_analysis);
+      
+      return null; // Simulate timeout or user declining to provide intent
+
+      // When implemented, would return:
+      // return {
+      //   intent: response.intent,
+      //   justification: response.justification,
+      //   timestamp: getCurrentTimestamp(),
+      //   confidence_level: response.confidence_level,
+      //   elicitation_id: generateId()
+      // };
+
+    } catch (error) {
+      console.error('User intent elicitation failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Inject user intent into command history at the correct chronological position
+   */
+  private async injectUserIntentIntoHistory(history: CommandHistoryEntry[], userIntent: UserIntentData): Promise<CommandHistoryEntry[]> {
+    // Create a pseudo-command entry for the user intent
+    const intentEntry: CommandHistoryEntry = {
+      execution_id: userIntent.elicitation_id,
+      command: `# USER_INTENT: ${userIntent.intent}`,
+      working_directory: '(user_intent_confirmation)',
+      timestamp: userIntent.timestamp,
+      was_executed: false, // This is a virtual entry
+      resubmission_count: 0,
+      safety_classification: 'basic_safe',
+      execution_status: 'intent_confirmation',
+      output_summary: `Intent: ${userIntent.intent}. Justification: ${userIntent.justification}. Confidence: ${userIntent.confidence_level}`
+    };
+
+    // Insert into history maintaining chronological order
+    const enhancedHistory = [...history, intentEntry];
+    enhancedHistory.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    // Also persist this intent confirmation to the actual history manager
+    try {
+      await this.historyManager.addHistoryEntry(intentEntry);
+    } catch (error) {
+      console.warn('Failed to persist user intent to history:', error);
+    }
+
+    return enhancedHistory;
+  }
+
+  /**
+   * Perform contextual evaluation
+   */
   private async performContextualEvaluation(
     command: string,
     workingDirectory: string,

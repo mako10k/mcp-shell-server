@@ -211,7 +211,7 @@ export interface SecurityRestrictions {
 }
 
 // セキュリティモード
-export const SecurityModeSchema = z.enum(['permissive', 'restrictive', 'custom']);
+export const SecurityModeSchema = z.enum(['permissive', 'moderate', 'restrictive', 'custom', 'enhanced', 'enhanced-fast']);
 export type SecurityMode = z.infer<typeof SecurityModeSchema>;
 
 // 実行プロセス情報（Process Manager用）

@@ -22,6 +22,7 @@ export const EnhancedSecurityConfigSchema = z.object({
   basic_safe_classification: z.boolean().default(true).describe('Enable basic safe command classification'),
   llm_evaluation_enabled: z.boolean().default(false).describe('Enable LLM-based command evaluation'),
   elicitation_enabled: z.boolean().default(false).describe('Enable user intent elicitation'),
+  enable_pattern_filtering: z.boolean().default(false).describe('Enable pattern-based pre-filtering (default: false - all commands go to LLM evaluation)'),
   
   // 履歴管理
   command_history_enhanced: z.boolean().default(true).describe('Enable enhanced command history management'),
@@ -120,6 +121,7 @@ export const DEFAULT_ENHANCED_SECURITY_CONFIG: EnhancedSecurityConfig = {
   basic_safe_classification: true,
   llm_evaluation_enabled: false,
   elicitation_enabled: false,
+  enable_pattern_filtering: false, // デフォルト: パターンフィルタリング無効（全てLLM審査にかける）
   command_history_enhanced: true,
   history_retention_days: 30,
   max_history_entries: 1000,

@@ -36,6 +36,15 @@ export class SecurityManager {
     const defaultMemoryMb = parseInt(process.env['MCP_SHELL_MAX_MEMORY_MB'] || '1024');
     const defaultNetworkEnabled = process.env['MCP_SHELL_ENABLE_NETWORK'] !== 'false';
 
+    // Enhanced Modeの自動設定
+    if (defaultMode === 'enhanced' || defaultMode === 'enhanced-fast') {
+      this.enhancedConfig.enhanced_mode_enabled = true;
+      this.enhancedConfig.llm_evaluation_enabled = true;
+      
+      // enhanced-fastの場合は安全コマンドスキップを有効化
+      this.enhancedConfig.enable_pattern_filtering = (defaultMode === 'enhanced-fast');
+    }
+
     this.restrictions = {
       restriction_id: generateId(),
       security_mode: defaultMode, 
@@ -51,14 +60,24 @@ export class SecurityManager {
    * Load enhanced security configuration from environment variables
    */
   private loadEnhancedConfigFromEnv(): void {
-    // Enhanced mode
+    // Enhanced mode (backward compatibility)
     if (process.env['MCP_SHELL_ENHANCED_MODE'] === 'true') {
       this.enhancedConfig.enhanced_mode_enabled = true;
     }
     
-    // LLM evaluation
+    // LLM evaluation (backward compatibility)
     if (process.env['MCP_SHELL_LLM_EVALUATION'] === 'true') {
       this.enhancedConfig.llm_evaluation_enabled = true;
+    }
+    
+    // Safe command skip (new simplified naming)
+    if (process.env['MCP_SHELL_SKIP_SAFE_COMMANDS'] === 'true') {
+      this.enhancedConfig.enable_pattern_filtering = true;
+    }
+    
+    // Pattern matching pre-filtering (backward compatibility)
+    if (process.env['MCP_SHELL_ENABLE_PATTERN_FILTERING'] === 'true') {
+      this.enhancedConfig.enable_pattern_filtering = true;
     }
     
     // Other enhanced security settings
@@ -145,6 +164,31 @@ export class SecurityManager {
           throw new SecurityError(`Command contains dangerous patterns: ${dangerousPatterns.join(', ')}`, {
             command,
             dangerousPatterns,
+          });
+        }
+        break;
+
+      case 'moderate':
+        // moderateモード: 基本的なセキュリティチェック
+        const moderateDangerousPatterns = this.detectDangerousPatterns(command);
+        if (moderateDangerousPatterns.length > 0) {
+          throw new SecurityError(`Command contains dangerous patterns: ${moderateDangerousPatterns.join(', ')}`, {
+            command,
+            dangerousPatterns: moderateDangerousPatterns,
+          });
+        }
+        break;
+
+      case 'enhanced':
+      case 'enhanced-fast':
+        // enhancedモード: Enhanced Safety Evaluatorが処理
+        // validateCommand段階では基本的なパターンチェックのみ行い、
+        // 詳細な評価はenhanaced evaluatorに委ねる
+        const enhancedDangerousPatterns = this.detectCriticalDangerousPatterns(command);
+        if (enhancedDangerousPatterns.length > 0) {
+          throw new SecurityError(`Command contains critical dangerous patterns: ${enhancedDangerousPatterns.join(', ')}`, {
+            command,
+            dangerousPatterns: enhancedDangerousPatterns,
           });
         }
         break;
@@ -301,6 +345,43 @@ export class SecurityManager {
     const detectedPatterns: string[] = [];
 
     for (const pattern of dangerousPatterns) {
+      if (pattern.test(command)) {
+        detectedPatterns.push(pattern.source);
+      }
+    }
+
+    return detectedPatterns;
+  }
+
+  /**
+   * Detect only critical dangerous patterns (for enhanced mode)
+   * Enhanced mode delegates most evaluation to LLM, but blocks extremely dangerous patterns
+   */
+  private detectCriticalDangerousPatterns(command: string): string[] {
+    const criticalPatterns = [
+      // 極めて危険な操作のみ
+      /rm\s+.*-rf?\s+\//, // rm -rf /
+      /dd\s+.*of=\/dev\//, // dd to device files
+      /mkfs\s+\/dev\//, // format device
+      /fdisk\s+\/dev\//, // partition device
+      
+      // ネットワーク経由のコード実行
+      /curl\s+.*\|\s*(bash|sh|zsh|fish)/, // curl | bash
+      /wget\s+.*\|\s*(bash|sh|zsh|fish)/, // wget | sh
+      
+      // システム破壊
+      /kill\s+-9\s+1/, // kill init
+      /killall\s+init/, // killall init
+      /init\s+0/, // init 0
+      
+      // リバースシェル
+      /bash\s+-i\s+>&/, // interactive bash redirect
+      /\/dev\/tcp\//, // /dev/tcp/ redirection
+    ];
+
+    const detectedPatterns: string[] = [];
+
+    for (const pattern of criticalPatterns) {
       if (pattern.test(command)) {
         detectedPatterns.push(pattern.source);
       }
@@ -553,46 +634,52 @@ export class SecurityManager {
     if (this.enhancedConfig.enhanced_mode_enabled) {
       this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager);
       
-      // Set up LLM sampling callback if server is provided
-      if (server) {
-        this.enhancedEvaluator.setCreateMessageCallback(async (params) => {
-          try {
-            // Transform our interface to MCP server format
-            const mcpParams = {
-              messages: params.messages,
-              maxTokens: params.maxTokens || 100,
-              temperature: params.temperature,
-              systemPrompt: params.systemPrompt,
-              includeContext: params.includeContext || 'none' as const,
-              stopSequences: params.stopSequences,
-              metadata: params.metadata,
-              modelPreferences: params.modelPreferences
-            };
-            
-            const response = await server.createMessage(mcpParams);
-            
-            // Transform MCP response to our expected format
-            return {
-              content: {
-                type: 'text' as const,
-                text: response.content.type === 'text' ? response.content.text : 'Non-text response'
-              },
-              model: response.model || undefined,
-              stopReason: response.stopReason || undefined
-            };
-          } catch (error) {
-            // Fallback response on error
-            return {
-              content: {
-                type: 'text' as const,
-                text: 'LLM_EVALUATION_ERROR'
-              },
-              model: undefined,
-              stopReason: undefined
-            };
-          }
-        });
+      // Set pattern filtering configuration
+      this.enhancedEvaluator.setPatternFiltering(this.enhancedConfig.enable_pattern_filtering);
+      
+      // Enhanced mode requires LLM evaluation capability
+      if (!server) {
+        throw new Error('Enhanced security mode requires LLM server connection but server is not available. Enhanced mode cannot function without LLM evaluation capability.');
       }
+      
+      // Set up LLM sampling callback if server is provided
+      this.enhancedEvaluator.setCreateMessageCallback(async (params) => {
+        try {
+          // Transform our interface to MCP server format
+          const mcpParams = {
+            messages: params.messages,
+            maxTokens: params.maxTokens || 100,
+            temperature: params.temperature,
+            systemPrompt: params.systemPrompt,
+            includeContext: params.includeContext || 'none' as const,
+            stopSequences: params.stopSequences,
+            metadata: params.metadata,
+            modelPreferences: params.modelPreferences
+          };
+          
+          const response = await server.createMessage(mcpParams);
+          
+          // Transform MCP response to our expected format
+          return {
+            content: {
+              type: 'text' as const,
+              text: response.content.type === 'text' ? response.content.text : 'Non-text response'
+            },
+            model: response.model || undefined,
+            stopReason: response.stopReason || undefined
+          };
+        } catch (error) {
+          // Fallback response on error
+          return {
+            content: {
+              type: 'text' as const,
+              text: 'LLM_EVALUATION_ERROR'
+            },
+            model: undefined,
+            stopReason: undefined
+          };
+        }
+      });
     }
   }
 
