@@ -13,6 +13,8 @@ import { TerminalManager } from './core/terminal-manager.js';
 import { FileManager } from './core/file-manager.js';
 import { MonitoringManager } from './core/monitoring-manager.js';
 import { SecurityManager } from './security/manager.js';
+import { ConfigManager } from './core/config-manager.js';
+import { CommandHistoryManager } from './core/enhanced-history-manager.js';
 import { ShellTools } from './tools/shell-tools.js';
 import { logger } from './utils/helpers.js';
 import { ExecutionInfo } from './types/index.js';
@@ -29,6 +31,7 @@ import {
   TerminalCloseParamsSchema,
   CleanupSuggestionsParamsSchema,
   AutoCleanupParamsSchema,
+  CommandHistoryQueryParamsSchema,
 } from './types/schemas.js';
 import { TerminalOperateParamsSchema } from './types/quick-schemas.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
@@ -50,6 +53,8 @@ export class MCPShellServer {
   private fileManager: FileManager;
   private monitoringManager: MonitoringManager;
   private securityManager: SecurityManager;
+  private configManager: ConfigManager;
+  private commandHistoryManager: CommandHistoryManager;
   private shellTools: ShellTools;
 
   constructor() {
@@ -68,10 +73,15 @@ export class MCPShellServer {
 
     // マネージャーの初期化（FileManagerを最初に初期化）
     this.fileManager = new FileManager();
+    this.configManager = new ConfigManager();
     this.processManager = new ProcessManager(50, '/tmp/mcp-shell-outputs', this.fileManager);
     this.terminalManager = new TerminalManager();
     this.monitoringManager = new MonitoringManager();
     this.securityManager = new SecurityManager();
+    
+    // Enhanced security configを取得してCommandHistoryManagerを初期化
+    const enhancedConfig = this.configManager.getEnhancedSecurityConfig();
+    this.commandHistoryManager = new CommandHistoryManager(enhancedConfig);
 
     // ProcessManagerにTerminalManagerの参照を設定
     this.processManager.setTerminalManager(this.terminalManager);
@@ -95,7 +105,8 @@ export class MCPShellServer {
       this.terminalManager,
       this.fileManager,
       this.monitoringManager,
-      this.securityManager
+      this.securityManager,
+      this.commandHistoryManager
     );
 
     this.setupHandlers();
@@ -173,6 +184,13 @@ export class MCPShellServer {
           name: 'terminal_close',
           description: 'Close terminal session',
           inputSchema: zodToJsonSchema(TerminalCloseParamsSchema, { target: 'jsonSchema7' })
+        },
+
+        // Command History Operations
+        {
+          name: 'command_history_query',
+          description: 'Universal command history query tool with pagination, search, individual reference, and analytics capabilities. Supports: entry references via execution_id (avoiding duplication with process_get_execution), analytics (stats/patterns/top_commands), paginated search with date filtering. Use this for all command history operations.',
+          inputSchema: zodToJsonSchema(CommandHistoryQueryParamsSchema, { target: 'jsonSchema7' })
         }
       ].filter((tool) => !DISABLED_TOOLS.includes(tool.name))
     }));
@@ -309,6 +327,13 @@ export class MCPShellServer {
           case 'terminal_close': {
             const params = TerminalCloseParamsSchema.parse(args);
             const result = await this.shellTools.closeTerminal(params);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          // Command History Operations
+          case 'command_history_query': {
+            const params = CommandHistoryQueryParamsSchema.parse(args);
+            const result = await this.shellTools.queryCommandHistory(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 

@@ -19,6 +19,7 @@ import {
   MonitoringGetStatsParams,
   CleanupSuggestionsParams,
   AutoCleanupParams,
+  CommandHistoryQueryParams,
 } from '../types/schemas.js';
 import { TerminalOperateParams } from '../types/quick-schemas.js';
 import { ProcessManager } from '../core/process-manager.js';
@@ -26,6 +27,7 @@ import { TerminalManager } from '../core/terminal-manager.js';
 import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
 import { SecurityManager } from '../security/manager.js';
+import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { MCPShellError } from '../utils/errors.js';
 
 export class ShellTools {
@@ -34,7 +36,8 @@ export class ShellTools {
     private terminalManager: TerminalManager,
     private fileManager: FileManager,
     private monitoringManager: MonitoringManager,
-    private securityManager: SecurityManager
+    private securityManager: SecurityManager,
+    private historyManager: CommandHistoryManager
   ) {}
 
   // Shell Operations
@@ -646,6 +649,154 @@ export class ShellTools {
       }
 
       return response;
+    } catch (error) {
+      throw MCPShellError.fromError(error);
+    }
+  }
+
+  // Command History Management
+  async queryCommandHistory(params: CommandHistoryQueryParams) {
+    try {
+      // Handle individual entry reference
+      if (params.entry_id) {
+        const entries = this.historyManager.searchHistory({ 
+          limit: 1000 // Get all entries to search for the specific ID
+        });
+        
+        const entry = entries.find(e => e.execution_id === params.entry_id);
+        if (!entry) {
+          return {
+            success: false,
+            error: `Entry with ID ${params.entry_id} not found`,
+          };
+        }
+        
+        return {
+          success: true,
+          entry: params.include_full_details ? entry : {
+            execution_id: entry.execution_id,
+            command: entry.command,
+            timestamp: entry.timestamp,
+            working_directory: entry.working_directory,
+            safety_classification: entry.safety_classification,
+            was_executed: entry.was_executed,
+            output_summary: entry.output_summary,
+          },
+        };
+      }
+
+      // Handle analytics
+      if (params.analytics_type) {
+        const stats = this.historyManager.getHistoryStats();
+        
+        switch (params.analytics_type) {
+          case 'stats':
+            return {
+              success: true,
+              analytics: {
+                type: 'stats',
+                total_entries: stats.totalEntries,
+                entries_with_evaluation: stats.entriesWithEvaluation,
+                entries_with_confirmation: stats.entriesWithConfirmation,
+              },
+            };
+          case 'patterns':
+            return {
+              success: true,
+              analytics: {
+                type: 'patterns',
+                confirmation_patterns: stats.confirmationPatterns,
+              },
+            };
+          case 'top_commands':
+            return {
+              success: true,
+              analytics: {
+                type: 'top_commands',
+                top_commands: stats.topCommands,
+              },
+            };
+        }
+      }
+
+      // Handle search and pagination
+      const searchQuery: any = {};
+      
+      if (params.command_pattern || params.query) {
+        searchQuery.command = params.command_pattern || params.query;
+      }
+      
+      if (params.working_directory) {
+        searchQuery.working_directory = params.working_directory;
+      }
+      
+      if (params.was_executed !== undefined) {
+        searchQuery.was_executed = params.was_executed;
+      }
+      
+      if (params.safety_classification) {
+        searchQuery.safety_classification = params.safety_classification;
+      }
+      
+      // Calculate pagination
+      const offset = (params.page - 1) * params.page_size;
+      searchQuery.limit = params.page_size + offset; // Get more to handle offset
+      
+      let results = this.historyManager.searchHistory(searchQuery);
+      
+      // Apply date filtering if specified
+      if (params.date_from || params.date_to) {
+        const fromDate = params.date_from ? new Date(params.date_from) : new Date(0);
+        const toDate = params.date_to ? new Date(params.date_to) : new Date();
+        
+        results = results.filter(entry => {
+          const entryDate = new Date(entry.timestamp);
+          return entryDate >= fromDate && entryDate <= toDate;
+        });
+      }
+      
+      // Apply pagination
+      const totalEntries = results.length;
+      const paginatedResults = results.slice(offset, offset + params.page_size);
+      
+      // Format results
+      const entries = paginatedResults.map(entry => {
+        if (params.include_full_details) {
+          return entry;
+        } else {
+          // Return metadata with IDs for external tool integration
+          return {
+            execution_id: entry.execution_id,
+            command: entry.command,
+            timestamp: entry.timestamp,
+            working_directory: entry.working_directory,
+            safety_classification: entry.safety_classification,
+            llm_evaluation_result: entry.llm_evaluation_result,
+            was_executed: entry.was_executed,
+            resubmission_count: entry.resubmission_count,
+            output_summary: entry.output_summary,
+            // IDs for external tool integration
+            ...(entry.was_executed && { 
+              // These can be used with process_get_execution and read_execution_output
+              reference_note: "Use process_get_execution with execution_id for detailed execution info, or read_execution_output for full output"
+            }),
+          };
+        }
+      });
+      
+      return {
+        success: true,
+        entries,
+        pagination: {
+          page: params.page,
+          page_size: params.page_size,
+          total_entries: totalEntries,
+          total_pages: Math.ceil(totalEntries / params.page_size),
+          has_next: offset + params.page_size < totalEntries,
+          has_previous: params.page > 1,
+        },
+      };
+      
     } catch (error) {
       throw MCPShellError.fromError(error);
     }

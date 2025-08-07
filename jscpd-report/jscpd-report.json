@@ -1,6 +1,6 @@
 {
   "statistics": {
-    "detectionDate": "2025-08-07T07:49:15.785Z",
+    "detectionDate": "2025-08-07T08:29:40.332Z",
     "formats": {
       "typescript": {
         "sources": {
@@ -41,8 +41,8 @@
             "newClones": 0
           },
           "src/types/schemas.ts": {
-            "lines": 198,
-            "tokens": 2776,
+            "lines": 226,
+            "tokens": 3124,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -113,8 +113,8 @@
             "newClones": 0
           },
           "src/tools/shell-tools.ts": {
-            "lines": 652,
-            "tokens": 5014,
+            "lines": 803,
+            "tokens": 6201,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -233,8 +233,8 @@
             "newClones": 0
           },
           "src/core/config-manager.ts": {
-            "lines": 251,
-            "tokens": 1645,
+            "lines": 263,
+            "tokens": 1707,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -245,14 +245,14 @@
             "newClones": 0
           },
           "src/server.ts": {
-            "lines": 472,
-            "tokens": 4144,
+            "lines": 497,
+            "tokens": 4380,
             "sources": 1,
             "clones": 2,
             "duplicatedLines": 16,
             "duplicatedTokens": 256,
-            "percentage": 3.39,
-            "percentageTokens": 6.18,
+            "percentage": 3.22,
+            "percentageTokens": 5.84,
             "newDuplicatedLines": 0,
             "newClones": 0
           },
@@ -270,28 +270,28 @@
           }
         },
         "total": {
-          "lines": 5989,
-          "tokens": 50540,
+          "lines": 6205,
+          "tokens": 52373,
           "sources": 22,
           "clones": 7,
           "duplicatedLines": 44,
           "duplicatedTokens": 669,
-          "percentage": 0.73,
-          "percentageTokens": 1.32,
+          "percentage": 0.71,
+          "percentageTokens": 1.28,
           "newDuplicatedLines": 0,
           "newClones": 0
         }
       }
     },
     "total": {
-      "lines": 5989,
-      "tokens": 50540,
+      "lines": 6205,
+      "tokens": 52373,
       "sources": 22,
       "clones": 7,
       "duplicatedLines": 44,
       "duplicatedTokens": 669,
-      "percentage": 0.73,
-      "percentageTokens": 1.32,
+      "percentage": 0.71,
+      "percentageTokens": 1.28,
       "newDuplicatedLines": 0,
       "newClones": 0
     }
@@ -1048,142 +1048,142 @@
       "tokens": 0,
       "firstFile": {
         "name": "src/server.ts",
-        "start": 400,
-        "end": 408,
+        "start": 425,
+        "end": 433,
         "startLoc": {
-          "line": 400,
+          "line": 425,
           "column": 14,
-          "position": 3522
+          "position": 3758
         },
         "endLoc": {
-          "line": 408,
+          "line": 433,
           "column": 32,
-          "position": 3650
+          "position": 3886
         },
         "blame": {
-          "400": {
-            "author": "Makoto Katsumata",
+          "425": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "400",
+            "line": "425",
             "rev": "f33f5d2b"
           },
-          "401": {
-            "author": "Makoto Katsumata",
+          "426": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "401",
+            "line": "426",
             "rev": "f33f5d2b"
           },
-          "402": {
-            "author": "Makoto Katsumata",
+          "427": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "402",
+            "line": "427",
             "rev": "f33f5d2b"
           },
-          "403": {
-            "author": "Makoto Katsumata",
+          "428": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "403",
+            "line": "428",
             "rev": "f33f5d2b"
           },
-          "404": {
-            "author": "Makoto Katsumata",
+          "429": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "404",
+            "line": "429",
             "rev": "f33f5d2b"
           },
-          "405": {
-            "author": "Makoto Katsumata",
+          "430": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "405",
+            "line": "430",
             "rev": "f33f5d2b"
           },
-          "406": {
-            "author": "Makoto Katsumata",
+          "431": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "406",
+            "line": "431",
             "rev": "f33f5d2b"
           },
-          "407": {
-            "author": "Makoto Katsumata",
+          "432": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "407",
+            "line": "432",
             "rev": "f33f5d2b"
           },
-          "408": {
-            "author": "Makoto Katsumata",
+          "433": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "408",
+            "line": "433",
             "rev": "f33f5d2b"
           }
         }
       },
       "secondFile": {
         "name": "src/server.ts",
-        "start": 366,
-        "end": 374,
+        "start": 391,
+        "end": 399,
         "startLoc": {
-          "line": 366,
+          "line": 391,
           "column": 6,
-          "position": 3195
+          "position": 3431
         },
         "endLoc": {
-          "line": 374,
+          "line": 399,
           "column": 31,
-          "position": 3323
+          "position": 3559
         },
         "blame": {
-          "366": {
-            "author": "Makoto Katsumata",
+          "391": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "366",
+            "line": "391",
             "rev": "f33f5d2b"
           },
-          "367": {
-            "author": "Makoto Katsumata",
+          "392": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "367",
+            "line": "392",
             "rev": "f33f5d2b"
           },
-          "368": {
-            "author": "Makoto Katsumata",
+          "393": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "368",
+            "line": "393",
             "rev": "f33f5d2b"
           },
-          "369": {
-            "author": "Makoto Katsumata",
+          "394": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "369",
+            "line": "394",
             "rev": "f33f5d2b"
           },
-          "370": {
-            "author": "Makoto Katsumata",
+          "395": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "370",
+            "line": "395",
             "rev": "f33f5d2b"
           },
-          "371": {
-            "author": "Makoto Katsumata",
+          "396": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "371",
+            "line": "396",
             "rev": "f33f5d2b"
           },
-          "372": {
-            "author": "Makoto Katsumata",
+          "397": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "372",
+            "line": "397",
             "rev": "f33f5d2b"
           },
-          "373": {
-            "author": "Makoto Katsumata",
+          "398": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "373",
+            "line": "398",
             "rev": "f33f5d2b"
           },
-          "374": {
-            "author": "Makoto Katsumata",
+          "399": {
+            "author": "Makoto Katsumata ",
             "date": "2025-07-17 20:14:05 +0900",
-            "line": "374",
+            "line": "399",
             "rev": "f33f5d2b"
           }
         }

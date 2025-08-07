@@ -176,6 +176,33 @@ export const AutoCleanupParamsSchema = z.object({
   preserve_recent: z.number().int().positive().optional().describe('Number of most recent files to preserve regardless of age. Default: 10.'),
 });
 
+// Command History Management
+export const CommandHistoryQueryParamsSchema = z.object({
+  // Pagination
+  page: z.number().int().min(1).default(1).describe('Page number for pagination (1-based)'),
+  page_size: z.number().int().min(1).max(100).default(20).describe('Number of entries per page (1-100)'),
+  
+  // Search and filtering
+  query: z.string().optional().describe('Search term to filter commands (case-insensitive partial match)'),
+  command_pattern: z.string().optional().describe('Filter by command using substring match (case-insensitive)'),
+  working_directory: z.string().optional().describe('Filter by working directory'),
+  safety_classification: z.enum(['basic_safe', 'llm_required']).optional().describe('Filter by safety classification'),
+  was_executed: z.boolean().optional().describe('Filter by execution status'),
+  
+  // Date filtering
+  date_from: z.string().optional().describe('Filter entries from this date (ISO string)'),
+  date_to: z.string().optional().describe('Filter entries to this date (ISO string)'),
+  
+  // Individual entry reference
+  entry_id: z.string().optional().describe('Get specific entry by execution_id'),
+  
+  // Analytics
+  analytics_type: z.enum(['stats', 'patterns', 'top_commands']).optional().describe('Type of analytics to return: "stats" (general statistics), "patterns" (user confirmation patterns), "top_commands" (most frequent commands)'),
+  
+  // Result format
+  include_full_details: z.boolean().default(false).describe('Include full entry details or just metadata with IDs'),
+});
+
 // Type exports
 export type ShellExecuteParams = z.infer<typeof ShellExecuteParamsSchema>;
 export type ShellGetExecutionParams = z.infer<typeof ShellGetExecutionParamsSchema>;
@@ -197,3 +224,4 @@ export type SecuritySetRestrictionsParams = z.infer<typeof SecuritySetRestrictio
 export type MonitoringGetStatsParams = z.infer<typeof MonitoringGetStatsParamsSchema>;
 export type CleanupSuggestionsParams = z.infer<typeof CleanupSuggestionsParamsSchema>;
 export type AutoCleanupParams = z.infer<typeof AutoCleanupParamsSchema>;
+export type CommandHistoryQueryParams = z.infer<typeof CommandHistoryQueryParamsSchema>;
