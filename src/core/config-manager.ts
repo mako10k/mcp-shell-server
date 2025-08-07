@@ -176,6 +176,18 @@ export class ConfigManager {
   }
 
   /**
+   * Check if configuration file exists
+   */
+  async configExists(): Promise<boolean> {
+    try {
+      await fs.access(this.configPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Reset configuration to defaults
    */
   async resetToDefaults(saveToFile: boolean = true): Promise<ShellServerConfig> {
