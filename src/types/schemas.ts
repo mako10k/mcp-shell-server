@@ -12,6 +12,7 @@ import {
 // Shell Operations
 export const ShellExecuteParamsSchema = z.object({
   command: z.string().min(1).describe('Shell command to execute (e.g., "ls -la", "npm install", "python script.py"). Command will be validated against security restrictions. NOTE: This is MCP Shell Server - do NOT use VS Code internal run_in_terminal parameters like "explanation".'),
+  comment: z.string().optional().describe('Optional comment from the LLM client explaining the intent or context behind this command execution. This helps the safety evaluator understand the broader context, but will be treated as advisory only and not blindly trusted.'),
   execution_mode: ExecutionModeSchema.default('adaptive').describe('How the command should be executed: "foreground" (wait for completion), "background" (run async), "detached" (fire-and-forget), "adaptive" (start foreground, switch to background for long-running commands)'),
   working_directory: z.string().optional().describe('Directory where the command should be executed. If not specified, uses the default working directory set by shell_set_default_workdir or the initial server directory.'),
   environment_variables: EnvironmentVariablesSchema.optional().describe('Environment variables to set for this command execution. These are added to or override the current environment.'),

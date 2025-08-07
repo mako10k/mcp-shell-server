@@ -661,6 +661,26 @@ export class SecurityManager {
           };
         }
       });
+
+      // Set up MCP server reference for elicitation (actual implementation)
+      this.enhancedEvaluator.setMCPServer({
+        sendRequest: async <T>(request: { method: string; params?: any }, _schema?: any): Promise<{ result: T }> => {
+          try {
+            // Use actual MCP server.request method for elicitation protocol
+            console.log('Sending MCP elicitation request:', request.method, request.params);
+            
+            // This is the actual elicitation implementation using MCP protocol
+            const result = await server.request(request, _schema);
+            console.log('MCP elicitation result:', result);
+            
+            return { result: result as T };
+          } catch (error) {
+            console.error('MCP elicitation request failed:', error);
+            // Elicitation failure should be a proper MCP error, not a generic error
+            throw error;
+          }
+        }
+      });
     }
   }
 
@@ -676,7 +696,7 @@ export class SecurityManager {
   /**
    * Perform comprehensive safety evaluation using enhanced evaluator
    */
-  async evaluateCommandSafety(command: string, workingDirectory: string): Promise<any> {
+  async evaluateCommandSafety(command: string, workingDirectory: string, comment?: string): Promise<any> {
     if (!this.enhancedEvaluator || !this.enhancedConfig.enhanced_mode_enabled) {
       // Fallback to basic classification
       return {
@@ -688,7 +708,7 @@ export class SecurityManager {
     }
 
     try {
-      return await this.enhancedEvaluator.evaluateCommand(command, workingDirectory);
+      return await this.enhancedEvaluator.evaluateCommand(command, workingDirectory, 10, comment);
     } catch (error) {
       // Fallback to basic classification on error
       console.warn('Enhanced evaluation failed, falling back to basic classification:', error);

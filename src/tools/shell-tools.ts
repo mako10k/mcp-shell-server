@@ -50,21 +50,38 @@ export class ShellTools {
       if (this.securityManager.isEnhancedModeEnabled()) {
         safetyEvaluation = await this.securityManager.evaluateCommandSafety(
           params.command,
-          workingDir
+          workingDir,
+          params.comment
         );
         
-        // Handle evaluation results
+        // Handle evaluation results with strict safety guards
         if (safetyEvaluation.evaluation_result === 'DENY') {
           throw new Error(`Command denied: ${safetyEvaluation.reasoning}`);
         }
         
-        // For CONDITIONAL_DENY, we could implement user confirmation here
-        // For now, we'll log the concern but allow execution
+        // For CONDITIONAL_DENY, return evaluation info without executing
+        // User can review suggested alternatives and re-run if appropriate
         if (safetyEvaluation.evaluation_result === 'CONDITIONAL_DENY') {
-          console.warn(`Command requires caution: ${safetyEvaluation.reasoning}`);
-          if (safetyEvaluation.suggested_alternatives && safetyEvaluation.suggested_alternatives.length > 0) {
-            console.warn(`Suggested alternatives: ${safetyEvaluation.suggested_alternatives.join(', ')}`);
-          }
+          return {
+            status: 'conditional_deny',
+            command: params.command,
+            working_directory: workingDir,
+            safety_evaluation: {
+              evaluation_result: safetyEvaluation.evaluation_result,
+              reasoning: safetyEvaluation.reasoning,
+              basic_classification: safetyEvaluation.basic_classification,
+              requires_confirmation: safetyEvaluation.requires_confirmation,
+              suggested_alternatives: safetyEvaluation.suggested_alternatives,
+              llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
+              context_analysis: safetyEvaluation.context_analysis,
+            },
+            message: 'Command requires confirmation before execution. Please review the suggested alternatives and re-run if appropriate.',
+          };
+        }
+        
+        // CRITICAL SAFETY GUARD: Only execute if explicitly ALLOWED
+        if (safetyEvaluation.evaluation_result !== 'ALLOW') {
+          throw new Error(`Command execution blocked: evaluation result '${safetyEvaluation.evaluation_result}' is not ALLOW. Reasoning: ${safetyEvaluation.reasoning}`);
         }
       }
 
