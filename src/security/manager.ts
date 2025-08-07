@@ -306,80 +306,135 @@ export class SecurityManager {
   // Enhanced Security Configuration Methods
   
   /**
-   * Enhanced Security設定を更新
+   * Update enhanced security configuration
    */
-  setEnhancedConfig(config: Partial<EnhancedSecurityConfig>): EnhancedSecurityConfig {
+  setEnhancedConfig(config: Partial<EnhancedSecurityConfig>): void {
     this.enhancedConfig = { ...this.enhancedConfig, ...config };
-    return this.enhancedConfig;
   }
 
   /**
-   * Enhanced Security設定を取得
+   * Get current enhanced security configuration
    */
   getEnhancedConfig(): EnhancedSecurityConfig {
     return { ...this.enhancedConfig };
   }
 
   /**
-   * 基本安全ルールを更新
+   * Update basic safety rules
    */
   setBasicSafetyRules(rules: BasicSafetyRule[]): void {
     this.basicSafetyRules = [...rules];
   }
 
   /**
-   * 基本安全ルールを取得
+   * Get current basic safety rules
    */
   getBasicSafetyRules(): BasicSafetyRule[] {
     return [...this.basicSafetyRules];
   }
 
   /**
-   * コマンドの基本安全分類を実行
-   * @param command 分析するコマンド
-   * @returns 分類結果 ('basic_safe' または 'llm_required')
+   * Classify command safety using basic rules
+   * Returns classification and safety level
+   */
+  classifyCommandBasicSafety(command: string): { 
+    classification: CommandClassification, 
+    safetyLevel: number,
+    matchedRule?: BasicSafetyRule 
+  } {
+    if (!this.enhancedConfig.basic_safe_classification) {
+      // Basic classification disabled, require LLM evaluation
+      return { classification: 'llm_required', safetyLevel: 3 };
+    }
+
+    // Check against basic safety rules
+    for (const rule of this.basicSafetyRules) {
+      try {
+        const regex = new RegExp(rule.pattern, 'i');
+        if (regex.test(command)) {
+          // Rule matched
+          const classification = rule.safety_level <= 2 ? 'basic_safe' : 'llm_required';
+          return {
+            classification,
+            safetyLevel: rule.safety_level,
+            matchedRule: rule
+          };
+        }
+      } catch (error) {
+        // Invalid regex pattern, skip this rule
+        console.warn(`Invalid regex pattern in safety rule: ${rule.pattern}`);
+        continue;
+      }
+    }
+
+    // No rule matched, default to requiring LLM evaluation
+    return { classification: 'llm_required', safetyLevel: 3 };
+  }
+
+  /**
+   * Check if enhanced security mode is enabled
+   */
+  isEnhancedModeEnabled(): boolean {
+    return this.enhancedConfig.enhanced_mode_enabled;
+  }
+
+  /**
+   * Check if LLM evaluation is enabled
+   */
+  isLLMEvaluationEnabled(): boolean {
+    return this.enhancedConfig.llm_evaluation_enabled;
+  }
+
+  /**
+   * Check if command history enhancement is enabled
+   */
+  isCommandHistoryEnhanced(): boolean {
+    return this.enhancedConfig.command_history_enhanced;
+  }
+  
+  /**
+   * Classify command safety using basic rules
+   * Returns classification result ('basic_safe' or 'llm_required')
    */
   classifyCommandSafety(command: string): CommandClassification {
     if (!this.enhancedConfig.basic_safe_classification) {
-      // 基本分類が無効の場合、すべてLLM評価が必要
+      // Basic classification disabled, require LLM evaluation
       return 'llm_required';
     }
 
     const trimmedCommand = command.trim();
     
-    // 空コマンドは basic_safe
+    // Empty command is basic_safe
     if (!trimmedCommand) {
       return 'basic_safe';
     }
 
-    // 危険パターンチェック（優先度最高）
+    // Check dangerous patterns (highest priority)
     const dangerousPatterns = this.detectDangerousPatterns(trimmedCommand);
     if (dangerousPatterns.length > 0) {
       return 'llm_required';
     }
 
-    // 基本安全ルールをチェック
+    // Check basic safety rules
     for (const rule of this.basicSafetyRules) {
       try {
         const regex = new RegExp(rule.pattern);
         if (regex.test(trimmedCommand)) {
-          // レベル1-3は basic_safe、レベル4-5は llm_required
+          // Level 1-3 is basic_safe, level 4-5 is llm_required
           return rule.safety_level <= 3 ? 'basic_safe' : 'llm_required';
         }
       } catch (e) {
-        // 正規表現エラーの場合はスキップ
+        // Skip invalid regex patterns
         continue;
       }
     }
 
-    // どのルールにもマッチしない場合は LLM評価が必要
+    // No rule matched, require LLM evaluation
     return 'llm_required';
   }
 
   /**
-   * コマンドの詳細安全性分析（分類理由付き）
-   * @param command 分析するコマンド
-   * @returns 分析結果オブジェクト
+   * Detailed command safety analysis with reasoning
    */
   analyzeCommandSafety(command: string): {
     classification: CommandClassification;
@@ -405,7 +460,7 @@ export class SecurityManager {
       };
     }
 
-    // 危険パターンチェック（優先度最高）
+    // Check dangerous patterns (highest priority)
     const dangerousPatterns = this.detectDangerousPatterns(trimmedCommand);
     if (dangerousPatterns.length > 0) {
       return {
@@ -416,7 +471,7 @@ export class SecurityManager {
       };
     }
 
-    // 基本安全ルールをチェック
+    // Check basic safety rules
     for (const rule of this.basicSafetyRules) {
       try {
         const regex = new RegExp(rule.pattern);
@@ -429,7 +484,7 @@ export class SecurityManager {
           };
         }
       } catch (e) {
-        // 正規表現エラーの場合はスキップ
+        // Skip invalid regex patterns
         continue;
       }
     }
@@ -439,19 +494,5 @@ export class SecurityManager {
       reasoning: 'No matching safety rule found - requires LLM evaluation',
       safety_level: 4
     };
-  }
-
-  /**
-   * Enhanced Security機能が有効かどうか
-   */
-  isEnhancedModeEnabled(): boolean {
-    return this.enhancedConfig.enhanced_mode_enabled;
-  }
-
-  /**
-   * LLM評価が有効かどうか
-   */
-  isLLMEvaluationEnabled(): boolean {
-    return this.enhancedConfig.llm_evaluation_enabled;
   }
 }
