@@ -82,6 +82,11 @@ export class MCPShellServer {
     // Enhanced security configを取得してCommandHistoryManagerを初期化
     const enhancedConfig = this.configManager.getEnhancedSecurityConfig();
     this.commandHistoryManager = new CommandHistoryManager(enhancedConfig);
+    
+    // Load existing command history
+    this.commandHistoryManager.loadHistory().catch(error => {
+      console.warn('Failed to load command history:', error);
+    });
 
     // ProcessManagerにTerminalManagerの参照を設定
     this.processManager.setTerminalManager(this.terminalManager);

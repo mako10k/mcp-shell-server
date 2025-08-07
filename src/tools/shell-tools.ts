@@ -85,6 +85,23 @@ export class ShellTools {
 
       const executionInfo = await this.processManager.executeCommand(executionOptions);
 
+      // Add command to history
+      try {
+        const safetyClassification = this.securityManager.classifyCommandSafety(params.command);
+        await this.historyManager.addHistoryEntry({
+          command: params.command,
+          working_directory: params.working_directory || this.processManager.getDefaultWorkingDirectory(),
+          was_executed: true,
+          resubmission_count: 0,
+          safety_classification: safetyClassification,
+          execution_status: executionInfo.status,
+          output_summary: `Exit code: ${executionInfo.exit_code}, Duration: ${executionInfo.execution_time_ms}ms, Output size: ${(executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0)} bytes`
+        });
+      } catch (historyError) {
+        // Log history error but don't fail the execution
+        console.warn('Failed to add command to history:', historyError);
+      }
+
       return executionInfo;
     } catch (error) {
       throw MCPShellError.fromError(error);
