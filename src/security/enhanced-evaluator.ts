@@ -3,13 +3,56 @@ import { SecurityManager } from './manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId } from '../utils/helpers.js';
 
+// MCP sampling protocol interface (based on mako10k/mcp-llm-generator)
+interface CreateMessageCallback {
+  (params: {
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: {
+        type: 'text';
+        text: string;
+      };
+    }>;
+    maxTokens?: number;
+    temperature?: number;
+    systemPrompt?: string;
+    includeContext?: 'none' | 'thisServer' | 'allServers';
+    stopSequences?: string[];
+    metadata?: Record<string, unknown>;
+    modelPreferences?: {
+      hints?: Array<{ name?: string }>;
+      costPriority?: number;
+      speedPriority?: number;
+      intelligencePriority?: number;
+    };
+  }): Promise<{
+    content: {
+      type: 'text';
+      text: string;
+    };
+    model?: string | undefined;
+    stopReason?: string | undefined;
+  }>;
+}
+
+// LLM evaluation result from MCP sampling
+interface LLMEvaluationResult {
+  evaluation_result: EvaluationResult;
+  confidence: number;
+  llm_reasoning: string;
+  model: string;
+  evaluation_time_ms: number;
+}
+
 /**
  * Enhanced Safety Evaluator
  * Integrates basic classification with contextual analysis for comprehensive command safety evaluation
+ * Implements LLM Sampler evaluation based on mako10k/mcp-llm-generator
  */
 export class EnhancedSafetyEvaluator {
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
+  private createMessageCallback?: CreateMessageCallback;
 
   constructor(securityManager: SecurityManager, historyManager: CommandHistoryManager) {
     this.securityManager = securityManager;
@@ -17,7 +60,14 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
-   * Comprehensive command safety evaluation
+   * Set the LLM sampling callback (MCP createMessage)
+   */
+  setCreateMessageCallback(callback: CreateMessageCallback): void {
+    this.createMessageCallback = callback;
+  }
+
+  /**
+   * Comprehensive command safety evaluation with LLM Sampler integration
    */
   async evaluateCommand(
     command: string,
@@ -39,10 +89,21 @@ export class EnhancedSafetyEvaluator {
       historyEntries
     );
 
+    // LLM Sampler evaluation (if callback available)
+    let llmEvaluation: LLMEvaluationResult | null = null;
+    if (this.createMessageCallback && basicClassification === 'llm_required') {
+      llmEvaluation = await this.performLLMEvaluation(
+        command,
+        workingDirectory,
+        historyEntries
+      );
+    }
+
     // Combine evaluations
     const finalEvaluation = this.combineEvaluations(
       basicClassification,
       contextualEvaluation,
+      llmEvaluation,
       command,
       workingDirectory
     );
@@ -51,8 +112,116 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
-   * Contextual evaluation based on command history and patterns
+   * LLM Sampler evaluation using MCP createMessage protocol
    */
+  private async performLLMEvaluation(
+    command: string,
+    workingDirectory: string,
+    history: CommandHistoryEntry[]
+  ): Promise<LLMEvaluationResult> {
+    if (!this.createMessageCallback) {
+      throw new Error('LLM evaluation callback not available');
+    }
+
+    try {
+      // Prepare context for LLM evaluation
+      const historyContext = history
+        .slice(0, 5)
+        .map(entry => `${entry.command} (${entry.working_directory})`)
+        .join('\n');
+
+      const sensitiveDirectories = ['/etc', '/var', '/usr', '/sys', '/proc', '/root'];
+      const isSensitiveDir = sensitiveDirectories.some(dir => 
+        workingDirectory.startsWith(dir)
+      );
+
+      // Create evaluation prompt
+      const evaluationPrompt = `Evaluate the safety of this shell command:
+
+Command: ${command}
+Working Directory: ${workingDirectory}
+Is Sensitive Directory: ${isSensitiveDir}
+
+Recent Command History:
+${historyContext || 'No recent history'}
+
+SECURITY GUIDELINES:
+- Commands modifying user environment (.bashrc, .profile, etc.) should be CONDITIONAL_DENY
+- File operations outside working directory require extra caution
+- Network downloads with execution (curl|bash, wget|sh) should be DENY
+- System file modifications (/etc, /var, /usr) should be CONDITIONAL_DENY or DENY
+- Privilege escalation (sudo, su) should be CONDITIONAL_DENY
+- Destructive operations (rm -rf, dd, mkfs) should be DENY
+
+Please evaluate this command and respond with EXACTLY one of these classifications:
+- ALLOW: Safe to execute without confirmation
+- CONDITIONAL_DENY: Requires user confirmation due to potential risks
+- DENY: Too dangerous to execute
+
+Consider:
+1. User environment modification (config files, environment variables)
+2. Potential for system damage or data loss
+3. Security risks and privilege escalation
+4. Working directory and file access patterns
+5. Network access and remote code execution risks`;
+
+      // Call LLM via MCP sampling protocol
+      const response = await this.createMessageCallback({
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: evaluationPrompt
+            }
+          }
+        ],
+        maxTokens: 150,
+        temperature: 0.1, // Low temperature for consistent evaluation
+        systemPrompt: 'You are a strict security evaluator focused on protecting user environments and preventing unauthorized system modifications. Prioritize user consent for any environment changes. Be conservative in your evaluations.',
+        includeContext: 'none'
+      });
+
+      // Parse LLM response
+      const llmResponse = response.content.text.trim().toUpperCase();
+      let evaluation_result: EvaluationResult;
+      let confidence = 0.8; // Default confidence
+
+      if (llmResponse.includes('ALLOW')) {
+        evaluation_result = 'ALLOW';
+        confidence = 0.9;
+      } else if (llmResponse.includes('CONDITIONAL_DENY')) {
+        evaluation_result = 'CONDITIONAL_DENY';
+        confidence = 0.8;
+      } else if (llmResponse.includes('DENY')) {
+        evaluation_result = 'DENY';
+        confidence = 0.9;
+      } else {
+        // Fallback for unclear responses
+        evaluation_result = 'CONDITIONAL_DENY';
+        confidence = 0.5;
+      }
+
+      return {
+        evaluation_result,
+        confidence,
+        llm_reasoning: response.content.text,
+        model: response.model || 'unknown',
+        evaluation_time_ms: Date.now() // Simplified timing
+      };
+
+    } catch (error) {
+      console.error('LLM evaluation failed:', error);
+      // Fallback to safe default
+      return {
+        evaluation_result: 'CONDITIONAL_DENY',
+        confidence: 0.3,
+        llm_reasoning: `LLM evaluation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        model: 'error',
+        evaluation_time_ms: Date.now()
+      };
+    }
+  }
   private async performContextualEvaluation(
     command: string,
     workingDirectory: string,
@@ -215,11 +384,12 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
-   * Combine basic and contextual evaluations
+   * Combine basic, contextual, and LLM evaluations
    */
   private combineEvaluations(
     basicClassification: string,
     contextualEvaluation: ContextualEvaluation,
+    llmEvaluation: LLMEvaluationResult | null,
     command: string,
     workingDirectory: string
   ): SafetyEvaluation {
@@ -227,28 +397,50 @@ export class EnhancedSafetyEvaluator {
     const basic_safety_level = basicClassification === 'basic_safe' ? 2 : 3;
     
     // Combine with contextual risk
-    const combined_safety_level = Math.max(
+    let combined_safety_level = Math.max(
       basic_safety_level,
       contextualEvaluation.risk_score
     );
 
-    // Determine evaluation result
-    let evaluation_result: EvaluationResult;
-    let requires_confirmation = false;
+    // LLM evaluation takes highest priority when available
+    let final_evaluation_result: EvaluationResult;
+    let final_confidence = contextualEvaluation.confidence;
 
-    if (combined_safety_level <= 2) {
-      evaluation_result = 'ALLOW';
-    } else if (combined_safety_level <= 3) {
-      evaluation_result = 'CONDITIONAL_DENY';
-      requires_confirmation = true;
+    if (llmEvaluation) {
+      // LLM evaluation overrides other evaluations
+      final_evaluation_result = llmEvaluation.evaluation_result;
+      final_confidence = Math.max(final_confidence, llmEvaluation.confidence);
+      
+      // Adjust safety level based on LLM result
+      switch (llmEvaluation.evaluation_result) {
+        case 'ALLOW':
+          combined_safety_level = Math.min(combined_safety_level, 2);
+          break;
+        case 'CONDITIONAL_DENY':
+          combined_safety_level = Math.max(combined_safety_level, 3);
+          break;
+        case 'DENY':
+          combined_safety_level = Math.max(combined_safety_level, 4);
+          break;
+      }
     } else {
-      evaluation_result = 'DENY';
+      // Use combined safety level without LLM
+      if (combined_safety_level <= 2) {
+        final_evaluation_result = 'ALLOW';
+      } else if (combined_safety_level <= 3) {
+        final_evaluation_result = 'CONDITIONAL_DENY';
+      } else {
+        final_evaluation_result = 'DENY';
+      }
     }
+
+    const requires_confirmation = final_evaluation_result === 'CONDITIONAL_DENY';
 
     // Generate reasoning
     const reasoning = this.generateReasoning(
       basicClassification,
       contextualEvaluation,
+      llmEvaluation,
       combined_safety_level
     );
 
@@ -260,10 +452,11 @@ export class EnhancedSafetyEvaluator {
       safety_level: combined_safety_level,
       basic_classification: basicClassification,
       contextual_evaluation: contextualEvaluation,
-      evaluation_result,
+      llm_evaluation: llmEvaluation,
+      evaluation_result: final_evaluation_result,
       requires_confirmation,
       reasoning,
-      confidence: contextualEvaluation.confidence,
+      confidence: final_confidence,
       suggested_alternatives: contextualEvaluation.suggested_alternatives
     };
   }
@@ -274,9 +467,16 @@ export class EnhancedSafetyEvaluator {
   private generateReasoning(
     basicClassification: string,
     contextualEvaluation: ContextualEvaluation,
+    llmEvaluation: LLMEvaluationResult | null,
     safetyLevel: number
   ): string {
     const reasons: string[] = [];
+
+    // LLM evaluation reasoning (highest priority)
+    if (llmEvaluation) {
+      reasons.push(`LLM Analysis (${llmEvaluation.model}): ${llmEvaluation.llm_reasoning}`);
+      reasons.push(`LLM Confidence: ${(llmEvaluation.confidence * 100).toFixed(1)}%`);
+    }
 
     // Basic classification reasoning
     if (basicClassification === 'llm_required') {
@@ -424,6 +624,7 @@ interface SafetyEvaluation {
   safety_level: number;
   basic_classification: string;
   contextual_evaluation: ContextualEvaluation;
+  llm_evaluation: LLMEvaluationResult | null;
   evaluation_result: EvaluationResult;
   requires_confirmation: boolean;
   reasoning: string;

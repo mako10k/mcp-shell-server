@@ -9,6 +9,7 @@ import {
 import { SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 export class SecurityManager {
   private restrictions: SecurityRestrictions | null = null;
@@ -20,6 +21,9 @@ export class SecurityManager {
     // Enhanced Security設定の初期化
     this.enhancedConfig = { ...DEFAULT_ENHANCED_SECURITY_CONFIG };
     this.basicSafetyRules = [...DEFAULT_BASIC_SAFETY_RULES];
+    
+    // 環境変数からEnhanced Security設定を読み取り
+    this.loadEnhancedConfigFromEnv();
     
     // デフォルトのセキュリティ制限を設定
     this.setDefaultRestrictions();
@@ -41,6 +45,50 @@ export class SecurityManager {
       active: true,
       configured_at: getCurrentTimestamp(),
     };
+  }
+
+  /**
+   * Load enhanced security configuration from environment variables
+   */
+  private loadEnhancedConfigFromEnv(): void {
+    // Enhanced mode
+    if (process.env['MCP_SHELL_ENHANCED_MODE'] === 'true') {
+      this.enhancedConfig.enhanced_mode_enabled = true;
+    }
+    
+    // LLM evaluation
+    if (process.env['MCP_SHELL_LLM_EVALUATION'] === 'true') {
+      this.enhancedConfig.llm_evaluation_enabled = true;
+    }
+    
+    // Other enhanced security settings
+    if (process.env['MCP_SHELL_ELICITATION'] === 'true') {
+      this.enhancedConfig.elicitation_enabled = true;
+    }
+    
+    if (process.env['MCP_SHELL_BASIC_SAFE_CLASSIFICATION'] === 'false') {
+      this.enhancedConfig.basic_safe_classification = false;
+    }
+    
+    // LLM provider settings
+    if (process.env['MCP_SHELL_LLM_PROVIDER']) {
+      this.enhancedConfig.llm_provider = process.env['MCP_SHELL_LLM_PROVIDER'] as 'openai' | 'anthropic' | 'custom';
+    }
+    
+    if (process.env['MCP_SHELL_LLM_MODEL']) {
+      this.enhancedConfig.llm_model = process.env['MCP_SHELL_LLM_MODEL'];
+    }
+    
+    if (process.env['MCP_SHELL_LLM_API_KEY']) {
+      this.enhancedConfig.llm_api_key = process.env['MCP_SHELL_LLM_API_KEY'];
+    }
+    
+    if (process.env['MCP_SHELL_LLM_TIMEOUT']) {
+      const timeout = parseInt(process.env['MCP_SHELL_LLM_TIMEOUT']);
+      if (!isNaN(timeout) && timeout > 0 && timeout <= 60) {
+        this.enhancedConfig.llm_timeout_seconds = timeout;
+      }
+    }
   }
 
   setRestrictions(restrictions: Partial<SecurityRestrictions>): SecurityRestrictions {
@@ -501,9 +549,59 @@ export class SecurityManager {
   /**
    * Initialize Enhanced Safety Evaluator
    */
-  initializeEnhancedEvaluator(historyManager: any): void {
+  initializeEnhancedEvaluator(historyManager: any, server?: Server): void {
     if (this.enhancedConfig.enhanced_mode_enabled) {
       this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager);
+      
+      // Set up LLM sampling callback if server is provided
+      if (server) {
+        this.enhancedEvaluator.setCreateMessageCallback(async (params) => {
+          try {
+            // Transform our interface to MCP server format
+            const mcpParams = {
+              messages: params.messages,
+              maxTokens: params.maxTokens || 100,
+              temperature: params.temperature,
+              systemPrompt: params.systemPrompt,
+              includeContext: params.includeContext || 'none' as const,
+              stopSequences: params.stopSequences,
+              metadata: params.metadata,
+              modelPreferences: params.modelPreferences
+            };
+            
+            const response = await server.createMessage(mcpParams);
+            
+            // Transform MCP response to our expected format
+            return {
+              content: {
+                type: 'text' as const,
+                text: response.content.type === 'text' ? response.content.text : 'Non-text response'
+              },
+              model: response.model || undefined,
+              stopReason: response.stopReason || undefined
+            };
+          } catch (error) {
+            // Fallback response on error
+            return {
+              content: {
+                type: 'text' as const,
+                text: 'LLM_EVALUATION_ERROR'
+              },
+              model: undefined,
+              stopReason: undefined
+            };
+          }
+        });
+      }
+    }
+  }
+
+  /**
+   * Set LLM sampling callback for enhanced evaluator
+   */
+  setLLMSamplingCallback(callback: any): void {
+    if (this.enhancedEvaluator) {
+      this.enhancedEvaluator.setCreateMessageCallback(callback);
     }
   }
 

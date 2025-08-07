@@ -45,9 +45,10 @@ export class ShellTools {
     try {
       // Enhanced security evaluation (if enabled)
       const workingDir = params.working_directory || this.processManager.getDefaultWorkingDirectory();
+      let safetyEvaluation: any = null;
       
       if (this.securityManager.isEnhancedModeEnabled()) {
-        const safetyEvaluation = await this.securityManager.evaluateCommandSafety(
+        safetyEvaluation = await this.securityManager.evaluateCommandSafety(
           params.command,
           workingDir
         );
@@ -126,7 +127,21 @@ export class ShellTools {
         console.warn('Failed to add command to history:', historyError);
       }
 
-      return executionInfo;
+      // Include safety evaluation in response if available
+      const response: any = { ...executionInfo };
+      if (safetyEvaluation) {
+        response.safety_evaluation = {
+          evaluation_result: safetyEvaluation.evaluation_result,
+          reasoning: safetyEvaluation.reasoning,
+          basic_classification: safetyEvaluation.basic_classification,
+          requires_confirmation: safetyEvaluation.requires_confirmation,
+          suggested_alternatives: safetyEvaluation.suggested_alternatives,
+          llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
+          context_analysis: safetyEvaluation.context_analysis,
+        };
+      }
+
+      return response;
     } catch (error) {
       throw MCPShellError.fromError(error);
     }
