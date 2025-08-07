@@ -43,7 +43,31 @@ export class ShellTools {
   // Shell Operations
   async executeShell(params: ShellExecuteParams) {
     try {
-      // セキュリティチェック
+      // Enhanced security evaluation (if enabled)
+      const workingDir = params.working_directory || this.processManager.getDefaultWorkingDirectory();
+      
+      if (this.securityManager.isEnhancedModeEnabled()) {
+        const safetyEvaluation = await this.securityManager.evaluateCommandSafety(
+          params.command,
+          workingDir
+        );
+        
+        // Handle evaluation results
+        if (safetyEvaluation.evaluation_result === 'DENY') {
+          throw new Error(`Command denied: ${safetyEvaluation.reasoning}`);
+        }
+        
+        // For CONDITIONAL_DENY, we could implement user confirmation here
+        // For now, we'll log the concern but allow execution
+        if (safetyEvaluation.evaluation_result === 'CONDITIONAL_DENY') {
+          console.warn(`Command requires caution: ${safetyEvaluation.reasoning}`);
+          if (safetyEvaluation.suggested_alternatives && safetyEvaluation.suggested_alternatives.length > 0) {
+            console.warn(`Suggested alternatives: ${safetyEvaluation.suggested_alternatives.join(', ')}`);
+          }
+        }
+      }
+
+      // Traditional security checks (still performed)
       this.securityManager.auditCommand(params.command, params.working_directory);
       this.securityManager.validateExecutionTime(params.timeout_seconds);
 

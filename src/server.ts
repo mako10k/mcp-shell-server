@@ -88,6 +88,9 @@ export class MCPShellServer {
       console.warn('Failed to load command history:', error);
     });
 
+    // Initialize Enhanced Safety Evaluator in SecurityManager
+    this.securityManager.initializeEnhancedEvaluator(this.commandHistoryManager);
+
     // ProcessManagerにTerminalManagerの参照を設定
     this.processManager.setTerminalManager(this.terminalManager);
 

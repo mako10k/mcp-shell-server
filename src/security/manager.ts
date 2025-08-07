@@ -8,11 +8,13 @@ import {
 } from '../types/enhanced-security.js';
 import { SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
+import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 
 export class SecurityManager {
   private restrictions: SecurityRestrictions | null = null;
   private enhancedConfig: EnhancedSecurityConfig;
   private basicSafetyRules: BasicSafetyRule[];
+  private enhancedEvaluator: EnhancedSafetyEvaluator | null = null;
 
   constructor() {
     // Enhanced Security設定の初期化
@@ -494,5 +496,43 @@ export class SecurityManager {
       reasoning: 'No matching safety rule found - requires LLM evaluation',
       safety_level: 4
     };
+  }
+
+  /**
+   * Initialize Enhanced Safety Evaluator
+   */
+  initializeEnhancedEvaluator(historyManager: any): void {
+    if (this.enhancedConfig.enhanced_mode_enabled) {
+      this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager);
+    }
+  }
+
+  /**
+   * Perform comprehensive safety evaluation using enhanced evaluator
+   */
+  async evaluateCommandSafety(command: string, workingDirectory: string): Promise<any> {
+    if (!this.enhancedEvaluator || !this.enhancedConfig.enhanced_mode_enabled) {
+      // Fallback to basic classification
+      return {
+        evaluation_result: 'ALLOW',
+        basic_classification: this.classifyCommandSafety(command),
+        reasoning: 'Enhanced evaluation not enabled - using basic classification only',
+        requires_confirmation: false
+      };
+    }
+
+    try {
+      return await this.enhancedEvaluator.evaluateCommand(command, workingDirectory);
+    } catch (error) {
+      // Fallback to basic classification on error
+      console.warn('Enhanced evaluation failed, falling back to basic classification:', error);
+      const basicClassification = this.classifyCommandSafety(command);
+      return {
+        evaluation_result: basicClassification === 'basic_safe' ? 'ALLOW' : 'CONDITIONAL_DENY',
+        basic_classification: basicClassification,
+        reasoning: 'Enhanced evaluation failed - using basic classification',
+        requires_confirmation: basicClassification !== 'basic_safe'
+      };
+    }
   }
 }
