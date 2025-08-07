@@ -1,6 +1,6 @@
 {
   "statistics": {
-    "detectionDate": "2025-08-07T07:14:21.711Z",
+    "detectionDate": "2025-08-07T07:26:17.084Z",
     "formats": {
       "typescript": {
         "sources": {
@@ -88,6 +88,18 @@
             "newDuplicatedLines": 0,
             "newClones": 0
           },
+          "src/types/enhanced-security.ts": {
+            "lines": 153,
+            "tokens": 1826,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
           "src/types/batch-schemas.ts": {
             "lines": 51,
             "tokens": 847,
@@ -113,8 +125,8 @@
             "newClones": 0
           },
           "src/security/manager.ts": {
-            "lines": 291,
-            "tokens": 2457,
+            "lines": 380,
+            "tokens": 2943,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -208,6 +220,30 @@
             "newDuplicatedLines": 0,
             "newClones": 0
           },
+          "src/core/enhanced-history-manager.ts": {
+            "lines": 405,
+            "tokens": 3214,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/core/config-manager.ts": {
+            "lines": 219,
+            "tokens": 1447,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
           "src/server.ts": {
             "lines": 472,
             "tokens": 4144,
@@ -234,28 +270,28 @@
           }
         },
         "total": {
-          "lines": 4974,
-          "tokens": 42607,
-          "sources": 19,
+          "lines": 5840,
+          "tokens": 49580,
+          "sources": 22,
           "clones": 7,
           "duplicatedLines": 44,
           "duplicatedTokens": 669,
-          "percentage": 0.88,
-          "percentageTokens": 1.57,
+          "percentage": 0.75,
+          "percentageTokens": 1.35,
           "newDuplicatedLines": 0,
           "newClones": 0
         }
       }
     },
     "total": {
-      "lines": 4974,
-      "tokens": 42607,
-      "sources": 19,
+      "lines": 5840,
+      "tokens": 49580,
+      "sources": 22,
       "clones": 7,
       "duplicatedLines": 44,
       "duplicatedTokens": 669,
-      "percentage": 0.88,
-      "percentageTokens": 1.57,
+      "percentage": 0.75,
+      "percentageTokens": 1.35,
       "newDuplicatedLines": 0,
       "newClones": 0
     }

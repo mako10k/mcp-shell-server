@@ -1,11 +1,24 @@
 import { SecurityRestrictions } from '../types/index.js';
+import { 
+  EnhancedSecurityConfig, 
+  DEFAULT_ENHANCED_SECURITY_CONFIG,
+  DEFAULT_BASIC_SAFETY_RULES,
+  CommandClassification,
+  BasicSafetyRule 
+} from '../types/enhanced-security.js';
 import { SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
 
 export class SecurityManager {
   private restrictions: SecurityRestrictions | null = null;
+  private enhancedConfig: EnhancedSecurityConfig;
+  private basicSafetyRules: BasicSafetyRule[];
 
   constructor() {
+    // Enhanced Security設定の初期化
+    this.enhancedConfig = { ...DEFAULT_ENHANCED_SECURITY_CONFIG };
+    this.basicSafetyRules = [...DEFAULT_BASIC_SAFETY_RULES];
+    
     // デフォルトのセキュリティ制限を設定
     this.setDefaultRestrictions();
   }
@@ -288,5 +301,81 @@ export class SecurityManager {
     
     // allowedCommandsが指定されていない場合は許可（blockedCommandsのチェックのみ）
     return true;
+  }
+
+  // Enhanced Security Configuration Methods
+  
+  /**
+   * Enhanced Security設定を更新
+   */
+  setEnhancedConfig(config: Partial<EnhancedSecurityConfig>): EnhancedSecurityConfig {
+    this.enhancedConfig = { ...this.enhancedConfig, ...config };
+    return this.enhancedConfig;
+  }
+
+  /**
+   * Enhanced Security設定を取得
+   */
+  getEnhancedConfig(): EnhancedSecurityConfig {
+    return { ...this.enhancedConfig };
+  }
+
+  /**
+   * 基本安全ルールを更新
+   */
+  setBasicSafetyRules(rules: BasicSafetyRule[]): void {
+    this.basicSafetyRules = [...rules];
+  }
+
+  /**
+   * 基本安全ルールを取得
+   */
+  getBasicSafetyRules(): BasicSafetyRule[] {
+    return [...this.basicSafetyRules];
+  }
+
+  /**
+   * コマンドの基本安全分類を実行
+   * @param command 分析するコマンド
+   * @returns 分類結果 ('basic_safe' または 'llm_required')
+   */
+  classifyCommandSafety(command: string): CommandClassification {
+    if (!this.enhancedConfig.basic_safe_classification) {
+      // 基本分類が無効の場合、すべてLLM評価が必要
+      return 'llm_required';
+    }
+
+    const trimmedCommand = command.trim();
+    
+    // 基本安全ルールをチェック
+    for (const rule of this.basicSafetyRules) {
+      try {
+        const regex = new RegExp(rule.pattern);
+        if (regex.test(trimmedCommand)) {
+          // レベル1-3は basic_safe、レベル4-5は llm_required
+          return rule.safety_level <= 3 ? 'basic_safe' : 'llm_required';
+        }
+      } catch (e) {
+        // 正規表現エラーの場合はスキップ
+        continue;
+      }
+    }
+
+    // どのルールにもマッチしない場合は LLM評価が必要
+    return 'llm_required';
+  }
+
+  /**
+   * Enhanced Security機能が有効かどうか
+   */
+  isEnhancedModeEnabled(): boolean {
+    return this.enhancedConfig.enhanced_mode_enabled;
+  }
+
+  /**
+   * LLM評価が有効かどうか
+   */
+  isLLMEvaluationEnabled(): boolean {
+    return this.enhancedConfig.llm_evaluation_enabled;
   }
 }

@@ -2,11 +2,39 @@
 
 # Copilot Instructions
 
+## Development Rules (開発ルール)
+
+### Command Execution (コマンド実行)
 - Always use the MCP Shell tool instead of any Internal Tools.
 - **IMPORTANT**: For ALL command execution, MUST use #mcp_mcp-shell-ser tools instead of run_in_terminal.
 - run_in_terminal has bugs and reduces development efficiency. Always use mcp_mcp-shell-ser_shell_execute instead.
 - Ensure this file `.github/copilot-instructions.md` is kept up to date with the latest instructions.
 - Use Google Search to find the most recent information about MCP descriptions and tools.
+
+### Development Cycle (開発サイクル)
+- **細かい開発サイクル**: 1つの機能や段落を完成させるたびに必ずコミットする
+- **品質チェック**: 各コミット前に以下を実行:
+  1. ESLint による構文チェック (`npm run lint`)
+  2. jscpd による重複コードチェック (`npm run check-duplicates`)
+  3. TypeScript コンパイルチェック (`npm run build`)
+- **コミットメッセージ**: 日本語で機能の内容を明確に記述
+- **例外処理**: 品質チェックでエラーが発生した場合は修正してから再チェック
+
+### Quality Assurance Pipeline (品質保証パイプライン)
+```bash
+# 開発完了後の標準チェックシーケンス
+npm run lint
+npm run check-duplicates  
+npm run build
+git add .
+git commit -m "feat: [具体的な機能説明]"
+```
+
+### Development Flow Example (開発フロー例)
+1. 新機能実装 → 品質チェック → コミット
+2. 次の機能実装 → 品質チェック → コミット
+3. バグ修正 → 品質チェック → コミット
+4. リファクタリング → 品質チェック → コミット
 
 ## MCP LLM Generator Personality Context IDs
 

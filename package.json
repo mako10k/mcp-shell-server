@@ -27,6 +27,7 @@
     "prepublish": "npm run clean && npm run build",
     "jscpd": "jscpd src",
     "jscpd:check": "jscpd src --threshold 10",
+    "check-duplicates": "jscpd src --threshold 10",
     "quality": "npm run lint && npm run jscpd:check && npm test",
     "prepare": "husky"
   },
