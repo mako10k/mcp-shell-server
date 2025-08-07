@@ -12,21 +12,21 @@ import {
 import { getCurrentTimestamp } from '../utils/helpers.js';
 
 /**
- * Enhanced Security設定ファイル管理クラス
- * 設定の読み込み、保存、バリデーションを担当
+ * Configuration Manager for MCP Shell Server Enhanced Security
+ * Handles loading, saving, and validating configuration files
  */
 export class ConfigManager {
   private configPath: string;
   private config: ShellServerConfig;
 
   constructor(configPath?: string) {
-    // デフォルト設定ファイルパス: $HOME/.mcp-shell-server/config.json
+    // Default config file path: $HOME/.mcp-shell-server/config.json
     this.configPath = configPath || this.getDefaultConfigPath();
     this.config = this.getDefaultConfig();
   }
 
   /**
-   * デフォルト設定ファイルパスを取得
+   * Get default configuration file path
    */
   private getDefaultConfigPath(): string {
     const homeDir = process.env['HOME'] || process.env['USERPROFILE'] || '.';
@@ -35,7 +35,7 @@ export class ConfigManager {
   }
 
   /**
-   * デフォルト設定を取得
+   * Get default configuration
    */
   private getDefaultConfig(): ShellServerConfig {
     return {
@@ -49,18 +49,18 @@ export class ConfigManager {
   }
 
   /**
-   * 設定ファイルを読み込み
+   * Load configuration from file
    */
   async loadConfig(): Promise<ShellServerConfig> {
     try {
-      // 設定ファイルの存在確認
+      // Check if config file exists
       await fs.access(this.configPath);
       
-      // ファイル読み込み
+      // Read file content
       const configData = await fs.readFile(this.configPath, 'utf-8');
       const rawConfig = JSON.parse(configData);
       
-      // Zodスキーマでバリデーション
+      // Validate with Zod schema
       const validatedConfig = ShellServerConfigSchema.parse(rawConfig);
       
       this.config = validatedConfig;
@@ -71,9 +71,10 @@ export class ConfigManager {
         throw new Error(`Configuration validation failed: ${error.message}`);
       }
       
-      // ファイルが存在しない場合はデフォルト設定を返す
+      // Return default config if file doesn't exist
       if ((error as any).code === 'ENOENT') {
         console.warn(`Configuration file not found at ${this.configPath}, using defaults`);
+        await this.saveConfig(); // Create default config file
         return this.config;
       }
       
@@ -82,20 +83,20 @@ export class ConfigManager {
   }
 
   /**
-   * 設定ファイルを保存
+   * Save configuration to file
    */
   async saveConfig(config?: ShellServerConfig): Promise<void> {
     const configToSave = config || this.config;
     
     try {
-      // Zodスキーマでバリデーション
+      // Validate with Zod schema
       const validatedConfig = ShellServerConfigSchema.parse(configToSave);
       
-      // ディレクトリが存在しない場合は作成
+      // Create directory if it doesn't exist
       const configDir = path.dirname(this.configPath);
       await fs.mkdir(configDir, { recursive: true });
       
-      // ファイルに保存（整形済みJSON）
+      // Save to file (formatted JSON)
       const configJson = JSON.stringify(validatedConfig, null, 2);
       await fs.writeFile(this.configPath, configJson, 'utf-8');
       
@@ -110,61 +111,85 @@ export class ConfigManager {
   }
 
   /**
-   * 現在の設定を取得
+   * Get current configuration
    */
   getConfig(): ShellServerConfig {
     return { ...this.config };
   }
 
   /**
-   * Enhanced Security設定を取得
+   * Get enhanced security configuration
    */
   getEnhancedSecurityConfig(): EnhancedSecurityConfig {
     return { ...this.config.enhanced_security || DEFAULT_ENHANCED_SECURITY_CONFIG };
   }
 
   /**
-   * Enhanced Security設定を更新
+   * Update enhanced security configuration
    */
-  updateEnhancedSecurityConfig(updates: Partial<EnhancedSecurityConfig>): EnhancedSecurityConfig {
+  async updateEnhancedSecurityConfig(
+    updates: Partial<EnhancedSecurityConfig>, 
+    saveToFile: boolean = true
+  ): Promise<EnhancedSecurityConfig> {
     const currentConfig = this.getEnhancedSecurityConfig();
-    const newConfig = { ...currentConfig, ...updates };
+    const newConfig = { 
+      ...currentConfig, 
+      ...updates,
+      safety_level_thresholds: {
+        ...currentConfig.safety_level_thresholds,
+        ...updates.safety_level_thresholds,
+      }
+    };
     
     this.config.enhanced_security = newConfig;
+    
+    if (saveToFile) {
+      await this.saveConfig();
+    }
+    
     return newConfig;
   }
 
   /**
-   * 基本安全ルールを取得
+   * Get basic safety rules
    */
   getBasicSafetyRules(): BasicSafetyRule[] {
     return [...(this.config.basic_safety_rules || DEFAULT_BASIC_SAFETY_RULES)];
   }
 
   /**
-   * 基本安全ルールを更新
+   * Update basic safety rules
    */
-  updateBasicSafetyRules(rules: BasicSafetyRule[]): void {
+  async updateBasicSafetyRules(rules: BasicSafetyRule[], saveToFile: boolean = true): Promise<void> {
     this.config.basic_safety_rules = [...rules];
+    
+    if (saveToFile) {
+      await this.saveConfig();
+    }
   }
 
   /**
-   * 設定ファイルパスを取得
+   * Get configuration file path
    */
   getConfigPath(): string {
     return this.configPath;
   }
 
   /**
-   * 設定をリセット（デフォルトに戻す）
+   * Reset configuration to defaults
    */
-  resetToDefaults(): ShellServerConfig {
+  async resetToDefaults(saveToFile: boolean = true): Promise<ShellServerConfig> {
     this.config = this.getDefaultConfig();
+    
+    if (saveToFile) {
+      await this.saveConfig();
+    }
+    
     return this.config;
   }
 
   /**
-   * 設定のバックアップを作成
+   * Create backup of current configuration
    */
   async createBackup(): Promise<string> {
     const timestamp = getCurrentTimestamp().replace(/[:.]/g, '-');
@@ -179,7 +204,7 @@ export class ConfigManager {
   }
 
   /**
-   * 設定ファイルの統計情報を取得
+   * Get configuration file statistics
    */
   async getConfigStats(): Promise<{
     exists: boolean;
@@ -204,13 +229,20 @@ export class ConfigManager {
       };
     }
   }
+
+  /**
+   * Validate configuration object
+   */
+  validateConfig(config: unknown): ShellServerConfig {
+    return ShellServerConfigSchema.parse(config);
+  }
 }
 
-// シングルトンインスタンス（オプション）
+// Singleton instance (optional)
 let globalConfigManager: ConfigManager | null = null;
 
 /**
- * グローバル設定マネージャーのインスタンスを取得
+ * Get global configuration manager instance
  */
 export function getGlobalConfigManager(configPath?: string): ConfigManager {
   if (!globalConfigManager) {
