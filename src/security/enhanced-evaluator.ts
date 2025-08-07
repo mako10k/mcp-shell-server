@@ -55,9 +55,9 @@ interface ElicitationResponse {
   content?: Record<string, unknown>;
 }
 
-// MCP Server interface for elicitation (based on mcp-confirm implementation)
+// MCP Server interface for elicitation (proper MCP protocol)
 interface MCPServerInterface {
-  sendRequest<T>(request: { method: string; params?: any }, schema?: any): Promise<{ result: T }>;
+  request(request: { method: string; params?: any }, schema?: any): Promise<any>;
 }
 
 // Elicitation request parameters (following MCP protocol)
@@ -652,7 +652,7 @@ Consider:
   }
 
   /**
-   * Elicit user intent using built-in elicitation (based on mcp-confirm implementation)
+   * Elicit user intent using MCP elicitation protocol
    */
   private async elicitUserIntent(command: string, workingDirectory: string, extendedContext: ExtendedContext): Promise<UserIntentData | null> {
     try {
@@ -662,25 +662,23 @@ Consider:
         return null;
       }
 
-      // Create elicitation message
+      // Create elicitation message and schema
       const elicitationMessage = this.createIntentElicitationMessage(command);
-      
-      // Create elicitation schema
       const elicitationSchema = this.createIntentElicitationSchema();
       
-      // Send elicitation request using MCP server callback if available
-      if (this.createMessageCallback) {
+      // Send elicitation request using MCP server if available
+      if (this.mcpServer) {
         const response = await this.sendIntentElicitationRequest(elicitationMessage, elicitationSchema);
         
         if (response && response.action === 'accept' && response.content) {
-          const confidenceNum = response.content['confidence_level'] as number;
-          const confidenceLevel = confidenceNum <= 2 ? 'low' : confidenceNum >= 4 ? 'high' : 'medium';
+          const confirmed = response.content['confirmed'] as boolean;
+          const reason = (response.content['reason'] as string) || 'No reason provided';
           
           return {
-            intent: response.content['intent'] as string,
-            justification: response.content['justification'] as string,
+            intent: `Execute command: ${command}`,
+            justification: reason,
             timestamp: getCurrentTimestamp(),
-            confidence_level: confidenceLevel,
+            confidence_level: confirmed ? 'high' : 'low',
             elicitation_id: generateId()
           };
         }
@@ -691,8 +689,7 @@ Consider:
       console.warn('Working Directory:', workingDirectory);
       console.warn('Target Analysis:', extendedContext.target_analysis);
       console.warn('Message:', elicitationMessage);
-      
-      return null; // Simulate timeout or user declining
+      return null;
 
     } catch (error) {
       console.error('User intent elicitation failed:', error);
@@ -759,16 +756,13 @@ This command appears to be potentially dangerous. Do you intend to execute it?`;
 
       console.log('Sending MCP elicitation request:', 'elicitation/create', elicitationParams);
 
-      // Send MCP elicitation/create request (correct MCP SDK pattern)
-      const response = await this.mcpServer.sendRequest<{
-        action: "accept" | "decline" | "cancel";
-        content?: Record<string, unknown>;
-      }>({
+      // Send MCP elicitation/create request (proper MCP protocol)
+      const response = await this.mcpServer.request({
         method: 'elicitation/create',
         params: elicitationParams
       });
 
-      if (!response || !response.result) {
+      if (!response) {
         // Security Critical: No response from elicitation
         throw new Error(
           'SECURITY_ERROR: Elicitation request failed - no response received. ' +
@@ -776,8 +770,8 @@ This command appears to be potentially dangerous. Do you intend to execute it?`;
         );
       }
 
-      // Type-safe extraction of result
-      const result = response.result as {
+      // Extract result directly from response (MCP protocol format)
+      const result = response as {
         action: "accept" | "decline" | "cancel";
         content?: Record<string, unknown>;
       };

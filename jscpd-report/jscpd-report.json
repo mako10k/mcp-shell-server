@@ -1,6 +1,6 @@
 {
   "statistics": {
-    "detectionDate": "2025-08-07T11:31:47.732Z",
+    "detectionDate": "2025-08-07T13:48:48.880Z",
     "formats": {
       "typescript": {
         "sources": {
@@ -41,8 +41,8 @@
             "newClones": 0
           },
           "src/types/schemas.ts": {
-            "lines": 226,
-            "tokens": 3124,
+            "lines": 227,
+            "tokens": 3144,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -113,8 +113,8 @@
             "newClones": 0
           },
           "src/tools/shell-tools.ts": {
-            "lines": 859,
-            "tokens": 6705,
+            "lines": 876,
+            "tokens": 6812,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -125,8 +125,8 @@
             "newClones": 0
           },
           "src/security/manager.ts": {
-            "lines": 703,
-            "tokens": 5238,
+            "lines": 723,
+            "tokens": 5444,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -270,28 +270,28 @@
           }
         },
         "total": {
-          "lines": 6477,
-          "tokens": 54510,
+          "lines": 6515,
+          "tokens": 54843,
           "sources": 22,
           "clones": 7,
           "duplicatedLines": 44,
           "duplicatedTokens": 669,
           "percentage": 0.68,
-          "percentageTokens": 1.23,
+          "percentageTokens": 1.22,
           "newDuplicatedLines": 0,
           "newClones": 0
         }
       }
     },
     "total": {
-      "lines": 6477,
-      "tokens": 54510,
+      "lines": 6515,
+      "tokens": 54843,
       "sources": 22,
       "clones": 7,
       "duplicatedLines": 44,
       "duplicatedTokens": 669,
       "percentage": 0.68,
-      "percentageTokens": 1.23,
+      "percentageTokens": 1.22,
       "newDuplicatedLines": 0,
       "newClones": 0
     }

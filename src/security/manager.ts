@@ -662,9 +662,9 @@ export class SecurityManager {
         }
       });
 
-      // Set up MCP server reference for elicitation (actual implementation)
+      // Set up MCP server reference for elicitation (proper MCP protocol)
       this.enhancedEvaluator.setMCPServer({
-        sendRequest: async <T>(request: { method: string; params?: any }, _schema?: any): Promise<{ result: T }> => {
+        request: async (request: { method: string; params?: any }, _schema?: any): Promise<any> => {
           try {
             // Use actual MCP server.request method for elicitation protocol
             console.log('Sending MCP elicitation request:', request.method, request.params);
@@ -673,7 +673,7 @@ export class SecurityManager {
             const result = await server.request(request, _schema);
             console.log('MCP elicitation result:', result);
             
-            return { result: result as T };
+            return result;
           } catch (error) {
             console.error('MCP elicitation request failed:', error);
             // Elicitation failure should be a proper MCP error, not a generic error
