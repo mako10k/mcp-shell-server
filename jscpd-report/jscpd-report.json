@@ -1,0 +1,1157 @@
+{
+  "statistics": {
+    "detectionDate": "2025-08-07T07:14:21.711Z",
+    "formats": {
+      "typescript": {
+        "sources": {
+          "src/utils/process-utils.ts": {
+            "lines": 243,
+            "tokens": 1821,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/utils/helpers.ts": {
+            "lines": 302,
+            "tokens": 2495,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/utils/errors.ts": {
+            "lines": 116,
+            "tokens": 902,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/types/schemas.ts": {
+            "lines": 198,
+            "tokens": 2776,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/types/response-schemas.ts": {
+            "lines": 31,
+            "tokens": 341,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/types/quick-schemas.ts": {
+            "lines": 72,
+            "tokens": 961,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/types/index.ts": {
+            "lines": 227,
+            "tokens": 1704,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/types/batch-schemas.ts": {
+            "lines": 51,
+            "tokens": 847,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/tools/shell-tools.ts": {
+            "lines": 652,
+            "tokens": 5014,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/security/manager.ts": {
+            "lines": 291,
+            "tokens": 2457,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/core/terminal-manager.ts": {
+            "lines": 622,
+            "tokens": 5084,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/core/streaming-pipeline-reader.ts": {
+            "lines": 229,
+            "tokens": 1698,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/core/stream-publisher.ts": {
+            "lines": 186,
+            "tokens": 1463,
+            "sources": 1,
+            "clones": 6,
+            "duplicatedLines": 36,
+            "duplicatedTokens": 536,
+            "percentage": 19.35,
+            "percentageTokens": 36.64,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/core/realtime-stream-subscriber.ts": {
+            "lines": 269,
+            "tokens": 1984,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/core/monitoring-manager.ts": {
+            "lines": 349,
+            "tokens": 3100,
+            "sources": 1,
+            "clones": 6,
+            "duplicatedLines": 36,
+            "duplicatedTokens": 546,
+            "percentage": 10.32,
+            "percentageTokens": 17.61,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/core/file-storage-subscriber.ts": {
+            "lines": 150,
+            "tokens": 1346,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/core/file-manager.ts": {
+            "lines": 471,
+            "tokens": 4070,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/server.ts": {
+            "lines": 472,
+            "tokens": 4144,
+            "sources": 1,
+            "clones": 2,
+            "duplicatedLines": 16,
+            "duplicatedTokens": 256,
+            "percentage": 3.39,
+            "percentageTokens": 6.18,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/index.ts": {
+            "lines": 43,
+            "tokens": 400,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          }
+        },
+        "total": {
+          "lines": 4974,
+          "tokens": 42607,
+          "sources": 19,
+          "clones": 7,
+          "duplicatedLines": 44,
+          "duplicatedTokens": 669,
+          "percentage": 0.88,
+          "percentageTokens": 1.57,
+          "newDuplicatedLines": 0,
+          "newClones": 0
+        }
+      }
+    },
+    "total": {
+      "lines": 4974,
+      "tokens": 42607,
+      "sources": 19,
+      "clones": 7,
+      "duplicatedLines": 44,
+      "duplicatedTokens": 669,
+      "percentage": 0.88,
+      "percentageTokens": 1.57,
+      "newDuplicatedLines": 0,
+      "newClones": 0
+    }
+  },
+  "duplicates": [
+    {
+      "format": "typescript",
+      "lines": 7,
+      "fragment": "): Promise<void> {\n    const subscriberIds = this.executionSubscribers.get(executionId);\n    if (!subscriberIds) return;\n    \n    const notifications = Array.from(subscriberIds).map(async (subscriberId) => {\n      const subscriber = this.subscribers.get(subscriberId);\n      if (subscriber)",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/core/stream-publisher.ts",
+        "start": 110,
+        "end": 116,
+        "startLoc": {
+          "line": 110,
+          "column": 6,
+          "position": 809
+        },
+        "endLoc": {
+          "line": 116,
+          "column": 2,
+          "position": 897
+        },
+        "blame": {
+          "110": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "110",
+            "rev": "e21a644f"
+          },
+          "111": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "111",
+            "rev": "e21a644f"
+          },
+          "112": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "112",
+            "rev": "e21a644f"
+          },
+          "113": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "113",
+            "rev": "e21a644f"
+          },
+          "114": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "114",
+            "rev": "e21a644f"
+          },
+          "115": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "115",
+            "rev": "e21a644f"
+          },
+          "116": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "116",
+            "rev": "e21a644f"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/core/stream-publisher.ts",
+        "start": 89,
+        "end": 95,
+        "startLoc": {
+          "line": 89,
+          "column": 7,
+          "position": 611
+        },
+        "endLoc": {
+          "line": 95,
+          "column": 2,
+          "position": 699
+        },
+        "blame": {
+          "89": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "89",
+            "rev": "e21a644f"
+          },
+          "90": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "90",
+            "rev": "e21a644f"
+          },
+          "91": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "91",
+            "rev": "e21a644f"
+          },
+          "92": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "92",
+            "rev": "e21a644f"
+          },
+          "93": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "93",
+            "rev": "e21a644f"
+          },
+          "94": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "94",
+            "rev": "e21a644f"
+          },
+          "95": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "95",
+            "rev": "e21a644f"
+          }
+        }
+      }
+    },
+    {
+      "format": "typescript",
+      "lines": 7,
+      "fragment": "): Promise<void> {\n    const subscriberIds = this.executionSubscribers.get(executionId);\n    if (!subscriberIds) return;\n    \n    const notifications = Array.from(subscriberIds).map(async (subscriberId) => {\n      const subscriber = this.subscribers.get(subscriberId);\n      if (subscriber?.onProcessEnd",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/core/stream-publisher.ts",
+        "start": 131,
+        "end": 137,
+        "startLoc": {
+          "line": 131,
+          "column": 5,
+          "position": 1001
+        },
+        "endLoc": {
+          "line": 137,
+          "column": 13,
+          "position": 1091
+        },
+        "blame": {
+          "131": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "131",
+            "rev": "e21a644f"
+          },
+          "132": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "132",
+            "rev": "e21a644f"
+          },
+          "133": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "133",
+            "rev": "e21a644f"
+          },
+          "134": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "134",
+            "rev": "e21a644f"
+          },
+          "135": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "135",
+            "rev": "e21a644f"
+          },
+          "136": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "136",
+            "rev": "e21a644f"
+          },
+          "137": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "137",
+            "rev": "e21a644f"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/core/stream-publisher.ts",
+        "start": 89,
+        "end": 95,
+        "startLoc": {
+          "line": 89,
+          "column": 7,
+          "position": 611
+        },
+        "endLoc": {
+          "line": 95,
+          "column": 15,
+          "position": 701
+        },
+        "blame": {
+          "89": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "89",
+            "rev": "e21a644f"
+          },
+          "90": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "90",
+            "rev": "e21a644f"
+          },
+          "91": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "91",
+            "rev": "e21a644f"
+          },
+          "92": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "92",
+            "rev": "e21a644f"
+          },
+          "93": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "93",
+            "rev": "e21a644f"
+          },
+          "94": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "94",
+            "rev": "e21a644f"
+          },
+          "95": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "95",
+            "rev": "e21a644f"
+          }
+        }
+      }
+    },
+    {
+      "format": "typescript",
+      "lines": 7,
+      "fragment": "): Promise<void> {\n    const subscriberIds = this.executionSubscribers.get(executionId);\n    if (!subscriberIds) return;\n    \n    const notifications = Array.from(subscriberIds).map(async (subscriberId) => {\n      const subscriber = this.subscribers.get(subscriberId);\n      if (subscriber?.onError",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/core/stream-publisher.ts",
+        "start": 155,
+        "end": 161,
+        "startLoc": {
+          "line": 155,
+          "column": 6,
+          "position": 1205
+        },
+        "endLoc": {
+          "line": 161,
+          "column": 8,
+          "position": 1295
+        },
+        "blame": {
+          "155": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "155",
+            "rev": "e21a644f"
+          },
+          "156": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "156",
+            "rev": "e21a644f"
+          },
+          "157": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "157",
+            "rev": "e21a644f"
+          },
+          "158": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "158",
+            "rev": "e21a644f"
+          },
+          "159": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "159",
+            "rev": "e21a644f"
+          },
+          "160": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "160",
+            "rev": "e21a644f"
+          },
+          "161": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "161",
+            "rev": "e21a644f"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/core/stream-publisher.ts",
+        "start": 89,
+        "end": 95,
+        "startLoc": {
+          "line": 89,
+          "column": 7,
+          "position": 611
+        },
+        "endLoc": {
+          "line": 95,
+          "column": 15,
+          "position": 701
+        },
+        "blame": {
+          "89": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "89",
+            "rev": "e21a644f"
+          },
+          "90": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "90",
+            "rev": "e21a644f"
+          },
+          "91": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "91",
+            "rev": "e21a644f"
+          },
+          "92": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "92",
+            "rev": "e21a644f"
+          },
+          "93": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "93",
+            "rev": "e21a644f"
+          },
+          "94": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "94",
+            "rev": "e21a644f"
+          },
+          "95": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-23 20:55:07 +0900",
+            "line": "95",
+            "rev": "e21a644f"
+          }
+        }
+      }
+    },
+    {
+      "format": "typescript",
+      "lines": 7,
+      "fragment": "(processId: number): Promise<number> {\n    try {\n      const { exec } = await import('child_process');\n      const { promisify } = await import('util');\n      const execAsync = promisify(exec);\n\n      const { stdout } = await execAsync(`ps -p ${processId} -o %cpu`",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/core/monitoring-manager.ts",
+        "start": 133,
+        "end": 139,
+        "startLoc": {
+          "line": 133,
+          "column": 17,
+          "position": 1096
+        },
+        "endLoc": {
+          "line": 139,
+          "column": 10,
+          "position": 1187
+        },
+        "blame": {
+          "133": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "133",
+            "rev": "^a5c96c3"
+          },
+          "134": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "134",
+            "rev": "^a5c96c3"
+          },
+          "135": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "135",
+            "rev": "^a5c96c3"
+          },
+          "136": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "136",
+            "rev": "^a5c96c3"
+          },
+          "137": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "137",
+            "rev": "^a5c96c3"
+          },
+          "138": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "138",
+            "rev": "^a5c96c3"
+          },
+          "139": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "139",
+            "rev": "^a5c96c3"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/core/monitoring-manager.ts",
+        "start": 120,
+        "end": 126,
+        "startLoc": {
+          "line": 120,
+          "column": 17,
+          "position": 958
+        },
+        "endLoc": {
+          "line": 126,
+          "column": 23,
+          "position": 1049
+        },
+        "blame": {
+          "120": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "120",
+            "rev": "^a5c96c3"
+          },
+          "121": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "121",
+            "rev": "^a5c96c3"
+          },
+          "122": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "122",
+            "rev": "^a5c96c3"
+          },
+          "123": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "123",
+            "rev": "^a5c96c3"
+          },
+          "124": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "124",
+            "rev": "^a5c96c3"
+          },
+          "125": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "125",
+            "rev": "^a5c96c3"
+          },
+          "126": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "126",
+            "rev": "^a5c96c3"
+          }
+        }
+      }
+    },
+    {
+      "format": "typescript",
+      "lines": 7,
+      "fragment": "(processId: number): Promise<number> {\n    try {\n      const { exec } = await import('child_process');\n      const { promisify } = await import('util');\n      const execAsync = promisify(exec);\n\n      const { stdout } = await execAsync(`ps -p ${processId} -o rss --no-headers`",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/core/monitoring-manager.ts",
+        "start": 164,
+        "end": 170,
+        "startLoc": {
+          "line": 164,
+          "column": 20,
+          "position": 1409
+        },
+        "endLoc": {
+          "line": 170,
+          "column": 22,
+          "position": 1500
+        },
+        "blame": {
+          "164": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "164",
+            "rev": "^a5c96c3"
+          },
+          "165": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "165",
+            "rev": "^a5c96c3"
+          },
+          "166": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "166",
+            "rev": "^a5c96c3"
+          },
+          "167": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "167",
+            "rev": "^a5c96c3"
+          },
+          "168": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "168",
+            "rev": "^a5c96c3"
+          },
+          "169": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "169",
+            "rev": "^a5c96c3"
+          },
+          "170": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "170",
+            "rev": "^a5c96c3"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/core/monitoring-manager.ts",
+        "start": 120,
+        "end": 126,
+        "startLoc": {
+          "line": 120,
+          "column": 17,
+          "position": 958
+        },
+        "endLoc": {
+          "line": 126,
+          "column": 23,
+          "position": 1049
+        },
+        "blame": {
+          "120": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "120",
+            "rev": "^a5c96c3"
+          },
+          "121": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "121",
+            "rev": "^a5c96c3"
+          },
+          "122": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "122",
+            "rev": "^a5c96c3"
+          },
+          "123": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "123",
+            "rev": "^a5c96c3"
+          },
+          "124": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "124",
+            "rev": "^a5c96c3"
+          },
+          "125": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "125",
+            "rev": "^a5c96c3"
+          },
+          "126": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "126",
+            "rev": "^a5c96c3"
+          }
+        }
+      }
+    },
+    {
+      "format": "typescript",
+      "lines": 7,
+      "fragment": "(processId: number): Promise<number> {\n    try {\n      const { exec } = await import('child_process');\n      const { promisify } = await import('util');\n      const execAsync = promisify(exec);\n\n      const { stdout } = await execAsync(`ps -p ${processId} -o rss`",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/core/monitoring-manager.ts",
+        "start": 178,
+        "end": 184,
+        "startLoc": {
+          "line": 178,
+          "column": 20,
+          "position": 1563
+        },
+        "endLoc": {
+          "line": 184,
+          "column": 9,
+          "position": 1654
+        },
+        "blame": {
+          "178": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "178",
+            "rev": "^a5c96c3"
+          },
+          "179": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "179",
+            "rev": "^a5c96c3"
+          },
+          "180": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "180",
+            "rev": "^a5c96c3"
+          },
+          "181": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "181",
+            "rev": "^a5c96c3"
+          },
+          "182": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "182",
+            "rev": "^a5c96c3"
+          },
+          "183": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "183",
+            "rev": "^a5c96c3"
+          },
+          "184": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "184",
+            "rev": "^a5c96c3"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/core/monitoring-manager.ts",
+        "start": 120,
+        "end": 126,
+        "startLoc": {
+          "line": 120,
+          "column": 17,
+          "position": 958
+        },
+        "endLoc": {
+          "line": 126,
+          "column": 23,
+          "position": 1049
+        },
+        "blame": {
+          "120": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "120",
+            "rev": "^a5c96c3"
+          },
+          "121": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "121",
+            "rev": "^a5c96c3"
+          },
+          "122": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "122",
+            "rev": "^a5c96c3"
+          },
+          "123": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "123",
+            "rev": "^a5c96c3"
+          },
+          "124": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "124",
+            "rev": "^a5c96c3"
+          },
+          "125": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "125",
+            "rev": "^a5c96c3"
+          },
+          "126": {
+            "author": "Makoto Katsumata",
+            "date": "2025-06-13 18:49:09 +0900",
+            "line": "126",
+            "rev": "^a5c96c3"
+          }
+        }
+      }
+    },
+    {
+      "format": "typescript",
+      "lines": 9,
+      "fragment": "): Promise<void> {\n    const commandPreview = executionInfo.command.length > 40 \n      ? `${executionInfo.command.substring(0, 37)}...`\n      : executionInfo.command;\n    \n    const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);\n    const outputSizeStr = outputSize > 0 ? ` (${outputSize} bytes)` : '';\n    \n    const message = `⏰ Background process timeout: ",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/server.ts",
+        "start": 400,
+        "end": 408,
+        "startLoc": {
+          "line": 400,
+          "column": 14,
+          "position": 3522
+        },
+        "endLoc": {
+          "line": 408,
+          "column": 32,
+          "position": 3650
+        },
+        "blame": {
+          "400": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "400",
+            "rev": "f33f5d2b"
+          },
+          "401": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "401",
+            "rev": "f33f5d2b"
+          },
+          "402": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "402",
+            "rev": "f33f5d2b"
+          },
+          "403": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "403",
+            "rev": "f33f5d2b"
+          },
+          "404": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "404",
+            "rev": "f33f5d2b"
+          },
+          "405": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "405",
+            "rev": "f33f5d2b"
+          },
+          "406": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "406",
+            "rev": "f33f5d2b"
+          },
+          "407": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "407",
+            "rev": "f33f5d2b"
+          },
+          "408": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "408",
+            "rev": "f33f5d2b"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/server.ts",
+        "start": 366,
+        "end": 374,
+        "startLoc": {
+          "line": 366,
+          "column": 6,
+          "position": 3195
+        },
+        "endLoc": {
+          "line": 374,
+          "column": 31,
+          "position": 3323
+        },
+        "blame": {
+          "366": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "366",
+            "rev": "f33f5d2b"
+          },
+          "367": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "367",
+            "rev": "f33f5d2b"
+          },
+          "368": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "368",
+            "rev": "f33f5d2b"
+          },
+          "369": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "369",
+            "rev": "f33f5d2b"
+          },
+          "370": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "370",
+            "rev": "f33f5d2b"
+          },
+          "371": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "371",
+            "rev": "f33f5d2b"
+          },
+          "372": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "372",
+            "rev": "f33f5d2b"
+          },
+          "373": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "373",
+            "rev": "f33f5d2b"
+          },
+          "374": {
+            "author": "Makoto Katsumata",
+            "date": "2025-07-17 20:14:05 +0900",
+            "line": "374",
+            "rev": "f33f5d2b"
+          }
+        }
+      }
+    }
+  ]
+}

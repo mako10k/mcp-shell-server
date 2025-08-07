@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run quality checks before commit
+echo "🔍 Running quality checks..."
+
+# Check for code duplication
+echo "📊 Checking for code duplication..."
+npm run jscpd:check
+
+if [ $? -ne 0 ]; then
+  echo "❌ Code duplication threshold exceeded!"
+  echo "💡 Please refactor duplicated code before committing."
+  exit 1
+fi
+
+# Run linting
+echo "🧹 Running linter..."
+npm run lint
+
+if [ $? -ne 0 ]; then
+  echo "❌ Linting failed!"
+  echo "💡 Please fix linting errors before committing."
+  exit 1
+fi
+
+echo "✅ All quality checks passed!"

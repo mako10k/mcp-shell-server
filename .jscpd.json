@@ -1,0 +1,19 @@
+{
+  "threshold": 10,
+  "reporters": ["console", "json"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/coverage/**"
+  ],
+  "format": ["typescript", "javascript"],
+  "output": "./jscpd-report",
+  "min-lines": 5,
+  "min-tokens": 50,
+  "max-lines": 500,
+  "max-size": "30kb",
+  "blame": true,
+  "config": ".jscpd.json"
+}
