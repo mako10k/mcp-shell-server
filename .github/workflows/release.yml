@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 2.3.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        registry-url: 'https://registry.npmjs.org'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run quality checks
+      run: |
+        npm run lint
+        npm run build
+        npm run check-duplicates
+    
+    - name: Verify version
+      run: |
+        echo "Package version: $(node -p "require('./package.json').version")"
+        echo "Requested version: ${{ github.event.inputs.version }}"
+        if [ "$(node -p "require('./package.json').version")" != "${{ github.event.inputs.version }}" ]; then
+          echo "❌ Version mismatch! Please update package.json version to ${{ github.event.inputs.version }}"
+          exit 1
+        fi
+    
+    - name: Create Git tag
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git tag -a "v${{ github.event.inputs.version }}" -m "Release v${{ github.event.inputs.version }}"
+        git push origin "v${{ github.event.inputs.version }}"
+    
+    - name: Publish to npm
+      run: npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.event.inputs.version }}
+        release_name: Release v${{ github.event.inputs.version }}
+        body: |
+          See [CHANGELOG.md](./CHANGELOG.md) for details.
+        draft: false
+        prerelease: false
