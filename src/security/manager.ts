@@ -660,14 +660,25 @@ export class SecurityManager {
           const response = await server.createMessage(mcpParams);
           
           // Transform MCP response to our expected format
-          return {
+          const result: {
+            content: { type: 'text'; text: string };
+            model?: string;
+            stopReason?: string;
+          } = {
             content: {
               type: 'text' as const,
               text: response.content.type === 'text' ? response.content.text : 'Non-text response'
-            },
-            model: response.model || undefined,
-            stopReason: response.stopReason || undefined
+            }
           };
+          
+          if (response.model) {
+            result.model = response.model;
+          }
+          if (response.stopReason) {
+            result.stopReason = response.stopReason;
+          }
+          
+          return result;
         } catch (error) {
           // Fallback response on error
           return {
