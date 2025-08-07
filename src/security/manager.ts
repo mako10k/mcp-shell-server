@@ -347,6 +347,17 @@ export class SecurityManager {
 
     const trimmedCommand = command.trim();
     
+    // 空コマンドは basic_safe
+    if (!trimmedCommand) {
+      return 'basic_safe';
+    }
+
+    // 危険パターンチェック（優先度最高）
+    const dangerousPatterns = this.detectDangerousPatterns(trimmedCommand);
+    if (dangerousPatterns.length > 0) {
+      return 'llm_required';
+    }
+
     // 基本安全ルールをチェック
     for (const rule of this.basicSafetyRules) {
       try {
@@ -363,6 +374,71 @@ export class SecurityManager {
 
     // どのルールにもマッチしない場合は LLM評価が必要
     return 'llm_required';
+  }
+
+  /**
+   * コマンドの詳細安全性分析（分類理由付き）
+   * @param command 分析するコマンド
+   * @returns 分析結果オブジェクト
+   */
+  analyzeCommandSafety(command: string): {
+    classification: CommandClassification;
+    reasoning: string;
+    safety_level?: number;
+    matched_rule?: string;
+    dangerous_patterns?: string[];
+  } {
+    const trimmedCommand = command.trim();
+    
+    if (!this.enhancedConfig.basic_safe_classification) {
+      return {
+        classification: 'llm_required',
+        reasoning: 'Basic safety classification is disabled'
+      };
+    }
+
+    if (!trimmedCommand) {
+      return {
+        classification: 'basic_safe',
+        reasoning: 'Empty command',
+        safety_level: 1
+      };
+    }
+
+    // 危険パターンチェック（優先度最高）
+    const dangerousPatterns = this.detectDangerousPatterns(trimmedCommand);
+    if (dangerousPatterns.length > 0) {
+      return {
+        classification: 'llm_required',
+        reasoning: 'Contains dangerous patterns',
+        safety_level: 5,
+        dangerous_patterns: dangerousPatterns
+      };
+    }
+
+    // 基本安全ルールをチェック
+    for (const rule of this.basicSafetyRules) {
+      try {
+        const regex = new RegExp(rule.pattern);
+        if (regex.test(trimmedCommand)) {
+          return {
+            classification: rule.safety_level <= 3 ? 'basic_safe' : 'llm_required',
+            reasoning: rule.reasoning,
+            safety_level: rule.safety_level,
+            matched_rule: rule.pattern
+          };
+        }
+      } catch (e) {
+        // 正規表現エラーの場合はスキップ
+        continue;
+      }
+    }
+
+    return {
+      classification: 'llm_required',
+      reasoning: 'No matching safety rule found - requires LLM evaluation',
+      safety_level: 4
+    };
   }
 
   /**
