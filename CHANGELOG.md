@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2025-08-07
+
+### Added
+- **Enhanced Safety Evaluator**: Revolutionary AI-powered command safety analysis
+  - LLM-based security evaluation with detailed reasoning and confidence scores
+  - Context-aware risk assessment using Extended Context analysis
+  - Intelligent alternative command suggestions for safer operations
+  - Built-in user intent elicitation system for complex scenarios
+  - Support for both external LLM APIs and MCP sampling protocol
+- **Enhanced Security Modes**: New advanced security modes for modern AI workflows
+  - `enhanced`: Full AI-powered safety evaluation with user intent confirmation
+  - `enhanced-fast`: Optimized enhanced mode for better performance
+  - Traditional dangerous pattern detection bypassed in enhanced modes
+  - Configurable elicitation system with `MCP_SHELL_ELICITATION` environment variable
+- **Security Architecture Improvements**: 
+  - Complete separation of traditional and enhanced security evaluation
+  - Fine-grained safety classifications (basic_safe, llm_required)
+  - Detailed evaluation responses with reasoning, confidence, and alternatives
+  - Fallback mechanisms for robust operation
+
+### Changed
+- Security validation flow now supports both traditional pattern-based and AI-powered evaluation
+- Enhanced modes skip traditional dangerous pattern detection for more nuanced analysis
+- Command classification system expanded with AI-based safety categories
+
+### Technical Details
+- New `enhanced-evaluator.ts` implementing comprehensive LLM-based safety analysis
+- Modified `SecurityManager` to support dual evaluation modes
+- Enhanced response schemas with detailed safety evaluation information
+- Integration with mcp-confirm-style elicitation patterns
+
 ## [2.2.0] - 2025-07-24
 
 ### Added

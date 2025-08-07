@@ -50,7 +50,11 @@ Create `.vscode/mcp.json`:
   "servers": {
     "mcp-shell-server": {
       "type": "stdio",
-      "command": "mcp-shell-server"
+      "command": "mcp-shell-server",
+      "env": {
+        "MCP_SHELL_SECURITY_MODE": "enhanced",
+        "MCP_SHELL_ELICITATION": "true"
+      }
     }
   }
 }
@@ -119,6 +123,11 @@ Add to MCP settings:
 - Real-time output streaming
 
 ### 🔐 Advanced Security Features
+- **🆕 Enhanced Safety Evaluator**: AI-powered command safety analysis
+  - LLM-based security evaluation with detailed reasoning
+  - Context-aware risk assessment
+  - Intelligent alternative suggestions
+  - Built-in user intent elicitation for complex scenarios
 - **🆕 Program Guard System**: Prevents unintended input delivery
   - Target specific processes by name, path, or PID
   - Session leader detection and validation
@@ -376,10 +385,16 @@ The server supports the following environment variables for configuration:
   ```
 
 #### Security Configuration
-- `MCP_SHELL_SECURITY_MODE`: Set the default security mode (`permissive`, `restrictive`, or `custom`)
+- `MCP_SHELL_SECURITY_MODE`: Set the default security mode (`permissive`, `restrictive`, `enhanced`, `enhanced-fast`, or `custom`)
   ```bash
-  export MCP_SHELL_SECURITY_MODE="restrictive"
+  export MCP_SHELL_SECURITY_MODE="enhanced"
   ```
+- `MCP_SHELL_ELICITATION`: Enable user intent elicitation for complex scenarios (for enhanced modes)
+  ```bash
+  export MCP_SHELL_ELICITATION="true"
+  ```
+- `MCP_SHELL_LLM_API_KEY`: API key for LLM-based safety evaluation (optional, falls back to MCP sampling)
+- `MCP_SHELL_LLM_TIMEOUT`: Timeout for LLM evaluation in seconds (default: 30)
 
 #### Resource Limits
 - `MCP_SHELL_MAX_EXECUTION_TIME`: Default maximum execution time in seconds
@@ -429,6 +444,8 @@ Use the `security_set_restrictions` tool to dynamically configure security setti
 **Security Modes:**
 - `permissive`: Allow most commands with basic safety checks
 - `restrictive`: Only allow read-only commands (ls, cat, grep, etc.)
+- `enhanced`: AI-powered safety evaluation with LLM-based analysis (recommended)
+- `enhanced-fast`: Optimized enhanced mode for better performance
 - `custom`: Use detailed configuration with allowed/blocked commands
 
 ## API Reference

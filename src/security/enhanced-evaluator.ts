@@ -1021,7 +1021,8 @@ Respond with either "ACCEPT: {json_data}" or "DECLINE: reason" or "CANCEL: reaso
       requires_confirmation,
       reasoning,
       confidence: final_confidence,
-      suggested_alternatives: contextualEvaluation.suggested_alternatives
+      suggested_alternatives: contextualEvaluation.suggested_alternatives,
+      llm_evaluation_used: llmEvaluation !== null
     };
   }
 
@@ -1194,6 +1195,7 @@ interface SafetyEvaluation {
   reasoning: string;
   confidence: number;
   suggested_alternatives: string[];
+  llm_evaluation_used: boolean;
 }
 
 interface ContextualEvaluation {
