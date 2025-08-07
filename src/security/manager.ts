@@ -181,16 +181,10 @@ export class SecurityManager {
 
       case 'enhanced':
       case 'enhanced-fast':
-        // enhancedモード: Enhanced Safety Evaluatorが処理
-        // validateCommand段階では基本的なパターンチェックのみ行い、
-        // 詳細な評価はenhanaced evaluatorに委ねる
-        const enhancedDangerousPatterns = this.detectCriticalDangerousPatterns(command);
-        if (enhancedDangerousPatterns.length > 0) {
-          throw new SecurityError(`Command contains critical dangerous patterns: ${enhancedDangerousPatterns.join(', ')}`, {
-            command,
-            dangerousPatterns: enhancedDangerousPatterns,
-          });
-        }
+        // enhancedモード: Enhanced Safety Evaluatorが全ての評価を行う
+        // validateCommand段階では一切のパターンチェックを行わず、
+        // 全ての評価をEnhanced Safety Evaluatorに委ねる
+        // 従来のパターンマッチング検出は完全にスキップ
         break;
 
       case 'restrictive':
@@ -353,44 +347,20 @@ export class SecurityManager {
     return detectedPatterns;
   }
 
-  /**
-   * Detect only critical dangerous patterns (for enhanced mode)
-   * Enhanced mode delegates most evaluation to LLM, but blocks extremely dangerous patterns
-   */
-  private detectCriticalDangerousPatterns(command: string): string[] {
-    const criticalPatterns = [
-      // 極めて危険な操作のみ
-      /rm\s+.*-rf?\s+\//, // rm -rf /
-      /dd\s+.*of=\/dev\//, // dd to device files
-      /mkfs\s+\/dev\//, // format device
-      /fdisk\s+\/dev\//, // partition device
-      
-      // ネットワーク経由のコード実行
-      /curl\s+.*\|\s*(bash|sh|zsh|fish)/, // curl | bash
-      /wget\s+.*\|\s*(bash|sh|zsh|fish)/, // wget | sh
-      
-      // システム破壊
-      /kill\s+-9\s+1/, // kill init
-      /killall\s+init/, // killall init
-      /init\s+0/, // init 0
-      
-      // リバースシェル
-      /bash\s+-i\s+>&/, // interactive bash redirect
-      /\/dev\/tcp\//, // /dev/tcp/ redirection
-    ];
+  auditCommand(command: string, workingDirectory?: string): void {
+    // Enhanced Security Modeの場合は従来の危険パターン検出をスキップ
+    // Enhanced Safety Evaluatorが全ての評価を行う
+    if (this.restrictions?.security_mode === 'enhanced' || this.restrictions?.security_mode === 'enhanced-fast') {
+      // Enhanced Safety Evaluatorにのみ依存
+      this.validateCommand(command);
 
-    const detectedPatterns: string[] = [];
-
-    for (const pattern of criticalPatterns) {
-      if (pattern.test(command)) {
-        detectedPatterns.push(pattern.source);
+      if (workingDirectory) {
+        this.validatePath(workingDirectory);
       }
+      return;
     }
 
-    return detectedPatterns;
-  }
-
-  auditCommand(command: string, workingDirectory?: string): void {
+    // 従来のセキュリティモード（permissive, moderate, restrictive, custom）
     const dangerousPatterns = this.detectDangerousPatterns(command);
 
     if (dangerousPatterns.length > 0) {
