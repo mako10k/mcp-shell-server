@@ -197,8 +197,8 @@ export class EnhancedSafetyEvaluator {
                 message: this.createIntentElicitationMessage(command)
               };
               
-              // Re-evaluate with user intent data
-              if (userIntent) {
+              // Only re-evaluate if user accepted
+              if (userIntent && elicitationResponse.action === 'accept') {
                 llmEvaluation = await this.performLLMEvaluation(
                   command,
                   workingDirectory,
@@ -208,6 +208,14 @@ export class EnhancedSafetyEvaluator {
                   userIntent,
                   comment
                 );
+              } else if (elicitationResponse.action === 'decline' || elicitationResponse.action === 'cancel') {
+                // User declined or cancelled - force DENY
+                llmEvaluation = {
+                  ...llmEvaluation,
+                  evaluation_result: 'DENY',
+                  llm_reasoning: `${llmEvaluation.llm_reasoning}. User explicitly declined confirmation.`,
+                  confidence: 0.95
+                };
               }
             }
           } catch (error) {
