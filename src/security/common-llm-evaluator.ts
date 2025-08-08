@@ -72,6 +72,11 @@ export class CommonLLMEvaluator {
     temperature: number = 0.1
   ): Promise<CommonLLMEvaluationResult> {
     try {
+      // Check if callback is properly initialized
+      if (!this.createMessageCallback || typeof this.createMessageCallback !== 'function') {
+        throw new Error('LLM evaluation attempted before createMessageCallback was properly initialized');
+      }
+
       const response = await this.createMessageCallback({
         messages: [
           {

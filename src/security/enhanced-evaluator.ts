@@ -108,11 +108,12 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
     const parser = new SecurityResponseParser(parserConfig);
     const generator = new SecurityLLMPromptGenerator();
     
-    if (!createMessageCallback) {
-      throw new Error('CreateMessageCallback is required for LLM evaluation');
-    }
+    // Use placeholder callback if not provided - will be set later via setCreateMessageCallback
+    const callback = createMessageCallback || (() => {
+      throw new Error('LLM evaluation attempted before createMessageCallback was set');
+    });
     
-    super(createMessageCallback, parser, generator);
+    super(callback, parser, generator);
     
     this.securityManager = securityManager;
     this.historyManager = historyManager;
