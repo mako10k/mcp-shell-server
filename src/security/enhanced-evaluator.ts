@@ -4,6 +4,10 @@ import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId } from '../utils/helpers.js';
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
+// Structured Output imports
+import { SecurityResponseParser, SecurityParserConfig } from './security-response-parser.js';
+import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
+
 // MCP sampling protocol interface (matches manager.ts implementation)
 interface CreateMessageCallback {
   (request: {
@@ -93,17 +97,26 @@ export class EnhancedSafetyEvaluator {
   private createMessageCallback: CreateMessageCallback | undefined;
   private mcpServer: MCPServerInterface | undefined;
   private enablePatternFiltering: boolean = false;
+  
+  // Structured Output components
+  private responseParser: SecurityResponseParser;
+  private promptGenerator: SecurityLLMPromptGenerator;
 
   constructor(
     securityManager: SecurityManager,
     historyManager: CommandHistoryManager,
     createMessageCallback?: CreateMessageCallback,
-    mcpServer?: MCPServerInterface
+    mcpServer?: MCPServerInterface,
+    parserConfig?: SecurityParserConfig
   ) {
     this.securityManager = securityManager;
     this.historyManager = historyManager;
     this.createMessageCallback = createMessageCallback;
     this.mcpServer = mcpServer;
+    
+    // Initialize Structured Output system
+    this.responseParser = new SecurityResponseParser(parserConfig);
+    this.promptGenerator = new SecurityLLMPromptGenerator();
   }
 
   setCreateMessageCallback(callback: CreateMessageCallback | undefined): void {
@@ -241,7 +254,7 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
-   * Call LLM for evaluation with clean, simple prompt
+   * Call LLM for evaluation with Structured Output
    */
   private async callLLMForEvaluation(
     command: string,
@@ -253,44 +266,20 @@ export class EnhancedSafetyEvaluator {
       throw new Error('LLM evaluation callback not available');
     }
 
-    // Prepare simple, clean context
+    // Generate Structured Output prompt
     const historyContext = history
-      .slice(0, 5) // Keep it simple - just 5 recent commands
-      .map(entry => `${entry.command} (${entry.working_directory})`)
-      .join('\n');
+      .slice(0, 5)
+      .map(entry => entry.command)
+      .filter(cmd => cmd && cmd.trim().length > 0);
 
-    // Clean, focused evaluation prompt
-    let evaluationPrompt = `Evaluate this shell command for safety:
+    const promptContext = {
+      command,
+      commandHistory: historyContext,
+      workingDirectory,
+      ...(comment && { comment })
+    };
 
-Command: ${command}
-Working Directory: ${workingDirectory}
-
-Recent Command History:
-${historyContext || 'No recent history'}`;
-
-    // Add comment if provided, but don't overwhelm the LLM
-    if (comment) {
-      evaluationPrompt += `
-
-Context from AI Assistant: ${comment}`;
-    }
-
-    evaluationPrompt += `
-
-Please respond with exactly one of these classifications:
-- ALLOW: Safe to execute without confirmation
-- CONDITIONAL_DENY: Requires user confirmation due to potential risks
-- DENY: Too dangerous to execute
-- ELICIT_USER_INTENT: Need to ask user for their intent before deciding
-- NEED_MORE_INFO: Need more command history or context to make decision
-
-Consider:
-1. Potential for data loss or system damage
-2. Security risks and privilege escalation
-3. Impact on user environment
-4. Whether user intent would change the safety assessment
-
-Focus on protecting the user while avoiding unnecessary friction.`;
+    const { systemPrompt, userMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
 
     try {
       const response = await this.createMessageCallback({
@@ -299,50 +288,36 @@ Focus on protecting the user while avoiding unnecessary friction.`;
             role: 'user',
             content: {
               type: 'text',
-              text: evaluationPrompt
+              text: userMessage
             }
           }
         ],
-        maxTokens: 150,
+        maxTokens: 300,
         temperature: 0.1,
-        systemPrompt: 'You are a security evaluator AI. Your job is to evaluate shell commands for safety. Be conservative but practical.',
+        systemPrompt,
         includeContext: 'none'
       });
 
-      // Parse LLM response
-      const llmResponse = response.content.text.trim().toUpperCase();
-      let evaluation_result: EvaluationResult;
-      let confidence = 0.8;
+      // Parse response using Structured Output parser
+      const parseResult = await this.responseParser.parseSecurityEvaluation(
+        response.content.text,
+        `eval_${Date.now()}`
+      );
 
-      if (llmResponse.includes('ELICIT_USER_INTENT')) {
-        evaluation_result = 'ELICIT_USER_INTENT';
-        confidence = 0.6;
-      } else if (llmResponse.includes('NEED_MORE_INFO')) {
-        evaluation_result = 'NEED_MORE_INFO';
-        confidence = 0.6;
-      } else if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
-        evaluation_result = 'DENY';
-        confidence = 0.9;
-      } else if (llmResponse.includes('CONDITIONAL_DENY')) {
-        evaluation_result = 'CONDITIONAL_DENY';
-        confidence = 0.8;
-      } else if (llmResponse.includes('ALLOW')) {
-        evaluation_result = 'ALLOW';
-        confidence = 0.9;
+      if (parseResult.success && parseResult.data) {
+        const structuredResult = parseResult.data;
+        return {
+          evaluation_result: structuredResult.evaluation_result,
+          confidence: structuredResult.confidence,
+          llm_reasoning: structuredResult.reasoning,
+          model: response.model || 'unknown',
+          evaluation_time_ms: parseResult.metadata.parseTime
+        };
       } else {
-        // Default to safe denial for unclear responses
-        evaluation_result = 'CONDITIONAL_DENY';
-        confidence = 0.3;
-        console.warn('LLM evaluation response unclear, defaulting to CONDITIONAL_DENY:', llmResponse);
+        // Fallback to original parsing for backward compatibility
+        console.warn('Structured Output parsing failed, using fallback:', parseResult.errors);
+        return this.createFallbackEvaluation(response.content.text, response.model);
       }
-
-      return {
-        evaluation_result,
-        confidence,
-        llm_reasoning: response.content.text,
-        model: response.model || 'unknown',
-        evaluation_time_ms: Date.now()
-      };
 
     } catch (error) {
       console.error('LLM evaluation failed:', error);
@@ -437,171 +412,147 @@ Focus on protecting the user while avoiding unnecessary friction.`;
   }
 
   /**
-   * Call LLM with user intent context
+   * Call LLM with user intent context using Structured Output
    */
   private async callLLMForEvaluationWithUserIntent(
-    command: string,
-    workingDirectory: string,
-    history: CommandHistoryEntry[],
+    _command: string,
+    _workingDirectory: string,
+    _history: CommandHistoryEntry[],
     userIntent: UserIntentData,
     comment?: string
   ): Promise<LLMEvaluationResult> {
-    const historyContext = history
-      .slice(0, 5)
-      .map(entry => `${entry.command} (${entry.working_directory})`)
-      .join('\n');
-
-    let evaluationPrompt = `Re-evaluate this shell command with user intent:
-
-Command: ${command}
-Working Directory: ${workingDirectory}
-
-USER INTENT (from actual user):
-Intent: ${userIntent.intent}
-Justification: ${userIntent.justification}
-Confidence: ${userIntent.confidence_level}
-
-Recent Command History:
-${historyContext || 'No recent history'}`;
-
-    if (comment) {
-      evaluationPrompt += `
-
-Context from AI Assistant: ${comment}`;
+    if (!this.createMessageCallback) {
+      throw new Error('LLM evaluation callback not available');
     }
 
-    evaluationPrompt += `
-
-Now that you have the user's intent, please respond with:
-- ALLOW: Safe to execute with user's intent confirmed
-- CONDITIONAL_DENY: Still requires additional confirmation despite intent
-- DENY: Still too dangerous even with intent
-
-The user has explicitly provided their intent, so focus on whether their stated purpose makes the command safe.`;
-
-    const response = await this.createMessageCallback!({
-      messages: [
-        {
-          role: 'user',
-          content: {
-            type: 'text',
-            text: evaluationPrompt
-          }
-        }
-      ],
-      maxTokens: 150,
-      temperature: 0.1,
-      systemPrompt: 'You are a security evaluator AI. The user has provided their intent. Focus on whether their stated purpose makes the command acceptably safe.',
-      includeContext: 'none'
-    });
-
-    // Parse response (simplified - only ALLOW/CONDITIONAL_DENY/DENY expected)
-    const llmResponse = response.content.text.trim().toUpperCase();
-    let evaluation_result: EvaluationResult;
-    let confidence = 0.8;
-
-    if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
-      evaluation_result = 'DENY';
-      confidence = 0.9;
-    } else if (llmResponse.includes('CONDITIONAL_DENY')) {
-      evaluation_result = 'CONDITIONAL_DENY';
-      confidence = 0.8;
-    } else if (llmResponse.includes('ALLOW')) {
-      evaluation_result = 'ALLOW';
-      confidence = 0.9;
-    } else {
-      evaluation_result = 'CONDITIONAL_DENY';
-      confidence = 0.3;
-    }
-
-    return {
-      evaluation_result,
-      confidence,
-      llm_reasoning: response.content.text,
-      model: response.model || 'unknown',
-      evaluation_time_ms: Date.now()
+    // Create user intent context for Structured Output
+    const userIntentContext = {
+      originalCommand: _command,
+      initialEvaluation: {
+        evaluation_result: 'ELICIT_USER_INTENT',
+        reasoning: 'User intent was requested'
+      },
+      userResponse: `Intent: ${userIntent.intent}, Justification: ${userIntent.justification}`,
+      ...(comment && { additionalContext: comment })
     };
+
+    const { systemPrompt, userMessage } = this.promptGenerator.generateUserIntentReevaluationPrompt(userIntentContext);
+
+    try {
+      const response = await this.createMessageCallback({
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: userMessage
+            }
+          }
+        ],
+        maxTokens: 200,
+        temperature: 0.1,
+        systemPrompt,
+        includeContext: 'none'
+      });
+
+      // Parse response using Structured Output parser
+      const parseResult = await this.responseParser.parseUserIntentReevaluation(
+        response.content.text,
+        `intent_${Date.now()}`
+      );
+
+      if (parseResult.success && parseResult.data) {
+        const structuredResult = parseResult.data;
+        return {
+          evaluation_result: structuredResult.evaluation_result,
+          confidence: structuredResult.confidence,
+          llm_reasoning: structuredResult.reasoning,
+          model: response.model || 'unknown',
+          evaluation_time_ms: parseResult.metadata.parseTime
+        };
+      } else {
+        // Fallback to simple parsing
+        console.warn('Structured Output intent parsing failed, using fallback:', parseResult.errors);
+        return this.createFallbackEvaluation(response.content.text, response.model);
+      }
+
+    } catch (error) {
+      console.error('LLM intent evaluation failed:', error);
+      throw error;
+    }
   }
 
   /**
-   * Call LLM with additional context
+   * Call LLM with additional context using Structured Output
    */
   private async callLLMForEvaluationWithMoreInfo(
     command: string,
-    workingDirectory: string,
+    _workingDirectory: string,
     history: CommandHistoryEntry[],
     comment?: string
   ): Promise<LLMEvaluationResult> {
-    const historyContext = history
-      .slice(0, 15) // More history as requested
-      .map(entry => `${entry.command} (${entry.working_directory})`)
-      .join('\n');
-
-    let evaluationPrompt = `Re-evaluate this shell command with additional context:
-
-Command: ${command}
-Working Directory: ${workingDirectory}
-
-Extended Command History (${history.length} entries):
-${historyContext || 'No recent history'}`;
-
-    if (comment) {
-      evaluationPrompt += `
-
-Context from AI Assistant: ${comment}`;
+    if (!this.createMessageCallback) {
+      throw new Error('LLM evaluation callback not available');
     }
 
-    evaluationPrompt += `
-
-With this additional context, please respond with:
-- ALLOW: Safe to execute
-- CONDITIONAL_DENY: Requires user confirmation
-- DENY: Too dangerous to execute
-
-Focus on whether the additional command history provides clarity about the user's workflow and intent.`;
-
-    const response = await this.createMessageCallback!({
-      messages: [
-        {
-          role: 'user',
-          content: {
-            type: 'text',
-            text: evaluationPrompt
-          }
-        }
-      ],
-      maxTokens: 150,
-      temperature: 0.1,
-      systemPrompt: 'You are a security evaluator AI. Use the additional command history to make a more informed decision.',
-      includeContext: 'none'
-    });
-
-    // Parse response (only ALLOW/CONDITIONAL_DENY/DENY expected)
-    const llmResponse = response.content.text.trim().toUpperCase();
-    let evaluation_result: EvaluationResult;
-    let confidence = 0.8;
-
-    if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
-      evaluation_result = 'DENY';
-      confidence = 0.9;
-    } else if (llmResponse.includes('CONDITIONAL_DENY')) {
-      evaluation_result = 'CONDITIONAL_DENY';
-      confidence = 0.8;
-    } else if (llmResponse.includes('ALLOW')) {
-      evaluation_result = 'ALLOW';
-      confidence = 0.9;
-    } else {
-      evaluation_result = 'CONDITIONAL_DENY';
-      confidence = 0.3;
-    }
-
-    return {
-      evaluation_result,
-      confidence,
-      llm_reasoning: response.content.text,
-      model: response.model || 'unknown',
-      evaluation_time_ms: Date.now()
+    // Create additional context for Structured Output
+    const additionalContextContext = {
+      originalCommand: command,
+      initialEvaluation: {
+        evaluation_result: 'NEED_MORE_INFO',
+        reasoning: 'Additional context was requested'
+      },
+      additionalHistory: history
+        .slice(0, 15)
+        .map(entry => entry.command)
+        .filter(cmd => cmd && cmd.trim().length > 0),
+      ...(comment && { environmentInfo: comment })
     };
+
+    const { systemPrompt, userMessage } = this.promptGenerator.generateAdditionalContextReevaluationPrompt(additionalContextContext);
+
+    try {
+      const response = await this.createMessageCallback({
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: userMessage
+            }
+          }
+        ],
+        maxTokens: 200,
+        temperature: 0.1,
+        systemPrompt,
+        includeContext: 'none'
+      });
+
+      // Parse response using Structured Output parser
+      const parseResult = await this.responseParser.parseAdditionalContextReevaluation(
+        response.content.text,
+        `context_${Date.now()}`
+      );
+
+      if (parseResult.success && parseResult.data) {
+        const structuredResult = parseResult.data;
+        return {
+          evaluation_result: structuredResult.evaluation_result,
+          confidence: structuredResult.confidence,
+          llm_reasoning: structuredResult.reasoning,
+          model: response.model || 'unknown',
+          evaluation_time_ms: parseResult.metadata.parseTime
+        };
+      } else {
+        // Fallback to simple parsing
+        console.warn('Structured Output context parsing failed, using fallback:', parseResult.errors);
+        return this.createFallbackEvaluation(response.content.text, response.model);
+      }
+
+    } catch (error) {
+      console.error('LLM context evaluation failed:', error);
+      throw error;
+    }
   }
 
   /**
@@ -689,6 +640,49 @@ This command has been flagged for review. Please provide your intent:
       console.error('User intent elicitation failed:', error);
       return { userIntent: null, elicitationResponse: null };
     }
+  }
+
+  /**
+   * Create fallback evaluation when Structured Output parsing fails
+   */
+  private createFallbackEvaluation(
+    rawResponse: string,
+    model?: string
+  ): LLMEvaluationResult {
+    // Use the original simple parsing logic as fallback
+    const llmResponse = rawResponse.trim().toUpperCase();
+    let evaluation_result: EvaluationResult;
+    let confidence = 0.8;
+
+    if (llmResponse.includes('ELICIT_USER_INTENT')) {
+      evaluation_result = 'ELICIT_USER_INTENT';
+      confidence = 0.6;
+    } else if (llmResponse.includes('NEED_MORE_INFO')) {
+      evaluation_result = 'NEED_MORE_INFO';
+      confidence = 0.6;
+    } else if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
+      evaluation_result = 'DENY';
+      confidence = 0.9;
+    } else if (llmResponse.includes('CONDITIONAL_DENY')) {
+      evaluation_result = 'CONDITIONAL_DENY';
+      confidence = 0.8;
+    } else if (llmResponse.includes('ALLOW')) {
+      evaluation_result = 'ALLOW';
+      confidence = 0.9;
+    } else {
+      // Default to safe denial for unclear responses
+      evaluation_result = 'CONDITIONAL_DENY';
+      confidence = 0.3;
+      console.warn('LLM evaluation response unclear, defaulting to CONDITIONAL_DENY:', llmResponse);
+    }
+
+    return {
+      evaluation_result,
+      confidence,
+      llm_reasoning: rawResponse,
+      model: model || 'unknown',
+      evaluation_time_ms: Date.now()
+    };
   }
 
   /**
