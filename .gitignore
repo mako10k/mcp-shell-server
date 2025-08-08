@@ -54,3 +54,5 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+jscpd-report/
