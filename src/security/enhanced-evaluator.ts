@@ -167,7 +167,7 @@ export class EnhancedSafetyEvaluator {
 
     // LLM Sampler evaluation (if callback available)
     let llmEvaluation: LLMEvaluationResult | null = null;
-    let userConfirmation: { required: boolean; response?: ElicitationResponse; message?: string } | undefined;
+    let userConfirmation: { required: boolean; response?: Record<string, unknown>; message?: string } | undefined;
     
     if (this.createMessageCallback && basicClassification === 'llm_required') {
       llmEvaluation = await this.performLLMEvaluation(
@@ -190,10 +190,10 @@ export class EnhancedSafetyEvaluator {
             const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, workingDirectory, extendedContext);
             
             if (elicitationResponse) {
-              // Set user confirmation data
+              // Set user confirmation data - simplified
               userConfirmation = {
                 required: true,
-                response: elicitationResponse,
+                response: elicitationResponse.content || {},
                 message: this.createIntentElicitationMessage(command)
               };
               
@@ -1137,7 +1137,7 @@ Do you want to proceed with executing this command?`;
     llmEvaluation: LLMEvaluationResult | null,
     command: string,
     workingDirectory: string,
-    userConfirmation?: { required: boolean; response?: ElicitationResponse; message?: string }
+    userConfirmation?: { required: boolean; response?: Record<string, unknown>; message?: string }
   ): SafetyEvaluation {
     // Convert basic classification to numeric safety level
     const basic_safety_level = basicClassification === 'basic_safe' ? 2 : 3;
@@ -1382,7 +1382,7 @@ interface SafetyEvaluation {
   suggested_alternatives: string[];
   llm_evaluation_used: boolean;
   user_confirmation_required?: boolean | undefined;
-  user_response?: ElicitationResponse | undefined;
+  user_response?: Record<string, unknown> | undefined;
   confirmation_message?: string | undefined;
 }
 
