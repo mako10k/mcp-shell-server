@@ -77,6 +77,7 @@ interface LLMEvaluationResult {
   model: string;
   evaluation_time_ms: number;
   requires_elicitation?: boolean;
+  user_confirmation?: { required: boolean; response?: Record<string, unknown>; message?: string };
 }
 
 // Extended context for re-audit analysis
@@ -182,49 +183,54 @@ export class EnhancedSafetyEvaluator {
       
       // Check if user intent elicitation is needed after LLM evaluation
       if (llmEvaluation) {
-        const needsUserIntent = await this.requiresUserIntentElicitation(command, llmEvaluation);
-        
-        if (needsUserIntent) {
-          try {
-            const extendedContext = await this.collectExtendedContext(command, workingDirectory);
-            const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, workingDirectory, extendedContext);
-            
-            if (elicitationResponse) {
-              // Set user confirmation data - simplified
+        // Check if LLM evaluation already includes user confirmation
+        if (llmEvaluation.user_confirmation) {
+          userConfirmation = llmEvaluation.user_confirmation;
+        } else {
+          const needsUserIntent = await this.requiresUserIntentElicitation(command, llmEvaluation);
+          
+          if (needsUserIntent) {
+            try {
+              const extendedContext = await this.collectExtendedContext(command, workingDirectory);
+              const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, workingDirectory, extendedContext);
+              
+              if (elicitationResponse) {
+                // Set user confirmation data - simplified
+                userConfirmation = {
+                  required: true,
+                  response: elicitationResponse.content || {},
+                  message: this.createIntentElicitationMessage(command)
+                };
+                
+                // Only re-evaluate if user accepted
+                if (userIntent && elicitationResponse.action === 'accept') {
+                  llmEvaluation = await this.performLLMEvaluation(
+                    command,
+                    workingDirectory,
+                    historyEntries,
+                    true,
+                    extendedContext,
+                    userIntent,
+                    comment
+                  );
+                } else if (elicitationResponse.action === 'decline' || elicitationResponse.action === 'cancel') {
+                  // User declined or cancelled - force DENY
+                  llmEvaluation = {
+                    ...llmEvaluation,
+                    evaluation_result: 'DENY',
+                    llm_reasoning: `${llmEvaluation.llm_reasoning}. User explicitly declined confirmation.`,
+                    confidence: 0.95
+                  };
+                }
+              }
+            } catch (error) {
+              console.error('Elicitation process failed:', error);
+              // Set as required but no response (indicating process was attempted)
               userConfirmation = {
                 required: true,
-                response: elicitationResponse.content || {},
-                message: this.createIntentElicitationMessage(command)
+                message: 'Elicitation process attempted but failed'
               };
-              
-              // Only re-evaluate if user accepted
-              if (userIntent && elicitationResponse.action === 'accept') {
-                llmEvaluation = await this.performLLMEvaluation(
-                  command,
-                  workingDirectory,
-                  historyEntries,
-                  true,
-                  extendedContext,
-                  userIntent,
-                  comment
-                );
-              } else if (elicitationResponse.action === 'decline' || elicitationResponse.action === 'cancel') {
-                // User declined or cancelled - force DENY
-                llmEvaluation = {
-                  ...llmEvaluation,
-                  evaluation_result: 'DENY',
-                  llm_reasoning: `${llmEvaluation.llm_reasoning}. User explicitly declined confirmation.`,
-                  confidence: 0.95
-                };
-              }
             }
-          } catch (error) {
-            console.error('Elicitation process failed:', error);
-            // Set as required but no response (indicating process was attempted)
-            userConfirmation = {
-              required: true,
-              message: 'Elicitation process attempted but failed'
-            };
           }
         }
       }
@@ -277,12 +283,19 @@ export class EnhancedSafetyEvaluator {
             const enhancedHistory = await this.injectUserIntentIntoHistory(history, elicitationResult.userIntent);
             return this.performLLMEvaluation(command, workingDirectory, enhancedHistory, true, extendedContextData, elicitationResult.userIntent, comment);
           } else {
-            // User intent elicitation failed or timed out - fallback to CONDITIONAL_DENY
+            // User declined or no response - include user confirmation data
+            const userConfirmation = elicitationResult.elicitationResponse ? {
+              required: true,
+              response: elicitationResult.elicitationResponse.content || {},
+              message: this.createIntentElicitationMessage(command)
+            } : { required: true, message: 'Elicitation attempted but no response' };
+            
             return {
               ...reauditResult,
               evaluation_result: 'CONDITIONAL_DENY',
               llm_reasoning: `${reauditResult.llm_reasoning}. User intent confirmation required but not provided - defaulting to CONDITIONAL_DENY`,
-              confidence: Math.min(0.6, reauditResult.confidence)
+              confidence: Math.min(0.6, reauditResult.confidence),
+              user_confirmation: userConfirmation
             };
           }
         }
