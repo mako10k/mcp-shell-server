@@ -171,6 +171,7 @@ export class EnhancedSafetyEvaluator {
     let userConfirmation: { required: boolean; response?: Record<string, unknown>; message?: string } | undefined;
     
     if (this.createMessageCallback && basicClassification === 'llm_required') {
+      // 1st LLM evaluation to check if elicitation is needed
       llmEvaluation = await this.performLLMEvaluation(
         command,
         workingDirectory,
@@ -181,57 +182,45 @@ export class EnhancedSafetyEvaluator {
         comment
       );
       
-      // Check if user intent elicitation is needed after LLM evaluation
-      if (llmEvaluation) {
-        // Check if LLM evaluation already includes user confirmation
-        if (llmEvaluation.user_confirmation) {
-          userConfirmation = llmEvaluation.user_confirmation;
-        } else {
-          const needsUserIntent = await this.requiresUserIntentElicitation(command, llmEvaluation);
+      // Check if LLM requested elicitation
+      if (llmEvaluation && llmEvaluation.requires_elicitation) {
+        try {
+          const extendedContext = await this.collectExtendedContext(command, workingDirectory);
+          const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, workingDirectory, extendedContext);
           
-          if (needsUserIntent) {
-            try {
-              const extendedContext = await this.collectExtendedContext(command, workingDirectory);
-              const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, workingDirectory, extendedContext);
-              
-              if (elicitationResponse) {
-                // Set user confirmation data - simplified
-                userConfirmation = {
-                  required: true,
-                  response: elicitationResponse.content || {},
-                  message: this.createIntentElicitationMessage(command)
-                };
-                
-                // Only re-evaluate if user accepted
-                if (userIntent && elicitationResponse.action === 'accept') {
-                  llmEvaluation = await this.performLLMEvaluation(
-                    command,
-                    workingDirectory,
-                    historyEntries,
-                    true,
-                    extendedContext,
-                    userIntent,
-                    comment
-                  );
-                } else if (elicitationResponse.action === 'decline' || elicitationResponse.action === 'cancel') {
-                  // User declined or cancelled - force DENY
-                  llmEvaluation = {
-                    ...llmEvaluation,
-                    evaluation_result: 'DENY',
-                    llm_reasoning: `${llmEvaluation.llm_reasoning}. User explicitly declined confirmation.`,
-                    confidence: 0.95
-                  };
-                }
-              }
-            } catch (error) {
-              console.error('Elicitation process failed:', error);
-              // Set as required but no response (indicating process was attempted)
-              userConfirmation = {
-                required: true,
-                message: 'Elicitation process attempted but failed'
-              };
-            }
+          // Always set userConfirmation when elicitation was attempted
+          userConfirmation = {
+            required: true,
+            response: elicitationResponse?.content || {},
+            message: this.createIntentElicitationMessage(command)
+          };
+          
+          // 2nd LLM evaluation with user confirmation data
+          if (userIntent && elicitationResponse?.action === 'accept') {
+            llmEvaluation = await this.performLLMEvaluation(
+              command,
+              workingDirectory,
+              historyEntries,
+              true,
+              extendedContext,
+              userIntent,
+              comment
+            );
+          } else {
+            // User declined - force DENY but keep original LLM reasoning
+            llmEvaluation = {
+              ...llmEvaluation,
+              evaluation_result: 'DENY',
+              llm_reasoning: `${llmEvaluation.llm_reasoning}. User explicitly declined confirmation.`,
+              confidence: 0.95
+            };
           }
+        } catch (error) {
+          console.error('Elicitation process failed:', error);
+          userConfirmation = {
+            required: true,
+            message: 'Elicitation process attempted but failed'
+          };
         }
       }
     }
@@ -272,35 +261,7 @@ export class EnhancedSafetyEvaluator {
       if (requiresReaudit && !isReaudit) {
         // Collect extended context and re-evaluate
         const extendedContextData = await this.collectExtendedContext(command, workingDirectory);
-        const reauditResult = await this.performLLMEvaluation(command, workingDirectory, history, true, extendedContextData, undefined, comment);
-        
-        // Check if user intent elicitation is needed after re-audit
-        const needsUserIntent = await this.requiresUserIntentElicitation(command, reauditResult);
-        if (needsUserIntent) {
-          const elicitationResult = await this.elicitUserIntent(command, workingDirectory, extendedContextData);
-          if (elicitationResult.userIntent) {
-            // Inject user intent into history and re-evaluate with full context
-            const enhancedHistory = await this.injectUserIntentIntoHistory(history, elicitationResult.userIntent);
-            return this.performLLMEvaluation(command, workingDirectory, enhancedHistory, true, extendedContextData, elicitationResult.userIntent, comment);
-          } else {
-            // User declined or no response - include user confirmation data
-            const userConfirmation = elicitationResult.elicitationResponse ? {
-              required: true,
-              response: elicitationResult.elicitationResponse.content || {},
-              message: this.createIntentElicitationMessage(command)
-            } : { required: true, message: 'Elicitation attempted but no response' };
-            
-            return {
-              ...reauditResult,
-              evaluation_result: 'CONDITIONAL_DENY',
-              llm_reasoning: `${reauditResult.llm_reasoning}. User intent confirmation required but not provided - defaulting to CONDITIONAL_DENY`,
-              confidence: Math.min(0.6, reauditResult.confidence),
-              user_confirmation: userConfirmation
-            };
-          }
-        }
-        
-        return reauditResult;
+        return await this.performLLMEvaluation(command, workingDirectory, history, true, extendedContextData, undefined, comment);
       }
 
       // Prepare context for LLM evaluation
@@ -646,78 +607,6 @@ ${isReaudit ? '6. Extended context analysis of target files/directories' : ''}`;
   }
 
   /**
-   * Check if user intent elicitation is required after re-audit using LLM evaluation
-   */
-  private async requiresUserIntentElicitation(command: string, reauditResult: LLMEvaluationResult): Promise<boolean> {
-    if (!this.createMessageCallback) {
-      return false; // Cannot perform LLM evaluation
-    }
-
-    try {
-      // Only proceed if re-audit still shows significant risk
-      if (reauditResult.evaluation_result === 'ALLOW') {
-        return false; // Already deemed safe
-      }
-
-      // Ask LLM to determine if user intent elicitation is needed
-      const intentEvaluationPrompt = `Analyze whether this command requires explicit user intent confirmation:
-
-Command: ${command}
-Re-audit Result: ${reauditResult.evaluation_result}
-LLM Reasoning: ${reauditResult.llm_reasoning}
-
-INTENT ELICITATION CRITERIA:
-- Commands that are rarely used in normal workflows (dd, mkfs, fdisk, etc.)
-- Commands with potential for significant system impact despite extended analysis
-- Commands where user explicit intent would provide crucial context for safety determination
-- Commands that could be accidental or automated without proper justification
-
-Please respond with EXACTLY one of:
-- ELICIT_INTENT: User intent confirmation is needed for safe execution
-- NO_INTENT_NEEDED: Re-audit provides sufficient context for safety determination
-
-Consider:
-1. Is this a command typically used by experienced users with specific intent?
-2. Would user intent significantly improve safety evaluation accuracy?
-3. Is the risk level high enough to warrant additional confirmation?
-4. Could this command reasonably be executed accidentally or without full understanding?`;
-
-      const response = await this.createMessageCallback({
-        messages: [
-          {
-            role: 'user',
-            content: {
-              type: 'text',
-              text: intentEvaluationPrompt
-            }
-          }
-        ],
-        maxTokens: 100,
-        temperature: 0.1,
-        systemPrompt: 'You are a security evaluator determining whether user intent elicitation is necessary. Be precise and conservative - only request intent when it would meaningfully improve safety evaluation.',
-        includeContext: 'none'
-      });
-
-      const llmResponse = response.content.text.trim().toUpperCase();
-      const requiresIntent = llmResponse.includes('ELICIT_INTENT');
-
-      if (requiresIntent) {
-        console.error(`LLM determined user intent elicitation is needed for: ${command}`);
-        console.error(`Reasoning: ${response.content.text}`);
-      }
-
-      return requiresIntent;
-
-    } catch (error) {
-      console.error('Failed to evaluate intent elicitation requirement:', error);
-      // Conservative fallback: trust the LLM's initial assessment
-      return reauditResult.requires_elicitation || 
-             reauditResult.evaluation_result === 'DENY' || 
-             (reauditResult.evaluation_result === 'CONDITIONAL_DENY' && reauditResult.confidence < 0.7);
-    }
-  }
-
-  /**
    * Elicit user intent using MCP elicitation protocol
    */
   private async elicitUserIntent(command: string, workingDirectory: string, extendedContext: ExtendedContext): Promise<{userIntent: UserIntentData | null, elicitationResponse: ElicitationResponse | null}> {
@@ -949,33 +838,6 @@ Do you want to proceed with executing this command?`;
   /**
    * Inject user intent into command history at the correct chronological position
    */
-  private async injectUserIntentIntoHistory(history: CommandHistoryEntry[], userIntent: UserIntentData): Promise<CommandHistoryEntry[]> {
-    // Create a pseudo-command entry for the user intent
-    const intentEntry: CommandHistoryEntry = {
-      execution_id: userIntent.elicitation_id,
-      command: `# USER_INTENT: ${userIntent.intent}`,
-      working_directory: '(user_intent_confirmation)',
-      timestamp: userIntent.timestamp,
-      was_executed: false, // This is a virtual entry
-      resubmission_count: 0,
-      safety_classification: 'basic_safe',
-      execution_status: 'intent_confirmation',
-      output_summary: `Intent: ${userIntent.intent}. Justification: ${userIntent.justification}. Confidence: ${userIntent.confidence_level}`
-    };
-
-    // Insert into history maintaining chronological order
-    const enhancedHistory = [...history, intentEntry];
-    enhancedHistory.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    // Also persist this intent confirmation to the actual history manager
-    try {
-      await this.historyManager.addHistoryEntry(intentEntry);
-    } catch (error) {
-      console.warn('Failed to persist user intent to history:', error);
-    }
-
-    return enhancedHistory;
-  }
 
   /**
    * Perform contextual evaluation
