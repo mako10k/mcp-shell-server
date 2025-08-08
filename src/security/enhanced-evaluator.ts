@@ -7,6 +7,11 @@ import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 // Structured Output imports
 import { SecurityResponseParser, SecurityParserConfig } from './security-response-parser.js';
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
+import { 
+  CommonLLMEvaluator,
+  CommonLLMEvaluationResult,
+  CommonEvaluationContext
+} from './common-llm-evaluator.js';
 
 // MCP sampling protocol interface (matches manager.ts implementation)
 interface CreateMessageCallback {
@@ -54,14 +59,8 @@ interface MCPServerInterface {
   request(request: { method: string; params?: any }, schema?: any): Promise<any>;
 }
 
-// LLM evaluation result
-interface LLMEvaluationResult {
-  evaluation_result: EvaluationResult;
-  confidence: number;
-  llm_reasoning: string;
-  model: string;
-  evaluation_time_ms: number;
-}
+// LLM evaluation result (using common interface)
+interface LLMEvaluationResult extends CommonLLMEvaluationResult {}
 
 // User intent data from elicitation
 interface UserIntentData {
@@ -90,17 +89,13 @@ interface SafetyEvaluation {
 /**
  * Enhanced Safety Evaluator - LLM-Centric Design
  * Simple implementation focusing on LLM decision making without algorithmic complexity
+ * Now extends CommonLLMEvaluator to reduce code duplication
  */
-export class EnhancedSafetyEvaluator {
+export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
-  private createMessageCallback: CreateMessageCallback | undefined;
   private mcpServer: MCPServerInterface | undefined;
   private enablePatternFiltering: boolean = false;
-  
-  // Structured Output components
-  private responseParser: SecurityResponseParser;
-  private promptGenerator: SecurityLLMPromptGenerator;
 
   constructor(
     securityManager: SecurityManager,
@@ -109,18 +104,25 @@ export class EnhancedSafetyEvaluator {
     mcpServer?: MCPServerInterface,
     parserConfig?: SecurityParserConfig
   ) {
+    // Initialize parent class with shared components
+    const parser = new SecurityResponseParser(parserConfig);
+    const generator = new SecurityLLMPromptGenerator();
+    
+    if (!createMessageCallback) {
+      throw new Error('CreateMessageCallback is required for LLM evaluation');
+    }
+    
+    super(createMessageCallback, parser, generator);
+    
     this.securityManager = securityManager;
     this.historyManager = historyManager;
-    this.createMessageCallback = createMessageCallback;
     this.mcpServer = mcpServer;
-    
-    // Initialize Structured Output system
-    this.responseParser = new SecurityResponseParser(parserConfig);
-    this.promptGenerator = new SecurityLLMPromptGenerator();
   }
 
   setCreateMessageCallback(callback: CreateMessageCallback | undefined): void {
-    this.createMessageCallback = callback;
+    if (callback) {
+      this.createMessageCallback = callback;
+    }
   }
 
   setMCPServer(server: MCPServerInterface | undefined): void {
@@ -243,18 +245,15 @@ export class EnhancedSafetyEvaluator {
       }
     } catch (error) {
       console.error('LLM-centric evaluation failed:', error);
-      return this.createFinalEvaluation({
-        evaluation_result: 'CONDITIONAL_DENY',
-        confidence: 0.2,
-        llm_reasoning: `LLM evaluation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        model: 'error',
-        evaluation_time_ms: Date.now()
-      }, 'llm_required');
+      return this.createFinalEvaluation(
+        this.createErrorEvaluation(error instanceof Error ? error.message : 'Unknown error'), 
+        'llm_required'
+      );
     }
   }
 
   /**
-   * Call LLM for evaluation with Structured Output
+   * Call LLM for evaluation with Structured Output (using common implementation)
    */
   private async callLLMForEvaluation(
     command: string,
@@ -262,67 +261,18 @@ export class EnhancedSafetyEvaluator {
     history: CommandHistoryEntry[],
     comment?: string
   ): Promise<LLMEvaluationResult> {
-    if (!this.createMessageCallback) {
-      throw new Error('LLM evaluation callback not available');
-    }
-
-    // Generate Structured Output prompt
     const historyContext = history
       .slice(0, 5)
       .map(entry => entry.command)
       .filter(cmd => cmd && cmd.trim().length > 0);
 
-    const promptContext = {
+    const context: CommonEvaluationContext = {
       command,
-      commandHistory: historyContext,
       workingDirectory,
       ...(comment && { comment })
     };
 
-    const { systemPrompt, userMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
-
-    try {
-      const response = await this.createMessageCallback({
-        messages: [
-          {
-            role: 'user',
-            content: {
-              type: 'text',
-              text: userMessage
-            }
-          }
-        ],
-        maxTokens: 300,
-        temperature: 0.1,
-        systemPrompt,
-        includeContext: 'none'
-      });
-
-      // Parse response using Structured Output parser
-      const parseResult = await this.responseParser.parseSecurityEvaluation(
-        response.content.text,
-        `eval_${Date.now()}`
-      );
-
-      if (parseResult.success && parseResult.data) {
-        const structuredResult = parseResult.data;
-        return {
-          evaluation_result: structuredResult.evaluation_result,
-          confidence: structuredResult.confidence,
-          llm_reasoning: structuredResult.reasoning,
-          model: response.model || 'unknown',
-          evaluation_time_ms: parseResult.metadata.parseTime
-        };
-      } else {
-        // Fallback to original parsing for backward compatibility
-        console.warn('Structured Output parsing failed, using fallback:', parseResult.errors);
-        return this.createFallbackEvaluation(response.content.text, response.model);
-      }
-
-    } catch (error) {
-      console.error('LLM evaluation failed:', error);
-      throw error;
-    }
+    return this.evaluateInitialSecurity(context, historyContext);
   }
 
   /**
@@ -354,23 +304,17 @@ export class EnhancedSafetyEvaluator {
         return finalEval;
       } else {
         // User declined or cancelled
-        return this.createFinalEvaluation({
-          evaluation_result: 'DENY',
-          confidence: 0.95,
-          llm_reasoning: 'User declined intent confirmation',
-          model: 'user_decision',
-          evaluation_time_ms: Date.now()
-        }, 'llm_required');
+        return this.createFinalEvaluation(
+          this.createErrorEvaluation('User declined intent confirmation', 'user_decision'), 
+          'llm_required'
+        );
       }
     } catch (error) {
       console.error('User intent elicitation failed:', error);
-      return this.createFinalEvaluation({
-        evaluation_result: 'CONDITIONAL_DENY',
-        confidence: 0.3,
-        llm_reasoning: 'Intent elicitation failed - requiring manual confirmation',
-        model: 'error',
-        evaluation_time_ms: Date.now()
-      }, 'llm_required');
+      return this.createFinalEvaluation(
+        this.createErrorEvaluation('Intent elicitation failed - requiring manual confirmation'), 
+        'llm_required'
+      );
     }
   }
 
@@ -401,158 +345,64 @@ export class EnhancedSafetyEvaluator {
       return this.createFinalEvaluation(llmResult, 'llm_required');
     } catch (error) {
       console.error('More info evaluation failed:', error);
-      return this.createFinalEvaluation({
-        evaluation_result: 'CONDITIONAL_DENY',
-        confidence: 0.3,
-        llm_reasoning: 'Additional context evaluation failed - requiring manual confirmation',
-        model: 'error',
-        evaluation_time_ms: Date.now()
-      }, 'llm_required');
+      return this.createFinalEvaluation(
+        this.createErrorEvaluation('Additional context evaluation failed - requiring manual confirmation'), 
+        'llm_required'
+      );
     }
   }
 
   /**
-   * Call LLM with user intent context using Structured Output
+   * Call LLM with user intent context using Structured Output (using common implementation)
    */
   private async callLLMForEvaluationWithUserIntent(
-    _command: string,
+    command: string,
     _workingDirectory: string,
     _history: CommandHistoryEntry[],
     userIntent: UserIntentData,
     comment?: string
   ): Promise<LLMEvaluationResult> {
-    if (!this.createMessageCallback) {
-      throw new Error('LLM evaluation callback not available');
-    }
-
-    // Create user intent context for Structured Output
-    const userIntentContext = {
-      originalCommand: _command,
-      initialEvaluation: {
-        evaluation_result: 'ELICIT_USER_INTENT',
-        reasoning: 'User intent was requested'
-      },
-      userResponse: `Intent: ${userIntent.intent}, Justification: ${userIntent.justification}`,
-      ...(comment && { additionalContext: comment })
+    const context: CommonEvaluationContext = {
+      command,
+      workingDirectory: _workingDirectory,
+      ...(comment && { comment })
     };
 
-    const { systemPrompt, userMessage } = this.promptGenerator.generateUserIntentReevaluationPrompt(userIntentContext);
+    const userResponse = `Intent: ${userIntent.intent}, Justification: ${userIntent.justification}`;
+    const initialEvaluation = {
+      evaluation_result: 'ELICIT_USER_INTENT',
+      reasoning: 'User intent was requested'
+    };
 
-    try {
-      const response = await this.createMessageCallback({
-        messages: [
-          {
-            role: 'user',
-            content: {
-              type: 'text',
-              text: userMessage
-            }
-          }
-        ],
-        maxTokens: 200,
-        temperature: 0.1,
-        systemPrompt,
-        includeContext: 'none'
-      });
-
-      // Parse response using Structured Output parser
-      const parseResult = await this.responseParser.parseUserIntentReevaluation(
-        response.content.text,
-        `intent_${Date.now()}`
-      );
-
-      if (parseResult.success && parseResult.data) {
-        const structuredResult = parseResult.data;
-        return {
-          evaluation_result: structuredResult.evaluation_result,
-          confidence: structuredResult.confidence,
-          llm_reasoning: structuredResult.reasoning,
-          model: response.model || 'unknown',
-          evaluation_time_ms: parseResult.metadata.parseTime
-        };
-      } else {
-        // Fallback to simple parsing
-        console.warn('Structured Output intent parsing failed, using fallback:', parseResult.errors);
-        return this.createFallbackEvaluation(response.content.text, response.model);
-      }
-
-    } catch (error) {
-      console.error('LLM intent evaluation failed:', error);
-      throw error;
-    }
+    return this.evaluateWithUserIntent(context, userResponse, initialEvaluation);
   }
 
   /**
-   * Call LLM with additional context using Structured Output
+   * Call LLM with additional context using Structured Output (using common implementation)
    */
   private async callLLMForEvaluationWithMoreInfo(
     command: string,
-    _workingDirectory: string,
+    workingDirectory: string,
     history: CommandHistoryEntry[],
     comment?: string
   ): Promise<LLMEvaluationResult> {
-    if (!this.createMessageCallback) {
-      throw new Error('LLM evaluation callback not available');
-    }
+    const additionalHistory = history
+      .slice(0, 15)
+      .map(entry => entry.command)
+      .filter(cmd => cmd && cmd.trim().length > 0);
 
-    // Create additional context for Structured Output
-    const additionalContextContext = {
-      originalCommand: command,
-      initialEvaluation: {
-        evaluation_result: 'NEED_MORE_INFO',
-        reasoning: 'Additional context was requested'
-      },
-      additionalHistory: history
-        .slice(0, 15)
-        .map(entry => entry.command)
-        .filter(cmd => cmd && cmd.trim().length > 0),
-      ...(comment && { environmentInfo: comment })
+    const context: CommonEvaluationContext = {
+      command,
+      workingDirectory,
+      ...(comment && { comment })
     };
 
-    const { systemPrompt, userMessage } = this.promptGenerator.generateAdditionalContextReevaluationPrompt(additionalContextContext);
+    const initialEvaluation = {
+      evaluation_result: 'NEED_MORE_INFO',
+      reasoning: 'Additional context was requested'
+    };
 
-    try {
-      const response = await this.createMessageCallback({
-        messages: [
-          {
-            role: 'user',
-            content: {
-              type: 'text',
-              text: userMessage
-            }
-          }
-        ],
-        maxTokens: 200,
-        temperature: 0.1,
-        systemPrompt,
-        includeContext: 'none'
-      });
-
-      // Parse response using Structured Output parser
-      const parseResult = await this.responseParser.parseAdditionalContextReevaluation(
-        response.content.text,
-        `context_${Date.now()}`
-      );
-
-      if (parseResult.success && parseResult.data) {
-        const structuredResult = parseResult.data;
-        return {
-          evaluation_result: structuredResult.evaluation_result,
-          confidence: structuredResult.confidence,
-          llm_reasoning: structuredResult.reasoning,
-          model: response.model || 'unknown',
-          evaluation_time_ms: parseResult.metadata.parseTime
-        };
-      } else {
-        // Fallback to simple parsing
-        console.warn('Structured Output context parsing failed, using fallback:', parseResult.errors);
-        return this.createFallbackEvaluation(response.content.text, response.model);
-      }
-
-    } catch (error) {
-      console.error('LLM context evaluation failed:', error);
-      throw error;
-    }
+    return this.evaluateWithAdditionalContext(context, additionalHistory, initialEvaluation);
   }
 
   /**
@@ -645,7 +495,7 @@ This command has been flagged for review. Please provide your intent:
   /**
    * Create fallback evaluation when Structured Output parsing fails
    */
-  private createFallbackEvaluation(
+  protected override createFallbackEvaluation(
     rawResponse: string,
     model?: string
   ): LLMEvaluationResult {

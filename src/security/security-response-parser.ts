@@ -2,18 +2,17 @@
  * Security Response Parser
  * mcp-llm-generator のResponseParserパターンを参考にした
  * 安全性評価専用の型安全なStructured Output解析システム
+ * BaseResponseParserを継承して重複コードを削減
  */
 
-import { z } from 'zod';
+import { BaseResponseParser, BaseParseResult, BaseParseError } from './base-response-parser.js';
 import {
   SecurityEvaluationResult,
   SecurityEvaluationResultSchema,
   UserIntentReevaluation,
   UserIntentReevaluationSchema,
   AdditionalContextReevaluation,
-  AdditionalContextReevaluationSchema,
-  SecurityParseResult,
-  SecurityParseError
+  AdditionalContextReevaluationSchema
 } from './structured-output-schemas.js';
 
 export interface SecurityParserConfig {
@@ -24,9 +23,10 @@ export interface SecurityParserConfig {
   fallbackOnError?: boolean;
 }
 
-export class SecurityResponseParser {
-  private parseAttempts: Map<string, number> = new Map();
+export interface SecurityParseResult<T> extends BaseParseResult<T> {}
+export interface SecurityParseError extends BaseParseError {}
 
+export class SecurityResponseParser extends BaseResponseParser {
   constructor(_config: SecurityParserConfig = {
     strictMode: true,
     validateSchema: true,
@@ -34,7 +34,7 @@ export class SecurityResponseParser {
     maxRetries: 3,
     fallbackOnError: true
   }) {
-    // configは必要時にmethodで使用可能
+    super();
   }
 
   /**
@@ -44,71 +44,12 @@ export class SecurityResponseParser {
     rawContent: string,
     requestId?: string
   ): Promise<SecurityParseResult<SecurityEvaluationResult>> {
-    const startTime = Date.now();
-    const retryCount = this.getRetryCount(requestId);
-    
-    try {
-      // JSON抽出とパース
-      const extractedJson = this.extractJsonFromResponse(rawContent);
-      if (!extractedJson) {
-        return this.createErrorResult(
-          rawContent,
-          startTime,
-          retryCount,
-          'format',
-          'No valid JSON found in response'
-        );
-      }
-
-      // Zodスキーマでバリデーション
-      const parsed = SecurityEvaluationResultSchema.safeParse(extractedJson);
-      
-      if (!parsed.success) {
-        // バリデーションエラーの詳細解析
-        const errors = this.parseValidationErrors(parsed.error);
-        return this.createErrorResult(
-          rawContent,
-          startTime,
-          retryCount,
-          'validation',
-          'Schema validation failed',
-          errors
-        );
-      }
-
-      // 成功時の追加バリデーション
-      const validationResult = this.validateSecurityEvaluation(parsed.data);
-      if (!validationResult.isValid) {
-        return this.createErrorResult(
-          rawContent,
-          startTime,
-          retryCount,
-          'security',
-          'Security validation failed',
-          validationResult.errors
-        );
-      }
-
-      return {
-        success: true,
-        data: parsed.data,
-        metadata: {
-          rawContent,
-          parseTime: Date.now() - startTime,
-          confidence: this.calculateConfidence(parsed.data, rawContent),
-          retryCount
-        }
-      };
-
-    } catch (error) {
-      return this.createErrorResult(
-        rawContent,
-        startTime,
-        retryCount,
-        'format',
-        `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
+    return this.parseWithSchema(
+      rawContent,
+      SecurityEvaluationResultSchema,
+      requestId,
+      this.validateSecurityEvaluation
+    );
   }
 
   /**
@@ -118,55 +59,11 @@ export class SecurityResponseParser {
     rawContent: string,
     requestId?: string
   ): Promise<SecurityParseResult<UserIntentReevaluation>> {
-    const startTime = Date.now();
-    const retryCount = this.getRetryCount(requestId);
-    
-    try {
-      const extractedJson = this.extractJsonFromResponse(rawContent);
-      if (!extractedJson) {
-        return this.createErrorResult(
-          rawContent,
-          startTime,
-          retryCount,
-          'format',
-          'No valid JSON found in response'
-        );
-      }
-
-      const parsed = UserIntentReevaluationSchema.safeParse(extractedJson);
-      
-      if (!parsed.success) {
-        const errors = this.parseValidationErrors(parsed.error);
-        return this.createErrorResult(
-          rawContent,
-          startTime,
-          retryCount,
-          'validation',
-          'Schema validation failed',
-          errors
-        );
-      }
-
-      return {
-        success: true,
-        data: parsed.data,
-        metadata: {
-          rawContent,
-          parseTime: Date.now() - startTime,
-          confidence: this.calculateConfidence(parsed.data, rawContent),
-          retryCount
-        }
-      };
-
-    } catch (error) {
-      return this.createErrorResult(
-        rawContent,
-        startTime,
-        retryCount,
-        'format',
-        `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
+    return this.parseWithSchema(
+      rawContent,
+      UserIntentReevaluationSchema,
+      requestId
+    );
   }
 
   /**
@@ -176,99 +73,11 @@ export class SecurityResponseParser {
     rawContent: string,
     requestId?: string
   ): Promise<SecurityParseResult<AdditionalContextReevaluation>> {
-    const startTime = Date.now();
-    const retryCount = this.getRetryCount(requestId);
-    
-    try {
-      const extractedJson = this.extractJsonFromResponse(rawContent);
-      if (!extractedJson) {
-        return this.createErrorResult(
-          rawContent,
-          startTime,
-          retryCount,
-          'format',
-          'No valid JSON found in response'
-        );
-      }
-
-      const parsed = AdditionalContextReevaluationSchema.safeParse(extractedJson);
-      
-      if (!parsed.success) {
-        const errors = this.parseValidationErrors(parsed.error);
-        return this.createErrorResult(
-          rawContent,
-          startTime,
-          retryCount,
-          'validation',
-          'Schema validation failed',
-          errors
-        );
-      }
-
-      return {
-        success: true,
-        data: parsed.data,
-        metadata: {
-          rawContent,
-          parseTime: Date.now() - startTime,
-          confidence: this.calculateConfidence(parsed.data, rawContent),
-          retryCount
-        }
-      };
-
-    } catch (error) {
-      return this.createErrorResult(
-        rawContent,
-        startTime,
-        retryCount,
-        'format',
-        `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
-  }
-
-  /**
-   * レスポンスからJSONを抽出
-   */
-  private extractJsonFromResponse(rawContent: string): any {
-    try {
-      // 直接JSONとしてパース試行
-      return JSON.parse(rawContent.trim());
-    } catch {
-      // JSONブロックを抽出して試行
-      const jsonMatch = rawContent.match(/```json\n([\s\S]*?)\n```/);
-      if (jsonMatch && jsonMatch[1]) {
-        try {
-          return JSON.parse(jsonMatch[1]);
-        } catch {
-          // JSONブロック内のパースに失敗
-        }
-      }
-
-      // { } で囲まれた部分を抽出
-      const braceMatch = rawContent.match(/\{[\s\S]*\}/);
-      if (braceMatch) {
-        try {
-          return JSON.parse(braceMatch[0]);
-        } catch {
-          // ブレース部分のパースに失敗
-        }
-      }
-
-      return null;
-    }
-  }
-
-  /**
-   * Zodバリデーションエラーを解析
-   */
-  private parseValidationErrors(zodError: z.ZodError): SecurityParseError[] {
-    return zodError.issues.map(issue => ({
-      type: 'validation',
-      field: issue.path.join('.'),
-      message: issue.message,
-      severity: 'error'
-    }));
+    return this.parseWithSchema(
+      rawContent,
+      AdditionalContextReevaluationSchema,
+      requestId
+    );
   }
 
   /**
@@ -314,72 +123,6 @@ export class SecurityResponseParser {
       isValid: errors.filter(e => e.severity === 'error').length === 0,
       errors
     };
-  }
-
-  /**
-   * 信頼度計算
-   */
-  private calculateConfidence(data: any, rawContent: string): number {
-    let confidence = 0.8; // ベース信頼度
-
-    // JSON構造の明確さ
-    if (rawContent.includes('```json')) {
-      confidence += 0.1;
-    }
-
-    // データの完全性
-    if (data.reasoning && data.reasoning.length > 10) {
-      confidence += 0.05;
-    }
-
-    if (data.risk_factors && Array.isArray(data.risk_factors)) {
-      confidence += 0.05;
-    }
-
-    return Math.min(confidence, 1.0);
-  }
-
-  /**
-   * エラー結果を作成
-   */
-  private createErrorResult<T>(
-    rawContent: string,
-    startTime: number,
-    retryCount: number,
-    errorType: SecurityParseError['type'],
-    message: string,
-    additionalErrors: SecurityParseError[] = []
-  ): SecurityParseResult<T> {
-    const errors: SecurityParseError[] = [
-      {
-        type: errorType,
-        message,
-        severity: 'error'
-      },
-      ...additionalErrors
-    ];
-
-    return {
-      success: false,
-      errors,
-      metadata: {
-        rawContent,
-        parseTime: Date.now() - startTime,
-        confidence: 0.0,
-        retryCount
-      }
-    };
-  }
-
-  /**
-   * リトライ回数取得
-   */
-  private getRetryCount(requestId?: string): number {
-    if (!requestId) return 0;
-    
-    const count = this.parseAttempts.get(requestId) || 0;
-    this.parseAttempts.set(requestId, count + 1);
-    return count;
   }
 
   /**

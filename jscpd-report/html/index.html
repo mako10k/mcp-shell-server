@@ -1,0 +1,182 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Copy/Paste Detector Report</title><link href="styles/tailwind.css" rel="stylesheet"><link href="styles/prism.css" rel="stylesheet"></head><body class="bg-gray-100"><header class="bg-white shadow py-4"><div class="container mx-auto px-4"><h1 class="text-3xl font-semibold text-gray-800">jscpd - copy/paste report</h1></div></header><main class="container mx-auto my-8 p-4 bg-white shadow rounded"><section class="mb-8" id="dashboard"><h2 class="text-2xl font-semibold text-gray-700 mb-4">Dashboard</h2><div class="grid grid-cols-4 gap-4"><div class="bg-blue-200 p-4 rounded text-center"><h3 class="text-lg font-semibold text-blue-800 mb-2">Total Files</h3><span class="text-4xl font-bold text-blue-800">26</span></div><div class="bg-green-200 p-4 rounded text-center"><h3 class="text-lg font-semibold text-green-800 mb-2">Total Lines of Code</h3><span class="text-4xl font-bold text-green-800">8069</span></div><div class="bg-yellow-200 p-4 rounded text-center"><h3 class="text-lg font-semibold text-yellow-800 mb-2">Number of Clones</h3><span class="text-4xl font-bold text-yellow-800">13</span></div><div class="bg-red-200 p-4 rounded text-center"><h3 class="text-lg font-semibold text-red-800 mb-2">Duplicated Lines</h3><span class="text-4xl font-bold text-red-800">173 (2.14%)</span></div></div></section><section class="mb-8" id="formats"><h2 class="text-2xl font-semibold text-gray-700 mb-4">Formats with Duplications</h2><table class="w-full table-auto"><thead><tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal"><th class="py-3 px-6 text-left">Format</th><th class="py-3 px-6 text-left">Files</th><th class="py-3 px-6 text-left">Lines</th><th class="py-3 px-6 text-left">Clones</th><th class="py-3 px-6 text-left">Duplicated Lines</th><th class="py-3 px-6 text-left">Duplicated Tokens</th></tr></thead><tbody><tr class="bg-white border-b border-gray-200 text-gray-800 text-sm"><td class="py-3 px-6"><a class="text-blue-600 hover:underline" href="#typescript-clones">typescript</a></td><td class="py-3 px-6">26</td><td class="py-3 px-6">8069</td><td class="py-3 px-6">13</td><td class="py-3 px-6">173</td><td class="py-3 px-6">1483</td></tr></tbody></table></section><section class="mb-8" id="txt-clones"><a name="typescript-clones"></a><h2 class="text-2xl font-semibold text-gray-700 mb-4">typescript</h2><div class="divide-y divide-gray-200 border-b-2"><div class="py-4"><p class="text-gray-600">src/security/security-response-parser.ts (Line 146:11 - Line 174:6), src/security/security-response-parser.ts (Line 88:2 - Line 116:6)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn0" onclick="toggleCodeBlock('cloneGroup0', 'expandBtn0', 'collapseBtn0')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn0" onclick="toggleCodeBlock('cloneGroup0', 'expandBtn0', 'collapseBtn0')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup0"><code class="language-typescript text-sm text-gray-800">errors
+        );
+      }
+
+      return {
+        success: true,
+        data: parsed.data,
+        metadata: {
+          rawContent,
+          parseTime: Date.now() - startTime,
+          confidence: this.calculateConfidence(parsed.data, rawContent),
+          retryCount
+        }
+      };
+
+    } catch (error) {
+      return this.createErrorResult(
+        rawContent,
+        startTime,
+        retryCount,
+        'format',
+        `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * 追加コンテキスト収集後の再評価レスポンスを解析
+   */</code></pre></div><div class="py-4"><p class="text-gray-600">src/security/security-response-parser.ts (Line 178:30 - Line 194:36), src/security/security-response-parser.ts (Line 120:23 - Line 136:29)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn1" onclick="toggleCodeBlock('cloneGroup1', 'expandBtn1', 'collapseBtn1')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn1" onclick="toggleCodeBlock('cloneGroup1', 'expandBtn1', 'collapseBtn1')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup1"><code class="language-typescript text-sm text-gray-800">&gt;&gt; {
+    const startTime = Date.now();
+    const retryCount = this.getRetryCount(requestId);
+    
+    try {
+      const extractedJson = this.extractJsonFromResponse(rawContent);
+      if (!extractedJson) {
+        return this.createErrorResult(
+          rawContent,
+          startTime,
+          retryCount,
+          'format',
+          'No valid JSON found in response'
+        );
+      }
+
+      const parsed = AdditionalContextReevaluationSchema</code></pre></div><div class="py-4"><p class="text-gray-600">src/security/security-response-parser.ts (Line 194:36 - Line 232:6), src/security/security-response-parser.ts (Line 136:29 - Line 116:6)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn2" onclick="toggleCodeBlock('cloneGroup2', 'expandBtn2', 'collapseBtn2')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn2" onclick="toggleCodeBlock('cloneGroup2', 'expandBtn2', 'collapseBtn2')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup2"><code class="language-typescript text-sm text-gray-800">.safeParse(extractedJson);
+      
+      if (!parsed.success) {
+        const errors = this.parseValidationErrors(parsed.error);
+        return this.createErrorResult(
+          rawContent,
+          startTime,
+          retryCount,
+          'validation',
+          'Schema validation failed',
+          errors
+        );
+      }
+
+      return {
+        success: true,
+        data: parsed.data,
+        metadata: {
+          rawContent,
+          parseTime: Date.now() - startTime,
+          confidence: this.calculateConfidence(parsed.data, rawContent),
+          retryCount
+        }
+      };
+
+    } catch (error) {
+      return this.createErrorResult(
+        rawContent,
+        startTime,
+        retryCount,
+        'format',
+        `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * レスポンスからJSONを抽出
+   */</code></pre></div><div class="py-4"><p class="text-gray-600">src/security/enhanced-evaluator.ts (Line 461:9 - Line 474:30), src/security/enhanced-evaluator.ts (Line 304:7 - Line 317:59)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn3" onclick="toggleCodeBlock('cloneGroup3', 'expandBtn3', 'collapseBtn3')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn3" onclick="toggleCodeBlock('cloneGroup3', 'expandBtn3', 'collapseBtn3')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup3"><code class="language-typescript text-sm text-gray-800">${Date.now()}`
+      );
+
+      if (parseResult.success &amp;&amp; parseResult.data) {
+        const structuredResult = parseResult.data;
+        return {
+          evaluation_result: structuredResult.evaluation_result,
+          confidence: structuredResult.confidence,
+          llm_reasoning: structuredResult.reasoning,
+          model: response.model || 'unknown',
+          evaluation_time_ms: parseResult.metadata.parseTime
+        };
+      } else {
+        // Fallback to simple parsing</code></pre></div><div class="py-4"><p class="text-gray-600">src/security/enhanced-evaluator.ts (Line 512:25 - Line 532:35), src/security/enhanced-evaluator.ts (Line 439:18 - Line 459:28)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn4" onclick="toggleCodeBlock('cloneGroup4', 'expandBtn4', 'collapseBtn4')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn4" onclick="toggleCodeBlock('cloneGroup4', 'expandBtn4', 'collapseBtn4')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup4"><code class="language-typescript text-sm text-gray-800">);
+
+    try {
+      const response = await this.createMessageCallback({
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: userMessage
+            }
+          }
+        ],
+        maxTokens: 200,
+        temperature: 0.1,
+        systemPrompt,
+        includeContext: 'none'
+      });
+
+      // Parse response using Structured Output parser
+      const parseResult = await this.responseParser.parseAdditionalContextReevaluation</code></pre></div><div class="py-4"><p class="text-gray-600">src/security/enhanced-evaluator.ts (Line 534:10 - Line 548:60), src/security/enhanced-evaluator.ts (Line 304:7 - Line 475:59)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn5" onclick="toggleCodeBlock('cloneGroup5', 'expandBtn5', 'collapseBtn5')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn5" onclick="toggleCodeBlock('cloneGroup5', 'expandBtn5', 'collapseBtn5')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup5"><code class="language-typescript text-sm text-gray-800">${Date.now()}`
+      );
+
+      if (parseResult.success &amp;&amp; parseResult.data) {
+        const structuredResult = parseResult.data;
+        return {
+          evaluation_result: structuredResult.evaluation_result,
+          confidence: structuredResult.confidence,
+          llm_reasoning: structuredResult.reasoning,
+          model: response.model || 'unknown',
+          evaluation_time_ms: parseResult.metadata.parseTime
+        };
+      } else {
+        // Fallback to simple parsing
+        console.warn('Structured Output context parsing failed, using fallback:'</code></pre></div><div class="py-4"><p class="text-gray-600">src/core/stream-publisher.ts (Line 110:6 - Line 116:2), src/core/stream-publisher.ts (Line 89:7 - Line 95:2)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn6" onclick="toggleCodeBlock('cloneGroup6', 'expandBtn6', 'collapseBtn6')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn6" onclick="toggleCodeBlock('cloneGroup6', 'expandBtn6', 'collapseBtn6')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup6"><code class="language-typescript text-sm text-gray-800">): Promise&lt;void&gt; {
+    const subscriberIds = this.executionSubscribers.get(executionId);
+    if (!subscriberIds) return;
+    
+    const notifications = Array.from(subscriberIds).map(async (subscriberId) =&gt; {
+      const subscriber = this.subscribers.get(subscriberId);
+      if (subscriber)</code></pre></div><div class="py-4"><p class="text-gray-600">src/core/stream-publisher.ts (Line 131:5 - Line 137:13), src/core/stream-publisher.ts (Line 89:7 - Line 95:15)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn7" onclick="toggleCodeBlock('cloneGroup7', 'expandBtn7', 'collapseBtn7')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn7" onclick="toggleCodeBlock('cloneGroup7', 'expandBtn7', 'collapseBtn7')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup7"><code class="language-typescript text-sm text-gray-800">): Promise&lt;void&gt; {
+    const subscriberIds = this.executionSubscribers.get(executionId);
+    if (!subscriberIds) return;
+    
+    const notifications = Array.from(subscriberIds).map(async (subscriberId) =&gt; {
+      const subscriber = this.subscribers.get(subscriberId);
+      if (subscriber?.onProcessEnd</code></pre></div><div class="py-4"><p class="text-gray-600">src/core/stream-publisher.ts (Line 155:6 - Line 161:8), src/core/stream-publisher.ts (Line 89:7 - Line 95:15)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn8" onclick="toggleCodeBlock('cloneGroup8', 'expandBtn8', 'collapseBtn8')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn8" onclick="toggleCodeBlock('cloneGroup8', 'expandBtn8', 'collapseBtn8')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup8"><code class="language-typescript text-sm text-gray-800">): Promise&lt;void&gt; {
+    const subscriberIds = this.executionSubscribers.get(executionId);
+    if (!subscriberIds) return;
+    
+    const notifications = Array.from(subscriberIds).map(async (subscriberId) =&gt; {
+      const subscriber = this.subscribers.get(subscriberId);
+      if (subscriber?.onError</code></pre></div><div class="py-4"><p class="text-gray-600">src/core/monitoring-manager.ts (Line 133:17 - Line 139:10), src/core/monitoring-manager.ts (Line 120:17 - Line 126:23)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn9" onclick="toggleCodeBlock('cloneGroup9', 'expandBtn9', 'collapseBtn9')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn9" onclick="toggleCodeBlock('cloneGroup9', 'expandBtn9', 'collapseBtn9')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup9"><code class="language-typescript text-sm text-gray-800">(processId: number): Promise&lt;number&gt; {
+    try {
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+
+      const { stdout } = await execAsync(`ps -p ${processId} -o %cpu`</code></pre></div><div class="py-4"><p class="text-gray-600">src/core/monitoring-manager.ts (Line 164:20 - Line 170:22), src/core/monitoring-manager.ts (Line 120:17 - Line 126:23)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn10" onclick="toggleCodeBlock('cloneGroup10', 'expandBtn10', 'collapseBtn10')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn10" onclick="toggleCodeBlock('cloneGroup10', 'expandBtn10', 'collapseBtn10')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup10"><code class="language-typescript text-sm text-gray-800">(processId: number): Promise&lt;number&gt; {
+    try {
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+
+      const { stdout } = await execAsync(`ps -p ${processId} -o rss --no-headers`</code></pre></div><div class="py-4"><p class="text-gray-600">src/core/monitoring-manager.ts (Line 178:20 - Line 184:9), src/core/monitoring-manager.ts (Line 120:17 - Line 126:23)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn11" onclick="toggleCodeBlock('cloneGroup11', 'expandBtn11', 'collapseBtn11')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn11" onclick="toggleCodeBlock('cloneGroup11', 'expandBtn11', 'collapseBtn11')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup11"><code class="language-typescript text-sm text-gray-800">(processId: number): Promise&lt;number&gt; {
+    try {
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+
+      const { stdout } = await execAsync(`ps -p ${processId} -o rss`</code></pre></div><div class="py-4"><p class="text-gray-600">src/server.ts (Line 433:14 - Line 441:32), src/server.ts (Line 399:6 - Line 407:31)</p><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2" id="expandBtn12" onclick="toggleCodeBlock('cloneGroup12', 'expandBtn12', 'collapseBtn12')">Show code</button><button class="bg-gray-500 text-white px-1 py-0.5 text-xs rounded focus:outline-none ml-2 hidden" id="collapseBtn12" onclick="toggleCodeBlock('cloneGroup12', 'expandBtn12', 'collapseBtn12')">Hide code</button><pre class="bg-gray-100 border border-gray-200 p-4 rounded mt-2 hidden" id="cloneGroup12"><code class="language-typescript text-sm text-gray-800">): Promise&lt;void&gt; {
+    const commandPreview = executionInfo.command.length &gt; 40 
+      ? `${executionInfo.command.substring(0, 37)}...`
+      : executionInfo.command;
+    
+    const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);
+    const outputSizeStr = outputSize &gt; 0 ? ` (${outputSize} bytes)` : '';
+    
+    const message = `⏰ Background process timeout: </code></pre></div><!-- Add more clone groups for .txt format as needed         // Add more clone groups for .txt format as needed--></div></section><!-- Add more sections for other formats and clone groups as needed--></main><footer class="bg-white shadow mt-8 py-4"><div class="container mx-auto px-4 text-center"><p class="text-sm text-gray-600">This report is generated by jscpd, an open-source copy/paste detector.</p><p class="text-sm text-gray-600">jscpd is licensed under the MIT License.</p><a class="text-blue-500 text-sm" href="https://github.com/kucherenko/jscpd" target="_blank" rel="noopener noreferrer">View jscpd on GitHub</a></div></footer><script src="js/prism.js"></script><script>function toggleCodeBlock(codeBlockId, expandBtnId, collapseBtnId) {
+  const codeBlock = document.getElementById(codeBlockId);
+  const expandBtn = document.getElementById(expandBtnId);
+  const collapseBtn = document.getElementById(collapseBtnId);
+
+  codeBlock.classList.toggle('hidden');
+  expandBtn.classList.toggle('hidden');
+  collapseBtn.classList.toggle('hidden');
+}</script></body></html>
