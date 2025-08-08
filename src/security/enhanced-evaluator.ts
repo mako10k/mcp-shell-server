@@ -167,6 +167,8 @@ export class EnhancedSafetyEvaluator {
 
     // LLM Sampler evaluation (if callback available)
     let llmEvaluation: LLMEvaluationResult | null = null;
+    let userConfirmation: { required: boolean; response?: ElicitationResponse; message?: string } | undefined;
+    
     if (this.createMessageCallback && basicClassification === 'llm_required') {
       llmEvaluation = await this.performLLMEvaluation(
         command,
@@ -177,6 +179,47 @@ export class EnhancedSafetyEvaluator {
         undefined,
         comment
       );
+      
+      // Check if user intent elicitation is needed after LLM evaluation
+      if (llmEvaluation) {
+        const needsUserIntent = await this.requiresUserIntentElicitation(command, llmEvaluation);
+        
+        if (needsUserIntent) {
+          try {
+            const extendedContext = await this.collectExtendedContext(command, workingDirectory);
+            const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, workingDirectory, extendedContext);
+            
+            if (elicitationResponse) {
+              // Set user confirmation data
+              userConfirmation = {
+                required: true,
+                response: elicitationResponse,
+                message: this.createIntentElicitationMessage(command)
+              };
+              
+              // Re-evaluate with user intent data
+              if (userIntent) {
+                llmEvaluation = await this.performLLMEvaluation(
+                  command,
+                  workingDirectory,
+                  historyEntries,
+                  true,
+                  extendedContext,
+                  userIntent,
+                  comment
+                );
+              }
+            }
+          } catch (error) {
+            console.error('Elicitation process failed:', error);
+            // Set as required but no response (indicating process was attempted)
+            userConfirmation = {
+              required: true,
+              message: 'Elicitation process attempted but failed'
+            };
+          }
+        }
+      }
     }
 
     // Combine evaluations
@@ -185,7 +228,8 @@ export class EnhancedSafetyEvaluator {
       contextualEvaluation,
       llmEvaluation,
       command,
-      workingDirectory
+      workingDirectory,
+      userConfirmation
     );
 
     return finalEvaluation;
