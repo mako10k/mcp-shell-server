@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2025-08-08
+
+### Added
+- **Structured Output Security Evaluation**: Type-safe LLM response parsing with Zod schemas
+  - SecurityEvaluationResult schema for standardized security evaluation responses
+  - UserIntentReevaluation and AdditionalContextReevaluation schemas for multi-stage evaluation
+  - JSON schema validation with confidence scoring and error handling
+- **mcp-llm-generator Integration**: Enhanced LLM capabilities using mcp-llm-generator patterns
+  - Function call emulation patterns for complex security evaluation workflows
+  - ResponseParser architecture with BaseResponseParser for common parsing logic
+  - ToolCallEmulationResponseSchema patterns for structured AI interactions
+
+### Improved
+- **Code Architecture Refactoring**: Major reduction in code duplication through common base classes
+  - BaseResponseParser class providing shared parsing logic (parseWithSchema, extractJsonFromResponse)
+  - CommonLLMEvaluator class with shared LLM evaluation patterns
+  - SecurityResponseParser reduced from 380+ lines to 110 lines through inheritance
+  - Enhanced maintainability and consistency across security components
+- **Enhanced Security Evaluator**: Simplified LLM-centric design extending CommonLLMEvaluator
+  - Cleaner inheritance structure with reduced code duplication
+  - Improved error handling and fallback evaluation logic
+  - Better integration with structured output parsing
+
+### Technical
+- **Zod Schema Validation**: Comprehensive type safety for all LLM interactions
+- **Response Parser Framework**: Extensible base classes for future parser implementations
+- **Confidence Scoring**: Improved confidence calculation algorithms in parsing logic
+
 ## [2.3.0] - 2025-08-07
 
 ### Added
