@@ -297,7 +297,7 @@ export class CommandHistoryManager {
     
     const removedCount = initialCount - this.history.length;
     if (removedCount > 0) {
-      console.log(`Cleaned up ${removedCount} old command history entries`);
+      console.error(`Cleaned up ${removedCount} old command history entries`);
     }
   }
 

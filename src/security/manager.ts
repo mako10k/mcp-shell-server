@@ -10,6 +10,7 @@ import { SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class SecurityManager {
   private restrictions: SecurityRestrictions | null = null;
@@ -667,11 +668,21 @@ export class SecurityManager {
         request: async (request: { method: string; params?: any }, _schema?: any): Promise<any> => {
           try {
             // Use actual MCP server.request method for elicitation protocol
-            console.log('Sending MCP elicitation request:', request.method, request.params);
+            console.error('Sending MCP elicitation request:', request.method, request.params);
             
             // This is the actual elicitation implementation using MCP protocol
-            const result = await server.request(request, _schema);
-            console.log('MCP elicitation result:', result);
+            // Based on mcp-confirm: server.request(request, ElicitResultSchema, options)
+            const result = await server.request(
+              {
+                method: request.method,
+                params: request.params,
+              },
+              ElicitResultSchema,
+              {
+                timeout: request.params?.timeoutMs || 180000 // 3 minutes default
+              }
+            );
+            console.error('MCP elicitation result:', result);
             
             return result;
           } catch (error) {

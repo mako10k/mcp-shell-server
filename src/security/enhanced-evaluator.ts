@@ -2,6 +2,7 @@ import { CommandHistoryEntry, EvaluationResult } from '../types/enhanced-securit
 import { SecurityManager } from './manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId } from '../utils/helpers.js';
+import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 // MCP sampling protocol interface (based on mako10k/mcp-llm-generator)
 interface CreateMessageCallback {
@@ -218,11 +219,11 @@ export class EnhancedSafetyEvaluator {
         // Check if user intent elicitation is needed after re-audit
         const needsUserIntent = await this.requiresUserIntentElicitation(command, reauditResult);
         if (needsUserIntent) {
-          const userIntent = await this.elicitUserIntent(command, workingDirectory, extendedContextData);
-          if (userIntent) {
+          const elicitationResult = await this.elicitUserIntent(command, workingDirectory, extendedContextData);
+          if (elicitationResult.userIntent) {
             // Inject user intent into history and re-evaluate with full context
-            const enhancedHistory = await this.injectUserIntentIntoHistory(history, userIntent);
-            return this.performLLMEvaluation(command, workingDirectory, enhancedHistory, true, extendedContextData, userIntent, comment);
+            const enhancedHistory = await this.injectUserIntentIntoHistory(history, elicitationResult.userIntent);
+            return this.performLLMEvaluation(command, workingDirectory, enhancedHistory, true, extendedContextData, elicitationResult.userIntent, comment);
           } else {
             // User intent elicitation failed or timed out - fallback to CONDITIONAL_DENY
             return {
@@ -636,8 +637,8 @@ Consider:
       const requiresIntent = llmResponse.includes('ELICIT_INTENT');
 
       if (requiresIntent) {
-        console.log(`LLM determined user intent elicitation is needed for: ${command}`);
-        console.log(`Reasoning: ${response.content.text}`);
+        console.error(`LLM determined user intent elicitation is needed for: ${command}`);
+        console.error(`Reasoning: ${response.content.text}`);
       }
 
       return requiresIntent;
@@ -654,12 +655,12 @@ Consider:
   /**
    * Elicit user intent using MCP elicitation protocol
    */
-  private async elicitUserIntent(command: string, workingDirectory: string, extendedContext: ExtendedContext): Promise<UserIntentData | null> {
+  private async elicitUserIntent(command: string, workingDirectory: string, extendedContext: ExtendedContext): Promise<{userIntent: UserIntentData | null, elicitationResponse: ElicitationResponse | null}> {
     try {
       // Only proceed if elicitation is enabled
       if (!this.securityManager.getEnhancedConfig().elicitation_enabled) {
         console.warn('User intent elicitation is disabled');
-        return null;
+        return { userIntent: null, elicitationResponse: null };
       }
 
       // Create elicitation message and schema
@@ -674,13 +675,18 @@ Consider:
           const confirmed = response.content['confirmed'] as boolean;
           const reason = (response.content['reason'] as string) || 'No reason provided';
           
-          return {
+          const userIntent: UserIntentData = {
             intent: `Execute command: ${command}`,
             justification: reason,
             timestamp: getCurrentTimestamp(),
             confidence_level: confirmed ? 'high' : 'low',
             elicitation_id: generateId()
           };
+
+          return { userIntent, elicitationResponse: response };
+        } else {
+          // User declined or cancelled
+          return { userIntent: null, elicitationResponse: response };
         }
       }
       
@@ -689,27 +695,48 @@ Consider:
       console.warn('Working Directory:', workingDirectory);
       console.warn('Target Analysis:', extendedContext.target_analysis);
       console.warn('Message:', elicitationMessage);
-      return null;
+      return { userIntent: null, elicitationResponse: null };
 
     } catch (error) {
       console.error('User intent elicitation failed:', error);
-      return null;
+      return { userIntent: null, elicitationResponse: null };
     }
   }
 
   /**
-   * Create intent elicitation message
+   * Create intent elicitation message (improved user experience)
    */
   private createIntentElicitationMessage(command: string): string {
-    return `An MCP client has requested to execute the following command:
+    return `🔐 **SECURITY CONFIRMATION REQUIRED**
 
+**Command to Execute:**
+\`\`\`
 ${command}
+\`\`\`
 
-This command appears to be potentially dangerous. Do you intend to execute it?`;
+**Why Confirmation is Needed:**
+This command has been flagged as potentially dangerous because it could:
+- Modify system files or permissions
+- Delete or overwrite important data
+- Execute with elevated privileges
+- Impact system security or stability
+
+**Potential Impact:**
+- Changes may be irreversible
+- Could affect system functionality
+- May require administrative intervention to recover
+
+**Safety Recommendations:**
+- Verify this is the exact command you intended
+- Ensure you have backups of any affected data
+- Consider testing in a safe environment first
+- Check if there are safer alternatives for your goal
+
+Do you want to proceed with executing this command?`;
   }
 
   /**
-   * Create intent elicitation schema (simplified based on user feedback)
+   * Create intent elicitation schema (improved with detailed options)
    */
   private createIntentElicitationSchema(): ElicitationSchema {
     return {
@@ -717,13 +744,19 @@ This command appears to be potentially dangerous. Do you intend to execute it?`;
       properties: {
         confirmed: {
           type: "boolean",
-          title: "Do you want to execute this command?",
-          description: "Confirm if you want to proceed with this command (yes/no)"
+          title: "🚨 Execute this potentially dangerous command?",
+          description: "Select 'Yes' only if you understand the risks and want to proceed"
         },
         reason: {
           type: "string",
-          title: "Reason (optional)",
-          description: "Brief reason for your decision"
+          title: "📝 Reason for execution (optional but recommended)",
+          description: "Briefly explain why you need to run this command. This helps with future security decisions."
+        },
+        future_policy: {
+          type: "string",
+          title: "🔄 Future policy for similar commands (optional)",
+          description: "How should similar commands be handled? (e.g., 'always ask', 'allow for this session', 'block similar commands')",
+          enum: ["Always ask for confirmation", "Allow similar commands this session", "Block similar commands", "No preference"]
         }
       },
       required: ["confirmed"]
@@ -750,17 +783,24 @@ This command appears to be potentially dangerous. Do you intend to execute it?`;
         level: 'question'
       };
 
-      console.log('🔒 Sending MCP elicitation request for user confirmation');
-      console.log('Message:', message);
-      console.log('Schema:', JSON.stringify(schema, null, 2));
-
-      console.log('Sending MCP elicitation request:', 'elicitation/create', elicitationParams);
-
-      // Send MCP elicitation/create request (proper MCP protocol)
-      const response = await this.mcpServer.request({
+      console.error('🔒 Sending MCP elicitation request for user confirmation');
+      console.error('Message:', message);
+      console.error('Schema:', JSON.stringify(schema, null, 2));
+      
+      console.error('Sending MCP elicitation request:', 'elicitation/create', elicitationParams);      // Send MCP elicitation/create request (proper MCP protocol)
+      // Note: Using the same approach as mcp-confirm implementation
+      const requestPayload = {
         method: 'elicitation/create',
         params: elicitationParams
-      });
+      };
+
+      console.error('Request payload:', JSON.stringify(requestPayload, null, 2));
+
+      // Call the MCP server request method with proper schema
+      // Based on mcp-confirm implementation: server.request(request, ElicitResultSchema, options)
+      const response = await this.mcpServer.request(requestPayload, ElicitResultSchema);
+
+      console.error('Raw MCP response:', response);
 
       if (!response) {
         // Security Critical: No response from elicitation
@@ -770,25 +810,41 @@ This command appears to be potentially dangerous. Do you intend to execute it?`;
         );
       }
 
-      // Extract result directly from response (MCP protocol format)
-      const result = response as {
+      // Handle the response directly as per MCP protocol
+      // The response should already be in the correct format from mcp-confirm
+      let result: {
         action: "accept" | "decline" | "cancel";
         content?: Record<string, unknown>;
       };
 
+      // Check if response has the expected structure
+      if (typeof response === 'object' && response !== null) {
+        if ('action' in response) {
+          result = response as typeof result;
+        } else {
+          // Fallback: treat unknown response as decline for security
+          console.warn('Unknown response format, treating as decline:', response);
+          result = { action: 'decline' };
+        }
+      } else {
+        // Fallback: treat non-object response as decline for security
+        console.warn('Non-object response, treating as decline:', response);
+        result = { action: 'decline' };
+      }
+
       // Handle MCP elicitation response (exact mcp-confirm format)
       if (result.action === 'cancel') {
-        console.log('User cancelled the elicitation request');
+        console.error('User cancelled the elicitation request');
         return { action: 'cancel' };
       }
 
       if (result.action === 'decline') {
-        console.log('User declined the elicitation request');
+        console.error('User declined the elicitation request');
         return { action: 'decline' };
       }
 
       if (result.action === 'accept') {
-        console.log('User accepted the elicitation request:', result.content);
+        console.error('User accepted the elicitation request:', result.content);
         // Type-safe content handling
         const elicitationResponse: ElicitationResponse = result.content 
           ? { action: 'accept', content: result.content }
@@ -808,7 +864,7 @@ This command appears to be potentially dangerous. Do you intend to execute it?`;
       // Check if this is our intentional ELICITATION_SENT signal
       if (error instanceof Error && error.message.includes('ELICITATION_SENT')) {
         // This is expected - elicitation was sent successfully
-        console.log('✅ Elicitation notification sent to client successfully');
+        console.error('✅ Elicitation notification sent to client successfully');
         throw new Error(
           'USER_CONFIRMATION_REQUIRED: Security confirmation request has been sent to the client. ' +
           'This command cannot proceed without explicit user confirmation. The system is operating correctly.'
@@ -1028,7 +1084,8 @@ This command appears to be potentially dangerous. Do you intend to execute it?`;
     contextualEvaluation: ContextualEvaluation,
     llmEvaluation: LLMEvaluationResult | null,
     command: string,
-    workingDirectory: string
+    workingDirectory: string,
+    userConfirmation?: { required: boolean; response?: ElicitationResponse; message?: string }
   ): SafetyEvaluation {
     // Convert basic classification to numeric safety level
     const basic_safety_level = basicClassification === 'basic_safe' ? 2 : 3;
@@ -1095,7 +1152,10 @@ This command appears to be potentially dangerous. Do you intend to execute it?`;
       reasoning,
       confidence: final_confidence,
       suggested_alternatives: contextualEvaluation.suggested_alternatives,
-      llm_evaluation_used: llmEvaluation !== null
+      llm_evaluation_used: llmEvaluation !== null,
+      user_confirmation_required: userConfirmation?.required,
+      user_response: userConfirmation?.response,
+      confirmation_message: userConfirmation?.message
     };
   }
 
@@ -1269,6 +1329,9 @@ interface SafetyEvaluation {
   confidence: number;
   suggested_alternatives: string[];
   llm_evaluation_used: boolean;
+  user_confirmation_required?: boolean | undefined;
+  user_response?: ElicitationResponse | undefined;
+  confirmation_message?: string | undefined;
 }
 
 interface ContextualEvaluation {

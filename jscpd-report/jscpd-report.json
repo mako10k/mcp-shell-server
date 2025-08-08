@@ -1,6 +1,6 @@
 {
   "statistics": {
-    "detectionDate": "2025-08-07T13:48:48.880Z",
+    "detectionDate": "2025-08-08T00:43:25.856Z",
     "formats": {
       "typescript": {
         "sources": {
@@ -125,8 +125,8 @@
             "newClones": 0
           },
           "src/security/manager.ts": {
-            "lines": 723,
-            "tokens": 5444,
+            "lines": 734,
+            "tokens": 5489,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -270,13 +270,13 @@
           }
         },
         "total": {
-          "lines": 6515,
-          "tokens": 54843,
+          "lines": 6526,
+          "tokens": 54888,
           "sources": 22,
           "clones": 7,
           "duplicatedLines": 44,
           "duplicatedTokens": 669,
-          "percentage": 0.68,
+          "percentage": 0.67,
           "percentageTokens": 1.22,
           "newDuplicatedLines": 0,
           "newClones": 0
@@ -284,13 +284,13 @@
       }
     },
     "total": {
-      "lines": 6515,
-      "tokens": 54843,
+      "lines": 6526,
+      "tokens": 54888,
       "sources": 22,
       "clones": 7,
       "duplicatedLines": 44,
       "duplicatedTokens": 669,
-      "percentage": 0.68,
+      "percentage": 0.67,
       "percentageTokens": 1.22,
       "newDuplicatedLines": 0,
       "newClones": 0
