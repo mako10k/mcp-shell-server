@@ -7,8 +7,14 @@ import { z } from 'zod';
 export const SafetyLevelSchema = z.number().int().min(1).max(5).describe('Safety level from 1 (safest) to 5 (most dangerous)');
 export type SafetyLevel = z.infer<typeof SafetyLevelSchema>;
 
-// 評価結果
-export const EvaluationResultSchema = z.enum(['ALLOW', 'CONDITIONAL_DENY', 'DENY']).describe('Command evaluation result');
+// 評価結果 (LLM中心設計)
+export const EvaluationResultSchema = z.enum([
+  'ALLOW', 
+  'ELICIT_USER_INTENT', 
+  'NEED_MORE_INFO', 
+  'CONDITIONAL_DENY', 
+  'DENY'
+]).describe('Command evaluation result from LLM-centric evaluation');
 export type EvaluationResult = z.infer<typeof EvaluationResultSchema>;
 
 // コマンド分類
@@ -17,12 +23,17 @@ export type CommandClassification = z.infer<typeof CommandClassificationSchema>;
 
 // Enhanced Security Configuration
 export const EnhancedSecurityConfigSchema = z.object({
-  // 機能切り替え
+  // 機能切り替え (LLM中心設計)
   enhanced_mode_enabled: z.boolean().default(false).describe('Enable enhanced security features'),
   basic_safe_classification: z.boolean().default(true).describe('Enable basic safe command classification'),
-  llm_evaluation_enabled: z.boolean().default(false).describe('Enable LLM-based command evaluation'),
-  elicitation_enabled: z.boolean().default(false).describe('Enable user intent elicitation'),
+  llm_evaluation_enabled: z.boolean().default(true).describe('Enable LLM-based command evaluation (LLM-centric design)'),
+  elicitation_enabled: z.boolean().default(true).describe('Enable user intent elicitation'),
   enable_pattern_filtering: z.boolean().default(false).describe('Enable pattern-based pre-filtering (default: false - all commands go to LLM evaluation)'),
+  
+  // LLM中心設計用の設定
+  disable_algorithmic_preprocessing: z.boolean().default(true).describe('Disable complex algorithmic analysis to avoid confusing LLM'),
+  max_additional_history_for_context: z.number().int().min(5).max(50).default(20).describe('Maximum additional history entries when LLM requests NEED_MORE_INFO'),
+  enable_command_output_context: z.boolean().default(true).describe('Allow LLM to request command output summaries for context'),
   
   // 履歴管理
   command_history_enhanced: z.boolean().default(true).describe('Enable enhanced command history management'),
@@ -115,13 +126,19 @@ export const ShellServerConfigSchema = z.object({
 
 export type ShellServerConfig = z.infer<typeof ShellServerConfigSchema>;
 
-// デフォルト設定
+// デフォルト設定 (LLM中心設計)
 export const DEFAULT_ENHANCED_SECURITY_CONFIG: EnhancedSecurityConfig = {
   enhanced_mode_enabled: false,
   basic_safe_classification: true,
-  llm_evaluation_enabled: false,
-  elicitation_enabled: false,
+  llm_evaluation_enabled: true, // LLM中心設計: デフォルトでLLM評価有効
+  elicitation_enabled: true, // LLM中心設計: デフォルトでElicitation有効
   enable_pattern_filtering: false, // デフォルト: パターンフィルタリング無効（全てLLM審査にかける）
+  
+  // LLM中心設計: アルゴリズム複雑化を回避
+  disable_algorithmic_preprocessing: true,
+  max_additional_history_for_context: 20,
+  enable_command_output_context: true,
+  
   command_history_enhanced: true,
   history_retention_days: 30,
   max_history_entries: 1000,

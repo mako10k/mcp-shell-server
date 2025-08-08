@@ -1,6 +1,6 @@
 {
   "statistics": {
-    "detectionDate": "2025-08-08T01:46:19.056Z",
+    "detectionDate": "2025-08-08T02:40:28.038Z",
     "formats": {
       "typescript": {
         "sources": {
@@ -89,8 +89,8 @@
             "newClones": 0
           },
           "src/types/enhanced-security.ts": {
-            "lines": 155,
-            "tokens": 1856,
+            "lines": 172,
+            "tokens": 1987,
             "sources": 1,
             "clones": 0,
             "duplicatedLines": 0,
@@ -133,6 +133,18 @@
             "duplicatedTokens": 0,
             "percentage": 0,
             "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "src/security/enhanced-evaluator.ts": {
+            "lines": 727,
+            "tokens": 4759,
+            "sources": 1,
+            "clones": 4,
+            "duplicatedLines": 78,
+            "duplicatedTokens": 694,
+            "percentage": 10.73,
+            "percentageTokens": 14.58,
             "newDuplicatedLines": 0,
             "newClones": 0
           },
@@ -270,33 +282,605 @@
           }
         },
         "total": {
-          "lines": 6526,
-          "tokens": 54888,
-          "sources": 22,
-          "clones": 7,
-          "duplicatedLines": 44,
-          "duplicatedTokens": 669,
-          "percentage": 0.67,
-          "percentageTokens": 1.22,
+          "lines": 7270,
+          "tokens": 59778,
+          "sources": 23,
+          "clones": 9,
+          "duplicatedLines": 83,
+          "duplicatedTokens": 1016,
+          "percentage": 1.14,
+          "percentageTokens": 1.7,
           "newDuplicatedLines": 0,
           "newClones": 0
         }
       }
     },
     "total": {
-      "lines": 6526,
-      "tokens": 54888,
-      "sources": 22,
-      "clones": 7,
-      "duplicatedLines": 44,
-      "duplicatedTokens": 669,
-      "percentage": 0.67,
-      "percentageTokens": 1.22,
+      "lines": 7270,
+      "tokens": 59778,
+      "sources": 23,
+      "clones": 9,
+      "duplicatedLines": 83,
+      "duplicatedTokens": 1016,
+      "percentage": 1.14,
+      "percentageTokens": 1.7,
       "newDuplicatedLines": 0,
       "newClones": 0
     }
   },
   "duplicates": [
+    {
+      "format": "typescript",
+      "lines": 11,
+      "fragment": "if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {\n      evaluation_result = 'DENY';\n      confidence = 0.9;\n    } else if (llmResponse.includes('CONDITIONAL_DENY')) {\n      evaluation_result = 'CONDITIONAL_DENY';\n      confidence = 0.8;\n    } else if (llmResponse.includes('ALLOW')) {\n      evaluation_result = 'ALLOW';\n      confidence = 0.9;\n    } else {\n      evaluation_result",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/security/enhanced-evaluator.ts",
+        "start": 503,
+        "end": 513,
+        "startLoc": {
+          "line": 503,
+          "column": 5,
+          "position": 3199
+        },
+        "endLoc": {
+          "line": 513,
+          "column": 18,
+          "position": 3314
+        },
+        "blame": {
+          "503": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "503",
+            "rev": "00000000"
+          },
+          "504": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "504",
+            "rev": "00000000"
+          },
+          "505": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "505",
+            "rev": "00000000"
+          },
+          "506": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "506",
+            "rev": "00000000"
+          },
+          "507": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "507",
+            "rev": "00000000"
+          },
+          "508": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "508",
+            "rev": "00000000"
+          },
+          "509": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "509",
+            "rev": "00000000"
+          },
+          "510": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "510",
+            "rev": "00000000"
+          },
+          "511": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "511",
+            "rev": "00000000"
+          },
+          "512": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "512",
+            "rev": "00000000"
+          },
+          "513": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "513",
+            "rev": "00000000"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/security/enhanced-evaluator.ts",
+        "start": 323,
+        "end": 333,
+        "startLoc": {
+          "line": 323,
+          "column": 2,
+          "position": 2026
+        },
+        "endLoc": {
+          "line": 333,
+          "column": 48,
+          "position": 2141
+        },
+        "blame": {
+          "323": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "323",
+            "rev": "00000000"
+          },
+          "324": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 13:48:48 +0000",
+            "line": "324",
+            "rev": "968f14da"
+          },
+          "325": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:04:56 +0000",
+            "line": "325",
+            "rev": "c5f965dd"
+          },
+          "326": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:04:56 +0000",
+            "line": "326",
+            "rev": "c5f965dd"
+          },
+          "327": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:04:56 +0000",
+            "line": "327",
+            "rev": "c5f965dd"
+          },
+          "328": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:04:56 +0000",
+            "line": "328",
+            "rev": "c5f965dd"
+          },
+          "329": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 13:48:48 +0000",
+            "line": "329",
+            "rev": "968f14da"
+          },
+          "330": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 13:48:48 +0000",
+            "line": "330",
+            "rev": "968f14da"
+          },
+          "331": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:04:56 +0000",
+            "line": "331",
+            "rev": "c5f965dd"
+          },
+          "332": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:04:56 +0000",
+            "line": "332",
+            "rev": "c5f965dd"
+          },
+          "333": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "333",
+            "rev": "00000000"
+          }
+        }
+      }
+    },
+    {
+      "format": "typescript",
+      "lines": 30,
+      "fragment": "const llmResponse = response.content.text.trim().toUpperCase();\n    let evaluation_result: EvaluationResult;\n    let confidence = 0.8;\n\n    if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {\n      evaluation_result = 'DENY';\n      confidence = 0.9;\n    } else if (llmResponse.includes('CONDITIONAL_DENY')) {\n      evaluation_result = 'CONDITIONAL_DENY';\n      confidence = 0.8;\n    } else if (llmResponse.includes('ALLOW')) {\n      evaluation_result = 'ALLOW';\n      confidence = 0.9;\n    } else {\n      evaluation_result = 'CONDITIONAL_DENY';\n      confidence = 0.3;\n    }\n\n    return {\n      evaluation_result,\n      confidence,\n      llm_reasoning: response.content.text,\n      model: response.model || 'unknown',\n      evaluation_time_ms: Date.now()\n    };\n  }\n\n  /**\n   * Elicit user intent using MCP protocol\n   */",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/security/enhanced-evaluator.ts",
+        "start": 580,
+        "end": 609,
+        "startLoc": {
+          "line": 580,
+          "column": 5,
+          "position": 3657
+        },
+        "endLoc": {
+          "line": 609,
+          "column": 6,
+          "position": 3889
+        },
+        "blame": {
+          "580": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "580",
+            "rev": "00000000"
+          },
+          "581": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "581",
+            "rev": "00000000"
+          },
+          "582": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "582",
+            "rev": "00000000"
+          },
+          "583": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "583",
+            "rev": "a74c1599"
+          },
+          "584": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "584",
+            "rev": "00000000"
+          },
+          "585": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "585",
+            "rev": "00000000"
+          },
+          "586": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "586",
+            "rev": "00000000"
+          },
+          "587": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "587",
+            "rev": "00000000"
+          },
+          "588": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "588",
+            "rev": "00000000"
+          },
+          "589": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "589",
+            "rev": "00000000"
+          },
+          "590": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "590",
+            "rev": "00000000"
+          },
+          "591": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "591",
+            "rev": "00000000"
+          },
+          "592": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "592",
+            "rev": "00000000"
+          },
+          "593": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "593",
+            "rev": "00000000"
+          },
+          "594": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "594",
+            "rev": "00000000"
+          },
+          "595": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "595",
+            "rev": "00000000"
+          },
+          "596": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "596",
+            "rev": "a74c1599"
+          },
+          "597": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "597",
+            "rev": "00000000"
+          },
+          "598": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "598",
+            "rev": "00000000"
+          },
+          "599": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "599",
+            "rev": "00000000"
+          },
+          "600": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "600",
+            "rev": "00000000"
+          },
+          "601": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "601",
+            "rev": "00000000"
+          },
+          "602": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "602",
+            "rev": "00000000"
+          },
+          "603": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "603",
+            "rev": "00000000"
+          },
+          "604": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "604",
+            "rev": "00000000"
+          },
+          "605": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "605",
+            "rev": "a74c1599"
+          },
+          "606": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "606",
+            "rev": "a74c1599"
+          },
+          "607": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 11:00:50 +0000",
+            "line": "607",
+            "rev": "50fe0049"
+          },
+          "608": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "608",
+            "rev": "00000000"
+          },
+          "609": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 11:00:50 +0000",
+            "line": "609",
+            "rev": "50fe0049"
+          }
+        }
+      },
+      "secondFile": {
+        "name": "src/security/enhanced-evaluator.ts",
+        "start": 499,
+        "end": 528,
+        "startLoc": {
+          "line": 499,
+          "column": 5,
+          "position": 3157
+        },
+        "endLoc": {
+          "line": 528,
+          "column": 6,
+          "position": 3389
+        },
+        "blame": {
+          "499": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "499",
+            "rev": "00000000"
+          },
+          "500": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "500",
+            "rev": "00000000"
+          },
+          "501": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "501",
+            "rev": "00000000"
+          },
+          "502": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "502",
+            "rev": "a74c1599"
+          },
+          "503": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "503",
+            "rev": "00000000"
+          },
+          "504": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "504",
+            "rev": "00000000"
+          },
+          "505": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "505",
+            "rev": "00000000"
+          },
+          "506": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "506",
+            "rev": "00000000"
+          },
+          "507": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "507",
+            "rev": "00000000"
+          },
+          "508": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "508",
+            "rev": "00000000"
+          },
+          "509": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "509",
+            "rev": "00000000"
+          },
+          "510": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "510",
+            "rev": "00000000"
+          },
+          "511": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "511",
+            "rev": "00000000"
+          },
+          "512": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "512",
+            "rev": "00000000"
+          },
+          "513": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "513",
+            "rev": "00000000"
+          },
+          "514": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "514",
+            "rev": "00000000"
+          },
+          "515": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "515",
+            "rev": "a74c1599"
+          },
+          "516": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "516",
+            "rev": "00000000"
+          },
+          "517": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "517",
+            "rev": "00000000"
+          },
+          "518": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "518",
+            "rev": "00000000"
+          },
+          "519": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "519",
+            "rev": "00000000"
+          },
+          "520": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "520",
+            "rev": "00000000"
+          },
+          "521": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "521",
+            "rev": "00000000"
+          },
+          "522": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "522",
+            "rev": "00000000"
+          },
+          "523": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "523",
+            "rev": "00000000"
+          },
+          "524": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "524",
+            "rev": "a74c1599"
+          },
+          "525": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "525",
+            "rev": "a74c1599"
+          },
+          "526": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "526",
+            "rev": "a74c1599"
+          },
+          "527": {
+            "author": "Not Committed Yet",
+            "date": "2025-08-08 02:40:29 +0000",
+            "line": "527",
+            "rev": "00000000"
+          },
+          "528": {
+            "author": "mako10k          ",
+            "date": "2025-08-07 10:47:51 +0000",
+            "line": "528",
+            "rev": "a74c1599"
+          }
+        }
+      }
+    },
     {
       "format": "typescript",
       "lines": 7,
