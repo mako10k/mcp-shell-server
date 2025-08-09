@@ -264,18 +264,18 @@ export class ShellTools {
   // File Operations
   async listFiles(params: FileListParams) {
     try {
-      const listOptions: any = {
+  const listOptions: Record<string, unknown> = {
         limit: params.limit,
       };
 
       if (params.output_type !== undefined) {
-        listOptions.outputType = params.output_type;
+  listOptions['outputType'] = params.output_type;
       }
       if (params.execution_id !== undefined) {
-        listOptions.executionId = params.execution_id;
+  listOptions['executionId'] = params.execution_id;
       }
       if (params.name_pattern !== undefined) {
-        listOptions.namePattern = params.name_pattern;
+  listOptions['namePattern'] = params.name_pattern;
       }
 
       const result = this.fileManager.listFiles(listOptions);
