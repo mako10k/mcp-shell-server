@@ -11,6 +11,51 @@ import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.j
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+
+// MCP Protocol interfaces for type safety
+interface MCPRequest {
+  method: string;
+  params?: Record<string, unknown>;
+}
+
+interface _MCPRequestOptions {
+  timeout?: number;
+}
+
+interface _MCPServerInterface {
+  request(request: MCPRequest, schema?: unknown, options?: _MCPRequestOptions): Promise<unknown>;
+}
+
+// LLM Sampling interfaces for type safety (matching enhanced-evaluator.ts)
+interface CreateMessageCallback {
+  (request: {
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: { type: 'text'; text: string };
+    }>;
+    maxTokens?: number;
+    temperature?: number;
+    systemPrompt?: string;
+    includeContext?: 'none' | 'thisServer' | 'allServers';
+    stopSequences?: string[];
+    metadata?: Record<string, unknown>;
+    modelPreferences?: Record<string, unknown>;
+  }): Promise<{
+    content: { type: 'text'; text: string };
+    model?: string;
+    stopReason?: string;
+  }>;
+}
+
+// Command safety evaluation result interface
+interface CommandSafetyEvaluationResult {
+  evaluation_result: 'ALLOW' | 'DENY' | 'CONDITIONAL_DENY';
+  basic_classification?: CommandClassification;
+  reasoning: string;
+  requires_confirmation: boolean;
+  suggested_alternatives?: string[];
+  llm_evaluation_used?: boolean;
+}
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class SecurityManager {
@@ -676,7 +721,7 @@ export class SecurityManager {
 
       // Set up MCP server reference for elicitation (proper MCP protocol)
       this.enhancedEvaluator.setMCPServer({
-        request: async (request: { method: string; params?: any }, _schema?: any): Promise<any> => {
+        request: async (request: MCPRequest, _schema?: unknown): Promise<unknown> => {
           try {
             // Use actual MCP server.request method for elicitation protocol
             console.error('Sending MCP elicitation request:', request.method, request.params);
@@ -690,7 +735,7 @@ export class SecurityManager {
               },
               ElicitResultSchema,
               {
-                timeout: request.params?.timeoutMs || 180000 // 3 minutes default
+                timeout: (request.params?.['timeoutMs'] as number) || 180000 // 3 minutes default
               }
             );
             console.error('MCP elicitation result:', result);
@@ -709,7 +754,7 @@ export class SecurityManager {
   /**
    * Set LLM sampling callback for enhanced evaluator
    */
-  setLLMSamplingCallback(callback: any): void {
+  setLLMSamplingCallback(callback: CreateMessageCallback): void {
     if (this.enhancedEvaluator) {
       this.enhancedEvaluator.setCreateMessageCallback(callback);
     }
@@ -718,7 +763,7 @@ export class SecurityManager {
   /**
    * Perform comprehensive safety evaluation using enhanced evaluator
    */
-  async evaluateCommandSafety(command: string, workingDirectory: string, comment?: string): Promise<any> {
+  async evaluateCommandSafety(command: string, workingDirectory: string, comment?: string): Promise<CommandSafetyEvaluationResult> {
     if (!this.enhancedEvaluator || !this.enhancedConfig.enhanced_mode_enabled) {
       // Fallback to basic classification
       return {
