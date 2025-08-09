@@ -1,4 +1,4 @@
-import { SecurityRestrictions } from '../types/index.js';
+import { SecurityRestrictions, SecurityMode } from '../types/index.js';
 import { 
   EnhancedSecurityConfig, 
   DEFAULT_ENHANCED_SECURITY_CONFIG,
@@ -9,6 +9,7 @@ import {
 import { SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
+import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
@@ -19,37 +20,37 @@ export class SecurityManager {
   private enhancedEvaluator: EnhancedSafetyEvaluator | null = null;
 
   constructor() {
-    // Enhanced Security設定の初期化
+    // Initialize Enhanced Security configuration
     this.enhancedConfig = { ...DEFAULT_ENHANCED_SECURITY_CONFIG };
     this.basicSafetyRules = [...DEFAULT_BASIC_SAFETY_RULES];
     
-    // 環境変数からEnhanced Security設定を読み取り
+    // Load Enhanced Security configuration from environment variables
     this.loadEnhancedConfigFromEnv();
     
-    // デフォルトのセキュリティ制限を設定
+    // Set default security restrictions
     this.setDefaultRestrictions();
   }
 
   private setDefaultRestrictions(): void {
-    // 環境変数からデフォルト設定を取得
-    const defaultMode = (process.env['MCP_SHELL_SECURITY_MODE'] as any) || 'permissive';
+    // Get default settings from environment variables
+    const defaultMode = (process.env['MCP_SHELL_SECURITY_MODE'] as SecurityMode) || 'permissive';
     const defaultExecutionTime = parseInt(process.env['MCP_SHELL_MAX_EXECUTION_TIME'] || '300');
     const defaultMemoryMb = parseInt(process.env['MCP_SHELL_MAX_MEMORY_MB'] || '1024');
     const defaultNetworkEnabled = process.env['MCP_SHELL_ENABLE_NETWORK'] !== 'false';
 
-    // Enhanced Modeの自動設定
+    // Automatic configuration for Enhanced Mode
     if (defaultMode === 'enhanced' || defaultMode === 'enhanced-fast') {
       this.enhancedConfig.enhanced_mode_enabled = true;
       this.enhancedConfig.llm_evaluation_enabled = true;
       
-      // enhanced-fastの場合は安全コマンドスキップを有効化
+      // For enhanced-fast, enable safe command skipping
       this.enhancedConfig.enable_pattern_filtering = (defaultMode === 'enhanced-fast');
     }
 
     this.restrictions = {
       restriction_id: generateId(),
       security_mode: defaultMode, 
-      max_execution_time: defaultExecutionTime, // 5分
+      max_execution_time: defaultExecutionTime, // 5 minutes
       max_memory_mb: defaultMemoryMb, // 1GB
       enable_network: defaultNetworkEnabled,
       active: true,
@@ -159,7 +160,7 @@ export class SecurityManager {
 
     switch (this.restrictions.security_mode) {
       case 'permissive':
-        // permissiveモード: 基本的に何でも許可（危険なパターンのみチェック）
+        // permissive mode: basically allow anything (only check dangerous patterns)
         const dangerousPatterns = this.detectDangerousPatterns(command);
         if (dangerousPatterns.length > 0) {
           throw new SecurityError(`Command contains dangerous patterns: ${dangerousPatterns.join(', ')}`, {
@@ -170,7 +171,7 @@ export class SecurityManager {
         break;
 
       case 'moderate':
-        // moderateモード: 基本的なセキュリティチェック
+        // moderate mode: basic security checks
         const moderateDangerousPatterns = this.detectDangerousPatterns(command);
         if (moderateDangerousPatterns.length > 0) {
           throw new SecurityError(`Command contains dangerous patterns: ${moderateDangerousPatterns.join(', ')}`, {
@@ -182,27 +183,27 @@ export class SecurityManager {
 
       case 'enhanced':
       case 'enhanced-fast':
-        // enhancedモード: Enhanced Safety Evaluatorが全ての評価を行う
-        // validateCommand段階では一切のパターンチェックを行わず、
-        // 全ての評価をEnhanced Safety Evaluatorに委ねる
-        // 従来のパターンマッチング検出は完全にスキップ
+        // enhanced mode: Enhanced Safety Evaluator performs all validation
+        // No pattern checks at validateCommand stage
+        // All validation is delegated to Enhanced Safety Evaluator
+        // Legacy pattern matching detection is completely skipped
         break;
 
       case 'restrictive':
-        // restrictiveモード: 読み取り専用・情報取得コマンドのみ許可
+        // restrictive mode: only allow read-only and information retrieval commands
         const restrictiveAllowedCommands = [
-          // ファイル・ディレクトリ操作（読み取り専用）
+          // File/directory operations (read-only)
           'ls', 'cat', 'less', 'more', 'head', 'tail', 'file', 'stat', 'find', 'locate',
-          // テキスト処理
+          // Text processing
           'grep', 'awk', 'sed', 'sort', 'uniq', 'wc', 'cut', 'tr', 'column',
-          // システム情報
+          // System information
           'pwd', 'whoami', 'id', 'date', 'uptime', 'uname', 'hostname', 
           'ps', 'top', 'df', 'du', 'free', 'lscpu', 'lsblk', 'lsusb', 'lspci',
-          // ネットワーク（読み取り専用）
+          // Network (read-only)
           'ping', 'nslookup', 'dig', 'host', 'netstat', 'ss', 'lsof',
-          // 基本コマンド
+          // Basic commands
           'echo', 'printf', 'which', 'type', 'command', 'history', 'env', 'printenv',
-          // アーカイブ（読み取り専用）
+          // Archive (read-only)
           'tar', 'zip', 'unzip', 'gzip', 'gunzip', 'zcat',
         ];
         if (!this.isCommandAllowed(command, restrictiveAllowedCommands, [])) {
@@ -214,7 +215,7 @@ export class SecurityManager {
         break;
 
       case 'custom':
-        // customモード: 詳細設定を使用
+        // custom mode: use detailed settings
         if (!this.isCommandAllowed(command, this.restrictions.allowed_commands, this.restrictions.blocked_commands)) {
           throw new SecurityError(`Command '${command}' is not allowed by security policy`, {
             command,
@@ -284,51 +285,61 @@ export class SecurityManager {
     }
   }
 
-  // 危険なパターンの検出
+  // Detect dangerous patterns
   detectDangerousPatterns(command: string): string[] {
     const dangerousPatterns = [
-      // 破壊的なファイル操作
+      // Command injection attacks (highest priority)
+      /\$\([^)]*rm[^)]*\)/, // $(rm ...)
+      /\$\([^)]*sudo[^)]*\)/, // $(sudo ...)
+      /\$\([^)]*curl[^)]*\|[^)]*bash[^)]*\)/, // $(curl ... | bash)
+      /\$\([^)]*wget[^)]*\|[^)]*sh[^)]*\)/, // $(wget ... | sh)
+      /\$\([^)]*>\s*\/[^)]*\)/, // $(... > /...)
+      /`[^`]*rm[^`]*`/, // `rm ...`
+      /`[^`]*sudo[^`]*`/, // `sudo ...`
+      /`[^`]*curl[^`]*\|[^`]*bash[^`]*`/, // `curl ... | bash`
+
+      // Destructive file operations
       /rm\s+-rf\s+\//, // rm -rf /
       /rm\s+-rf\s+\*/, // rm -rf *
       />\s*\/dev\/sd[a-z]/, // > /dev/sda
       /dd\s+.*of=\/dev\//, // dd ... of=/dev/
-      /mkfs/, // ファイルシステム作成
-      /fdisk/, // パーティション操作
+      /mkfs/, // filesystem creation
+      /fdisk/, // partition operations
 
-      // ネットワーク経由のコード実行
+      // Network-based code execution
       /curl\s+.*\|\s*(bash|sh|zsh|fish)/, // curl | bash
       /wget\s+.*\|\s*(bash|sh|zsh|fish)/, // wget | sh
       /fetch\s+.*\|\s*(bash|sh|zsh|fish)/, // fetch | sh
 
-      // 権限昇格
+      // Privilege escalation
       /sudo\s+/, // sudo
       /su\s+(-\s+)?[a-z]/, // su - user
       /doas\s+/, // doas (OpenBSD sudo)
 
-      // システム設定ファイルへの書き込み
+      // Writing to system configuration files
       />\s*\/etc\//, // > /etc/
       />>\s*\/etc\//, // >> /etc/
       /tee\s+.*\/etc\//, // tee /etc/
 
-      // 機密情報アクセス
+      // Sensitive information access
       /\/etc\/passwd/, // /etc/passwd
       /\/etc\/shadow/, // /etc/shadow
       /\/etc\/group/, // /etc/group
       /\/proc\/.*\/mem/, // /proc/*/mem
 
-      // リバースシェル・ネットワーク攻撃
+      // Reverse shell and network attacks
       /nc\s+.*-e/, // netcat with -e
       /bash\s+-i\s+>&/, // interactive bash redirect
       /\/dev\/tcp\//, // /dev/tcp/ redirection
       /telnet\s+.*\|\s*\/bin\//, // telnet | /bin/
 
-      // システム改変
+      // System modification
       /chroot/, // chroot
       /mount\s+/, // mount
       /umount/, // umount
       /sysctl\s+-w/, // sysctl write
 
-      // プロセス・システム制御
+      // Process and system control
       /kill\s+-9\s+1/, // kill init
       /killall\s+init/, // killall init
       /reboot/, // reboot
@@ -350,9 +361,9 @@ export class SecurityManager {
 
   auditCommand(command: string, workingDirectory?: string): void {
     // Enhanced Security Modeの場合は従来の危険パターン検出をスキップ
-    // Enhanced Safety Evaluatorが全ての評価を行う
+    // Enhanced Safety Evaluator performs all validation
     if (this.restrictions?.security_mode === 'enhanced' || this.restrictions?.security_mode === 'enhanced-fast') {
-      // Enhanced Safety Evaluatorにのみ依存
+      // Rely only on Enhanced Safety Evaluator
       this.validateCommand(command);
 
       if (workingDirectory) {
@@ -361,7 +372,7 @@ export class SecurityManager {
       return;
     }
 
-    // 従来のセキュリティモード（permissive, moderate, restrictive, custom）
+    // Legacy security modes (permissive, moderate, restrictive, custom)
     const dangerousPatterns = this.detectDangerousPatterns(command);
 
     if (dangerousPatterns.length > 0) {
@@ -372,7 +383,7 @@ export class SecurityManager {
       });
     }
 
-    // 追加のセキュリティチェック
+    // Additional security checks
     this.validateCommand(command);
 
     if (workingDirectory) {
@@ -381,27 +392,27 @@ export class SecurityManager {
   }
 
   private isCommandAllowed(command: string, allowedCommands?: string[], blockedCommands?: string[]): boolean {
-    // コマンドから最初の単語（実際のコマンド名）を抽出
+    // Extract the first word (actual command name) from the command
     const cmdName = command.trim().split(/\s+/)[0];
     
-    // cmdNameが空の場合はブロック
+    // Block if cmdName is empty
     if (!cmdName) {
       return false;
     }
     
-    // ブロックされたコマンドをチェック
+    // Check blocked commands
     if (blockedCommands && blockedCommands.length > 0) {
       if (blockedCommands.some(blocked => cmdName === blocked || cmdName.startsWith(blocked))) {
         return false;
       }
     }
     
-    // 許可されたコマンドをチェック
+    // Check allowed commands
     if (allowedCommands && allowedCommands.length > 0) {
       return allowedCommands.some(allowed => cmdName === allowed || cmdName.startsWith(allowed));
     }
     
-    // allowedCommandsが指定されていない場合は許可（blockedCommandsのチェックのみ）
+    // Allow if allowedCommands is not specified (only blockedCommands check)
     return true;
   }
 
@@ -601,7 +612,7 @@ export class SecurityManager {
   /**
    * Initialize Enhanced Safety Evaluator
    */
-  initializeEnhancedEvaluator(historyManager: any, server?: Server): void {
+  initializeEnhancedEvaluator(historyManager: CommandHistoryManager, server?: Server): void {
     if (this.enhancedConfig.enhanced_mode_enabled) {
       this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager);
       

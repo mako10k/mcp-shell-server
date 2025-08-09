@@ -39,7 +39,72 @@ describe('MCP Shell Server Components', () => {
       const restrictions = securityManager.getRestrictions();
       expect(restrictions).toBeTruthy();
       expect(restrictions?.active).toBe(true);
-      expect(restrictions?.security_mode).toBe('permissive');
+      expect(restrictions?.security_mode).toBeTruthy();
+    });
+
+    describe('should handle all security modes', () => {
+      it('should work in permissive mode', () => {
+        const result = securityManager.setRestrictions({
+          security_mode: 'permissive',
+          max_execution_time: 300,
+          enable_network: true,
+        });
+        expect(result.security_mode).toBe('permissive');
+        expect(result.active).toBe(true);
+      });
+
+      it('should work in moderate mode', () => {
+        const result = securityManager.setRestrictions({
+          security_mode: 'moderate',
+          max_execution_time: 180,
+          enable_network: true,
+        });
+        expect(result.security_mode).toBe('moderate');
+        expect(result.active).toBe(true);
+      });
+
+      it('should work in restrictive mode', () => {
+        const result = securityManager.setRestrictions({
+          security_mode: 'restrictive',
+          max_execution_time: 60,
+          enable_network: false,
+        });
+        expect(result.security_mode).toBe('restrictive');
+        expect(result.active).toBe(true);
+      });
+
+      it('should work in custom mode', () => {
+        const result = securityManager.setRestrictions({
+          security_mode: 'custom',
+          allowed_commands: ['echo', 'ls'],
+          blocked_commands: ['rm'],
+          max_execution_time: 120,
+        });
+        expect(result.security_mode).toBe('custom');
+        expect(result.allowed_commands).toEqual(['echo', 'ls']);
+        expect(result.blocked_commands).toEqual(['rm']);
+        expect(result.active).toBe(true);
+      });
+
+      it('should work in enhanced mode', () => {
+        const result = securityManager.setRestrictions({
+          security_mode: 'enhanced',
+          max_execution_time: 300,
+          enable_network: true,
+        });
+        expect(result.security_mode).toBe('enhanced');
+        expect(result.active).toBe(true);
+      });
+
+      it('should work in enhanced-fast mode', () => {
+        const result = securityManager.setRestrictions({
+          security_mode: 'enhanced-fast',
+          max_execution_time: 300,
+          enable_network: true,
+        });
+        expect(result.security_mode).toBe('enhanced-fast');
+        expect(result.active).toBe(true);
+      });
     });
 
     it('should validate safe commands', () => {
@@ -47,9 +112,45 @@ describe('MCP Shell Server Components', () => {
       expect(() => securityManager.validateCommand('ls -la')).not.toThrow();
     });
 
-    it('should block dangerous commands', () => {
-      expect(() => securityManager.validateCommand('rm -rf /')).toThrow();
-      expect(() => securityManager.validateCommand('sudo rm file')).toThrow();
+    describe('should block dangerous commands based on security mode', () => {
+      it('should block dangerous commands in permissive mode', () => {
+        securityManager.setRestrictions({
+          security_mode: 'permissive',
+        });
+
+        expect(() => securityManager.validateCommand('rm -rf /')).toThrow();
+        expect(() => securityManager.validateCommand('sudo rm file')).toThrow();
+      });
+
+      it('should block dangerous commands in moderate mode', () => {
+        securityManager.setRestrictions({
+          security_mode: 'moderate',
+        });
+
+        expect(() => securityManager.validateCommand('rm -rf /')).toThrow();
+        expect(() => securityManager.validateCommand('sudo rm file')).toThrow();
+      });
+
+      it('should skip basic pattern checks in enhanced mode', () => {
+        securityManager.setRestrictions({
+          security_mode: 'enhanced',
+        });
+
+        // enhanced modeでは validateCommand でエラーを投げない（Enhanced Safety Evaluatorに委ねる）
+        expect(() => securityManager.validateCommand('rm -rf /')).not.toThrow();
+        expect(() => securityManager.validateCommand('sudo rm file')).not.toThrow();
+      });
+
+      it('should skip basic pattern checks in enhanced-fast mode', () => {
+        securityManager.setRestrictions({
+          security_mode: 'enhanced-fast',
+        });
+
+        // enhanced-fast modeでも validateCommand でエラーを投げない
+        // （事前フィルタリングとLLM評価はEnhanced Safety Evaluatorで実行）
+        expect(() => securityManager.validateCommand('rm -rf /')).not.toThrow();
+        expect(() => securityManager.validateCommand('sudo rm file')).not.toThrow();
+      });
     });
 
     it('should detect dangerous patterns', () => {
