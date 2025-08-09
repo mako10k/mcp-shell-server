@@ -334,10 +334,14 @@ export class ShellTools {
 
   async listTerminals(params: TerminalListParams) {
     try {
-      const listOptions: any = {
-        limit: params.limit,
-      };
-
+      const listOptions: {
+        sessionNamePattern?: string;
+        statusFilter?: string;
+        limit?: number;
+      } = {};
+      if (params.limit !== undefined) {
+        listOptions.limit = params.limit;
+      }
       if (params.session_name_pattern !== undefined) {
         listOptions.sessionNamePattern = params.session_name_pattern;
       }
