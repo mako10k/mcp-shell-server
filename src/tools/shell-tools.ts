@@ -22,13 +22,24 @@ import {
   CommandHistoryQueryParams,
 } from '../types/schemas.js';
 import { TerminalOperateParams } from '../types/quick-schemas.js';
-import { ProcessManager } from '../core/process-manager.js';
+import { ProcessManager, ExecutionOptions } from '../core/process-manager.js';
 import { TerminalManager } from '../core/terminal-manager.js';
 import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
 import { SecurityManager } from '../security/manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { MCPShellError } from '../utils/errors.js';
+
+// Safety evaluation result interface
+interface SafetyEvaluationResult {
+  evaluation_result: 'ALLOW' | 'DENY' | 'CONDITIONAL_DENY';
+  basic_classification?: string;
+  reasoning: string;
+  requires_confirmation: boolean;
+  suggested_alternatives?: string[];
+  llm_evaluation_used?: boolean;
+  context_analysis?: unknown;
+}
 
 export class ShellTools {
   constructor(
@@ -45,7 +56,7 @@ export class ShellTools {
     try {
       // Enhanced security evaluation (if enabled)
       const workingDir = params.working_directory || this.processManager.getDefaultWorkingDirectory();
-      let safetyEvaluation: any = null;
+      let safetyEvaluation: SafetyEvaluationResult | null = null;
       
       if (this.securityManager.isEnhancedModeEnabled()) {
         safetyEvaluation = await this.securityManager.evaluateCommandSafety(
@@ -89,7 +100,7 @@ export class ShellTools {
       this.securityManager.auditCommand(params.command, params.working_directory);
       this.securityManager.validateExecutionTime(params.timeout_seconds);
 
-      const executionOptions: any = {
+      const executionOptions: ExecutionOptions = {
         command: params.command,
         executionMode: params.execution_mode,
         timeoutSeconds: params.timeout_seconds,
