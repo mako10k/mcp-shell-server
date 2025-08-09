@@ -28,6 +28,7 @@ import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
 import { SecurityManager } from '../security/manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
+import { TerminalOptions, ShellType, Dimensions } from '../core/terminal-manager.js';
 import { MCPShellError } from '../utils/errors.js';
 
 // Safety evaluation result interface
@@ -314,21 +315,14 @@ export class ShellTools {
   // Terminal Management
   async createTerminal(params: TerminalCreateParams) {
     try {
-      const terminalOptions: any = {
-        shellType: params.shell_type,
-        dimensions: params.dimensions,
-        autoSaveHistory: params.auto_save_history,
+      const terminalOptions: TerminalOptions = {
+        shellType: params.shell_type as ShellType,
+        dimensions: params.dimensions as Dimensions,
+        autoSaveHistory: params.auto_save_history ?? false,
+        sessionName: params.session_name ?? '',
+        workingDirectory: params.working_directory,
+        environmentVariables: params.environment_variables,
       };
-
-      if (params.session_name !== undefined) {
-        terminalOptions.sessionName = params.session_name;
-      }
-      if (params.working_directory !== undefined) {
-        terminalOptions.workingDirectory = params.working_directory;
-      }
-      if (params.environment_variables !== undefined) {
-        terminalOptions.environmentVariables = params.environment_variables;
-      }
 
       const terminalInfo = await this.terminalManager.createTerminal(terminalOptions);
 
