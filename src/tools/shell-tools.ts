@@ -156,9 +156,9 @@ export class ShellTools {
       }
 
       // Include safety evaluation in response if available
-      const response: any = { ...executionInfo };
+  const response: Record<string, unknown> = { ...executionInfo };
       if (safetyEvaluation) {
-        response.safety_evaluation = {
+  response['safety_evaluation'] = {
           evaluation_result: safetyEvaluation.evaluation_result,
           reasoning: safetyEvaluation.reasoning,
           basic_classification: safetyEvaluation.basic_classification,
@@ -200,19 +200,19 @@ export class ShellTools {
         statusFilter = undefined;
       }
 
-      const listOptions: any = {
+  const listOptions: Record<string, unknown> = {
         limit: params.limit,
         offset: params.offset,
       };
 
       if (statusFilter !== undefined) {
-        listOptions.status = statusFilter;
+  listOptions['status'] = statusFilter;
       }
       if (params.command_pattern !== undefined) {
-        listOptions.commandPattern = params.command_pattern;
+  listOptions['commandPattern'] = params.command_pattern;
       }
       if (params.session_id !== undefined) {
-        listOptions.sessionId = params.session_id;
+  listOptions['sessionId'] = params.session_id;
       }
 
       const result = this.processManager.listExecutions(listOptions);
