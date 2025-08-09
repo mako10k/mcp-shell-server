@@ -296,7 +296,7 @@ export class ProcessManager {
 
     try {
       // 実行オプションを準備
-      const { inputOutputId, ...baseOptions } = options;
+      const { inputOutputId: _inputOutputId, ...baseOptions } = options;
       const updatedOptions: ExecutionOptions = { 
         ...baseOptions,
         ...(resolvedInputData !== undefined && { inputData: resolvedInputData })
@@ -1557,7 +1557,7 @@ export class ProcessManager {
 
   cleanup(): void {
     // 実行中のプロセスを全て終了
-    for (const [_pid, childProcess] of this.processes) {
+    for (const [, childProcess] of this.processes) {
       try {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
