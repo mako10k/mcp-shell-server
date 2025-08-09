@@ -360,16 +360,21 @@ export class MCPShellServer {
     });
   }
 
-  // バックグラウンドプロセス終了時の通知メソッド
-  private async notifyBackgroundProcessComplete(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
-    // コマンドの先頭40文字で識別しやすくする
+  // バックグラウンドプロセス通知用の共通ヘルパー
+  private getProcessNotificationInfo(executionInfo: ExecutionInfo): { commandPreview: string; outputSizeStr: string } {
     const commandPreview = executionInfo.command.length > 40 
       ? `${executionInfo.command.substring(0, 37)}...`
       : executionInfo.command;
     
-    // 出力サイズを計算
     const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);
     const outputSizeStr = outputSize > 0 ? ` (${outputSize} bytes)` : '';
+    
+    return { commandPreview, outputSizeStr };
+  }
+
+  // バックグラウンドプロセス終了時の通知メソッド
+  private async notifyBackgroundProcessComplete(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
+    const { commandPreview, outputSizeStr } = this.getProcessNotificationInfo(executionInfo);
     
     const message = `✅ Background process completed: ${commandPreview} | Exit: ${executionInfo.exit_code || 0} | Time: ${executionInfo.execution_time_ms}ms${outputSizeStr}`;
     
@@ -378,7 +383,7 @@ export class MCPShellServer {
       command: executionInfo.command,
       exit_code: executionInfo.exit_code,
       execution_time_ms: executionInfo.execution_time_ms,
-      output_size: outputSize
+      output_size: (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0)
     }, 'background-process');
     
     // MCPクライアントに通知を送信
@@ -397,12 +402,7 @@ export class MCPShellServer {
   }
 
   private async notifyBackgroundProcessError(executionId: string, executionInfo: ExecutionInfo, error?: Error): Promise<void> {
-    const commandPreview = executionInfo.command.length > 40 
-      ? `${executionInfo.command.substring(0, 37)}...`
-      : executionInfo.command;
-    
-    const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);
-    const outputSizeStr = outputSize > 0 ? ` (${outputSize} bytes)` : '';
+    const { commandPreview, outputSizeStr } = this.getProcessNotificationInfo(executionInfo);
     
     const message = `❌ Background process failed: ${commandPreview} | Status: ${executionInfo.status} | Time: ${executionInfo.execution_time_ms}ms${outputSizeStr}`;
     
@@ -412,7 +412,7 @@ export class MCPShellServer {
       status: executionInfo.status,
       execution_time_ms: executionInfo.execution_time_ms,
       error: error?.message,
-      output_size: outputSize
+      output_size: (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0)
     }, 'background-process');
     
     // MCPクライアントに通知を送信
@@ -431,12 +431,7 @@ export class MCPShellServer {
   }
 
   private async notifyBackgroundProcessTimeout(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
-    const commandPreview = executionInfo.command.length > 40 
-      ? `${executionInfo.command.substring(0, 37)}...`
-      : executionInfo.command;
-    
-    const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);
-    const outputSizeStr = outputSize > 0 ? ` (${outputSize} bytes)` : '';
+    const { commandPreview, outputSizeStr } = this.getProcessNotificationInfo(executionInfo);
     
     const message = `⏰ Background process timeout: ${commandPreview} | Time: ${executionInfo.execution_time_ms}ms${outputSizeStr}`;
     
@@ -445,7 +440,7 @@ export class MCPShellServer {
       command: executionInfo.command,
       status: executionInfo.status,
       execution_time_ms: executionInfo.execution_time_ms,
-      output_size: outputSize
+      output_size: (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0)
     }, 'background-process');
     
     // MCPクライアントに通知を送信

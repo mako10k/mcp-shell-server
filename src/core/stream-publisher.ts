@@ -85,32 +85,15 @@ export class StreamPublisher {
       subscriberSet.add(subscriberId);
     }
   }
-  
+
   /**
-   * プロセス開始を通知
+   * 購読者に通知を送信する共通ヘルパー
    */
-  async notifyProcessStart(executionId: string, command: string): Promise<void> {
-    const subscriberIds = this.executionSubscribers.get(executionId);
-    if (!subscriberIds) return;
-    
-    const notifications = Array.from(subscriberIds).map(async (subscriberId) => {
-      const subscriber = this.subscribers.get(subscriberId);
-      if (subscriber?.onProcessStart) {
-        try {
-          await subscriber.onProcessStart(executionId, command);
-        } catch (error) {
-          console.error(`StreamPublisher: Error notifying subscriber ${subscriberId}:`, error);
-        }
-      }
-    });
-    
-    await Promise.allSettled(notifications);
-  }
-  
-  /**
-   * 出力データを通知
-   */
-  async notifyOutputData(executionId: string, data: string, isStderr: boolean = false): Promise<void> {
+  private async notifySubscribers<T extends unknown[]>(
+    executionId: string,
+    callback: (subscriber: StreamSubscriber, subscriberId: string, ...args: T) => Promise<void> | void,
+    ...args: T
+  ): Promise<void> {
     const subscriberIds = this.executionSubscribers.get(executionId);
     if (!subscriberIds) return;
     
@@ -118,7 +101,7 @@ export class StreamPublisher {
       const subscriber = this.subscribers.get(subscriberId);
       if (subscriber) {
         try {
-          await subscriber.onOutputData(executionId, data, isStderr);
+          await callback(subscriber, subscriberId, ...args);
         } catch (error) {
           console.error(`StreamPublisher: Error notifying subscriber ${subscriberId}:`, error);
         }
@@ -129,24 +112,49 @@ export class StreamPublisher {
   }
   
   /**
+   * プロセス開始を通知
+   */
+  async notifyProcessStart(executionId: string, command: string): Promise<void> {
+    await this.notifySubscribers(
+      executionId,
+      (subscriber, _, executionId, command) => {
+        if (subscriber.onProcessStart) {
+          return subscriber.onProcessStart(executionId, command);
+        }
+      },
+      executionId,
+      command
+    );
+  }
+  
+  /**
+   * 出力データを通知
+   */
+  async notifyOutputData(executionId: string, data: string, isStderr: boolean = false): Promise<void> {
+    await this.notifySubscribers(
+      executionId,
+      (subscriber, _, executionId, data, isStderr) => 
+        subscriber.onOutputData(executionId, data, isStderr),
+      executionId,
+      data,
+      isStderr
+    );
+  }
+  
+  /**
    * プロセス終了を通知
    */
   async notifyProcessEnd(executionId: string, exitCode: number | null): Promise<void> {
-    const subscriberIds = this.executionSubscribers.get(executionId);
-    if (!subscriberIds) return;
-    
-    const notifications = Array.from(subscriberIds).map(async (subscriberId) => {
-      const subscriber = this.subscribers.get(subscriberId);
-      if (subscriber?.onProcessEnd) {
-        try {
-          await subscriber.onProcessEnd(executionId, exitCode);
-        } catch (error) {
-          console.error(`StreamPublisher: Error notifying subscriber ${subscriberId}:`, error);
+    await this.notifySubscribers(
+      executionId,
+      (subscriber, _, executionId, exitCode) => {
+        if (subscriber.onProcessEnd) {
+          return subscriber.onProcessEnd(executionId, exitCode);
         }
-      }
-    });
-    
-    await Promise.allSettled(notifications);
+      },
+      executionId,
+      exitCode
+    );
     
     // 実行完了後はsubscription情報をクリーンアップ
     this.executionSubscribers.delete(executionId);
@@ -156,21 +164,16 @@ export class StreamPublisher {
    * エラーを通知
    */
   async notifyError(executionId: string, error: Error): Promise<void> {
-    const subscriberIds = this.executionSubscribers.get(executionId);
-    if (!subscriberIds) return;
-    
-    const notifications = Array.from(subscriberIds).map(async (subscriberId) => {
-      const subscriber = this.subscribers.get(subscriberId);
-      if (subscriber?.onError) {
-        try {
-          await subscriber.onError(executionId, error);
-        } catch (subscriberError) {
-          console.error(`StreamPublisher: Error notifying subscriber ${subscriberId}:`, subscriberError);
+    await this.notifySubscribers(
+      executionId,
+      (subscriber, _, executionId, error) => {
+        if (subscriber.onError) {
+          return subscriber.onError(executionId, error);
         }
-      }
-    });
-    
-    await Promise.allSettled(notifications);
+      },
+      executionId,
+      error
+    );
   }
   
   /**

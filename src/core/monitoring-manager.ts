@@ -22,6 +22,15 @@ export class MonitoringManager {
     this.startSystemMonitoring();
   }
 
+  /**
+   * プロセス情報取得用の exec コマンド実行ヘルパー
+   */
+  private async getExecAsync() {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    return promisify(exec);
+  }
+
   startProcessMonitor(
     processId: number,
     intervalMs = 1000,
@@ -119,9 +128,7 @@ export class MonitoringManager {
 
   private async getLinuxCpuUsage(processId: number): Promise<number> {
     try {
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
+      const execAsync = await this.getExecAsync();
 
       const { stdout } = await execAsync(`ps -p ${processId} -o %cpu --no-headers`);
       return parseFloat(stdout.trim()) || 0;
@@ -132,9 +139,7 @@ export class MonitoringManager {
 
   private async getMacOsCpuUsage(processId: number): Promise<number> {
     try {
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
+      const execAsync = await this.getExecAsync();
 
       const { stdout } = await execAsync(`ps -p ${processId} -o %cpu`);
       const lines = stdout.trim().split('\n');
@@ -163,9 +168,7 @@ export class MonitoringManager {
 
   private async getLinuxMemoryUsage(processId: number): Promise<number> {
     try {
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
+      const execAsync = await this.getExecAsync();
 
       const { stdout } = await execAsync(`ps -p ${processId} -o rss --no-headers`);
       const rssKb = parseInt(stdout.trim()) || 0;
