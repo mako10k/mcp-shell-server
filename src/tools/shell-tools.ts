@@ -1,3 +1,15 @@
+import { ShellType, Dimensions } from '../types/index.js';
+// ターミナル出力レスポンス型（クラス全体で利用可能にする）
+export interface TerminalOutputResponse {
+  terminal_id: string;
+  output: string;
+  line_count: number;
+  total_lines: number;
+  has_more: boolean;
+  start_line: number;
+  next_start_line: number;
+  foreground_process?: unknown;
+}
 import {
   ShellExecuteParams,
   ShellGetExecutionParams,
@@ -28,8 +40,10 @@ import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
 import { SecurityManager } from '../security/manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
-import { TerminalOptions, ShellType, Dimensions } from '../core/terminal-manager.js';
+import { TerminalOptions } from '../core/terminal-manager.js';
 import { MCPShellError } from '../utils/errors.js';
+
+// ...existing code...
 
 // Safety evaluation result interface
 interface SafetyEvaluationResult {
@@ -41,6 +55,8 @@ interface SafetyEvaluationResult {
   llm_evaluation_used?: boolean;
   context_analysis?: unknown;
 }
+
+// ...existing code...
 
 export class ShellTools {
   constructor(
@@ -313,6 +329,7 @@ export class ShellTools {
   }
 
   // Terminal Management
+// ...existing code...
   async createTerminal(params: TerminalCreateParams) {
     try {
       const terminalOptions: TerminalOptions = {
@@ -400,7 +417,7 @@ export class ShellTools {
         params.include_foreground_process
       );
 
-      const response: any = {
+      const response: TerminalOutputResponse = {
         terminal_id: params.terminal_id,
         output: result.output,
         line_count: result.line_count,
@@ -448,24 +465,24 @@ export class ShellTools {
   // Security & Monitoring
   async setSecurityRestrictions(params: SecuritySetRestrictionsParams) {
     try {
-      const restrictionParams: any = {
+  const restrictionParams: Record<string, unknown> = {
         enable_network: params.enable_network,
       };
 
       if (params.allowed_commands !== undefined) {
-        restrictionParams.allowed_commands = params.allowed_commands;
+        restrictionParams['allowed_commands'] = params.allowed_commands;
       }
       if (params.blocked_commands !== undefined) {
-        restrictionParams.blocked_commands = params.blocked_commands;
+        restrictionParams['blocked_commands'] = params.blocked_commands;
       }
       if (params.allowed_directories !== undefined) {
-        restrictionParams.allowed_directories = params.allowed_directories;
+        restrictionParams['allowed_directories'] = params.allowed_directories;
       }
       if (params.max_execution_time !== undefined) {
-        restrictionParams.max_execution_time = params.max_execution_time;
+        restrictionParams['max_execution_time'] = params.max_execution_time;
       }
       if (params.max_memory_mb !== undefined) {
-        restrictionParams.max_memory_mb = params.max_memory_mb;
+        restrictionParams['max_memory_mb'] = params.max_memory_mb;
       }
 
       const restrictions = this.securityManager.setRestrictions(restrictionParams);
@@ -486,30 +503,30 @@ export class ShellTools {
 
       // 要求されたメトリクスのみを含める
       if (params.include_metrics) {
-        const filteredStats: any = {
+  const filteredStats: Record<string, unknown> = {
           collected_at: stats.collected_at,
         };
 
         for (const metric of params.include_metrics) {
           switch (metric) {
             case 'processes':
-              filteredStats.active_processes = stats.active_processes;
+              filteredStats['active_processes'] = stats.active_processes;
               break;
             case 'terminals':
-              filteredStats.active_terminals = stats.active_terminals;
+              filteredStats['active_terminals'] = stats.active_terminals;
               break;
             case 'files':
-              filteredStats.total_files = stats.total_files;
+              filteredStats['total_files'] = stats.total_files;
               break;
             case 'system':
-              filteredStats.system_load = stats.system_load;
-              filteredStats.memory_usage = stats.memory_usage;
-              filteredStats.uptime_seconds = stats.uptime_seconds;
+              filteredStats['system_load'] = stats.system_load;
+              filteredStats['memory_usage'] = stats.memory_usage;
+              filteredStats['uptime_seconds'] = stats.uptime_seconds;
               break;
           }
         }
 
-        stats = filteredStats;
+        return filteredStats;
       }
 
       return stats;
@@ -574,7 +591,15 @@ export class ShellTools {
       let terminalInfo = null;
       let inputRejected = false;
       let rejectionReason = "";
-      let unreadOutput: any = null;
+      let unreadOutput: {
+        output: string;
+        line_count: number;
+        total_lines: number;
+        has_more: boolean;
+        start_line: number;
+        next_start_line: number;
+        foreground_process?: unknown;
+      } | null = null;
 
       // 1. ターミナルの準備 (新規作成 or 既存利用)
       if (!terminalId) {
@@ -583,15 +608,14 @@ export class ShellTools {
         }
         
         // 新規ターミナル作成
-        const createOptions: any = {
+        const createOptions: TerminalOptions = {
           shellType: params.shell_type || 'bash',
           dimensions: params.dimensions || { width: 120, height: 30 },
           autoSaveHistory: true,
+          sessionName: params.session_name ?? undefined,
+          workingDirectory: params.working_directory ?? undefined,
+          environmentVariables: params.environment_variables ?? undefined
         };
-
-        if (params.session_name) createOptions.sessionName = params.session_name;
-        if (params.working_directory) createOptions.workingDirectory = params.working_directory;
-        if (params.environment_variables) createOptions.environmentVariables = params.environment_variables;
 
         terminalInfo = await this.terminalManager.createTerminal(createOptions);
         terminalId = terminalInfo.terminal_id;
@@ -626,9 +650,8 @@ export class ShellTools {
         }
         
         // inputまたはcommandが指定されていれば送信（未読出力チェック付き）
-        const inputToSend = params.input || params.command;
-        
-        if (inputToSend) {
+    const inputToSend = params.input || params.command;
+    if (typeof inputToSend === "string" && inputToSend.length > 0) {
           // 制御コード送信時は自動的にforce_inputをtrueにする（Ctrl+C等の緊急操作のため）
           const effectiveForceInput = params.force_input || params.control_codes;
           
@@ -641,8 +664,6 @@ export class ShellTools {
               params.include_ansi || false,
               false // include_foreground_process
             );
-            
-            // 未読出力がある場合は入力を拒否（ただし処理は続行）
             if (unreadCheck.output && unreadCheck.output.trim().length > 0) {
               inputRejected = true;
               rejectionReason = "Unread output exists. Read output first or use force_input=true to override.";
@@ -683,18 +704,18 @@ export class ShellTools {
       }
 
       // 4. レスポンス構築
-      const response: any = {
+  const response: Record<string, unknown> = {
         terminal_id: terminalId,
         success: !inputRejected, // 入力が拒否された場合はfalse
       };
 
       // 入力拒否情報を追加
       if (inputRejected) {
-        response.input_rejected = true;
-        response.reason = rejectionReason;
+        response['input_rejected'] = true;
+        response['reason'] = rejectionReason;
         if (unreadOutput) {
-          response.unread_output = unreadOutput.output;
-          response.unread_output_info = {
+          response['unread_output'] = unreadOutput.output;
+          response['unread_output_info'] = {
             line_count: unreadOutput.line_count,
             total_lines: unreadOutput.total_lines,
             has_more: unreadOutput.has_more,
@@ -705,12 +726,12 @@ export class ShellTools {
       }
 
       if (params.return_terminal_info !== false && terminalInfo) {
-        response.terminal_info = terminalInfo;
+        response['terminal_info'] = terminalInfo;
       }
 
       if (output) {
-        response.output = output.output;
-        response.output_info = {
+        response['output'] = output.output;
+        response['output_info'] = {
           line_count: output.line_count,
           total_lines: output.total_lines,
           has_more: output.has_more,
@@ -802,27 +823,23 @@ export class ShellTools {
       }
 
       // Handle search and pagination
-      const searchQuery: any = {};
+  const searchQuery: Record<string, unknown> = {};
       
       if (params.command_pattern || params.query) {
-        searchQuery.command = params.command_pattern || params.query;
+        searchQuery['command'] = params.command_pattern || params.query;
       }
-      
       if (params.working_directory) {
-        searchQuery.working_directory = params.working_directory;
+        searchQuery['working_directory'] = params.working_directory;
       }
-      
       if (params.was_executed !== undefined) {
-        searchQuery.was_executed = params.was_executed;
+        searchQuery['was_executed'] = params.was_executed;
       }
-      
       if (params.safety_classification) {
-        searchQuery.safety_classification = params.safety_classification;
+        searchQuery['safety_classification'] = params.safety_classification;
       }
-      
       // Calculate pagination
       const offset = (params.page - 1) * params.page_size;
-      searchQuery.limit = params.page_size + offset; // Get more to handle offset
+      searchQuery['limit'] = params.page_size + offset; // Get more to handle offset
       
       let results = this.historyManager.searchHistory(searchQuery);
       

@@ -23,7 +23,7 @@ import {
   ResourceNotFoundError,
   ResourceLimitError,
 } from '../utils/errors.js';
-import type { TerminalManager } from './terminal-manager.js';
+import type { TerminalManager, TerminalOptions } from './terminal-manager.js';
 import type { FileManager } from './file-manager.js';
 import { StreamPublisher } from './stream-publisher.js';
 import { FileStorageSubscriber } from './file-storage-subscriber.js';
@@ -51,7 +51,7 @@ export interface ExecutionOptions {
 // バックグラウンドプロセス終了時のコールバック型
 interface BackgroundProcessCallback {
   onComplete?: (executionId: string, executionInfo: ExecutionInfo) => void | Promise<void>;
-  onError?: (executionId: string, executionInfo: ExecutionInfo, error: any) => void | Promise<void>;
+  onError?: (executionId: string, executionInfo: ExecutionInfo, error: unknown) => void | Promise<void>;
   onTimeout?: (executionId: string, executionInfo: ExecutionInfo) => void | Promise<void>;
 }
 
@@ -260,16 +260,17 @@ export class ProcessManager {
     // 新規ターミナル作成オプションがある場合
     if (options.createTerminal && this.terminalManager) {
       try {
-        const terminalOptions: any = {
+        const terminalOptions: TerminalOptions = {
           sessionName: `exec-${executionId}`,
-          workingDirectory: options.workingDirectory,
-          environmentVariables: options.environmentVariables,
-          // デフォルトの寸法を設定
+          shellType: (options.terminalShell as TerminalOptions['shellType']) || 'bash',
           dimensions: options.terminalDimensions || { width: 80, height: 24 },
+          autoSaveHistory: true,
         };
-
-        if (options.terminalShell) {
-          terminalOptions.shellType = options.terminalShell;
+        if (options.workingDirectory) {
+          terminalOptions.workingDirectory = options.workingDirectory;
+        }
+        if (options.environmentVariables) {
+          terminalOptions.environmentVariables = options.environmentVariables;
         }
 
         const terminalInfo = await this.terminalManager.createTerminal(terminalOptions);
@@ -361,7 +362,9 @@ export class ProcessManager {
       });
 
       // StreamingPipelineReaderをSTDINに接続
-      inputStream.pipe(child.stdin!);
+      if (child.stdin) {
+        inputStream.pipe(child.stdin);
+      }
       
       inputStream.on('error', (error) => {
         console.error(`StreamingPipelineReader error for ${executionId}: ${error.message}`);
@@ -374,23 +377,25 @@ export class ProcessManager {
       }
 
       // STDOUT処理
-      child.stdout!.on('data', (data) => {
-        const chunk = data.toString();
-        if (stdout.length + chunk.length <= options.maxOutputSize) {
-          stdout += chunk;
-        } else {
-          outputTruncated = true;
-        }
+      if (child.stdout) {
+        child.stdout.on('data', (data) => {
+          const chunk = data.toString();
+          if (stdout.length + chunk.length <= options.maxOutputSize) {
+            stdout += chunk;
+          } else {
+            outputTruncated = true;
+          }
 
-        // StreamPublisher通知
-        if (this.streamPublisher) {
-          this.streamPublisher.notifyOutputData(executionId, chunk, false);
-        }
-      });
+          // StreamPublisher通知
+          if (this.streamPublisher) {
+            this.streamPublisher.notifyOutputData(executionId, chunk, false);
+          }
+        });
+      }
 
       // STDERR処理
-      if (options.captureStderr) {
-        child.stderr!.on('data', (data) => {
+      if (options.captureStderr && child.stderr) {
+        child.stderr.on('data', (data) => {
           const chunk = data.toString();
           if (stderr.length + chunk.length <= options.maxOutputSize) {
             stderr += chunk;
@@ -501,7 +506,9 @@ export class ProcessManager {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      this.processes.set(childProcess.pid!, childProcess);
+      if (childProcess.pid) {
+        this.processes.set(childProcess.pid, childProcess);
+      }
 
       // タイムアウトの設定
       const timeout = setTimeout(async () => {
@@ -585,7 +592,9 @@ export class ProcessManager {
       // プロセス終了時の処理
       childProcess.on('close', async (code) => {
         clearTimeout(timeout);
-        this.processes.delete(childProcess.pid!);
+        if (childProcess.pid) {
+          this.processes.delete(childProcess.pid);
+        }
 
         const executionTime = Date.now() - startTime;
         const executionInfo = this.executions.get(executionId);
@@ -628,7 +637,9 @@ export class ProcessManager {
       // エラー処理
       childProcess.on('error', (error) => {
         clearTimeout(timeout);
-        this.processes.delete(childProcess.pid!);
+        if (childProcess.pid) {
+          this.processes.delete(childProcess.pid);
+        }
 
         const executionInfo = this.executions.get(executionId);
         if (executionInfo) {
@@ -677,7 +688,9 @@ export class ProcessManager {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      this.processes.set(childProcess.pid!, childProcess);
+      if (childProcess.pid) {
+        this.processes.set(childProcess.pid, childProcess);
+      }
 
       // フォアグラウンドタイムアウトの設定
       const foregroundTimeoutHandle = setTimeout(() => {
@@ -821,7 +834,9 @@ export class ProcessManager {
       childProcess.on('close', async (code) => {
         clearTimeout(foregroundTimeoutHandle);
         clearTimeout(finalTimeoutHandle);
-        this.processes.delete(childProcess.pid!);
+        if (childProcess.pid) {
+          this.processes.delete(childProcess.pid);
+        }
 
         // バックグラウンドに移行していない場合のみ処理
         if (!backgroundTransitionReason) {
@@ -860,7 +875,9 @@ export class ProcessManager {
       childProcess.on('error', (error) => {
         clearTimeout(foregroundTimeoutHandle);
         clearTimeout(finalTimeoutHandle);
-        this.processes.delete(childProcess.pid!);
+        if (childProcess.pid) {
+          this.processes.delete(childProcess.pid);
+        }
 
         if (!backgroundTransitionReason) {
           const executionInfo = this.executions.get(executionId);
@@ -897,7 +914,9 @@ export class ProcessManager {
       detached: options.executionMode === 'background',
     });
 
-    this.processes.set(childProcess.pid!, childProcess);
+    if (childProcess.pid) {
+      this.processes.set(childProcess.pid, childProcess);
+    }
 
     const executionInfo = this.executions.get(executionId);
     if (executionInfo && childProcess.pid !== undefined) {
@@ -910,7 +929,11 @@ export class ProcessManager {
       this.handleBackgroundProcess(executionId, childProcess, options);
     }
 
-    return executionInfo!;
+    const resultExecutionInfo = this.executions.get(executionId);
+    if (!resultExecutionInfo) {
+      throw new Error(`Execution info not found for ID: ${executionId}`);
+    }
+    return resultExecutionInfo;
   }
 
   private handleBackgroundProcess(
@@ -956,9 +979,12 @@ export class ProcessManager {
         if (this.backgroundProcessCallbacks.onTimeout) {
           setImmediate(async () => {
             try {
-              const result = this.backgroundProcessCallbacks.onTimeout!(executionId, executionInfo);
-              if (result instanceof Promise) {
-                await result;
+              const callback = this.backgroundProcessCallbacks.onTimeout;
+              if (callback) {
+                const result = callback(executionId, executionInfo);
+                if (result instanceof Promise) {
+                  await result;
+                }
               }
             } catch (callbackError) {
               // コールバックエラーは内部ログに記録のみ
@@ -983,7 +1009,9 @@ export class ProcessManager {
     // プロセス終了時の処理
     childProcess.on('close', async (code) => {
       clearTimeout(timeout);
-      this.processes.delete(childProcess.pid!);
+      if (childProcess.pid) {
+        this.processes.delete(childProcess.pid);
+      }
 
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
@@ -1008,9 +1036,12 @@ export class ProcessManager {
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
             try {
-              const result = this.backgroundProcessCallbacks.onComplete!(executionId, executionInfo);
-              if (result instanceof Promise) {
-                await result;
+              const callback = this.backgroundProcessCallbacks.onComplete;
+              if (callback) {
+                const result = callback(executionId, executionInfo);
+                if (result instanceof Promise) {
+                  await result;
+                }
               }
             } catch (callbackError) {
               // コールバックエラーは内部ログに記録のみ
@@ -1023,7 +1054,9 @@ export class ProcessManager {
 
     childProcess.on('error', (error) => {
       clearTimeout(timeout);
-      this.processes.delete(childProcess.pid!);
+      if (childProcess.pid) {
+        this.processes.delete(childProcess.pid);
+      }
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
         executionInfo.status = 'failed';
@@ -1035,9 +1068,12 @@ export class ProcessManager {
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
             try {
-              const result = this.backgroundProcessCallbacks.onError!(executionId, executionInfo, error);
-              if (result instanceof Promise) {
-                await result;
+              const callback = this.backgroundProcessCallbacks.onError;
+              if (callback) {
+                const result = callback(executionId, executionInfo, error);
+                if (result instanceof Promise) {
+                  await result;
+                }
               }
             } catch (callbackError) {
               // コールバックエラーは内部ログに記録のみ
@@ -1077,7 +1113,9 @@ export class ProcessManager {
     // プロセス終了時の処理
     childProcess.on('close', async (code) => {
       clearTimeout(timeout);
-      this.processes.delete(childProcess.pid!);
+      if (childProcess.pid) {
+        this.processes.delete(childProcess.pid);
+      }
 
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
@@ -1097,9 +1135,12 @@ export class ProcessManager {
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
             try {
-              const result = this.backgroundProcessCallbacks.onComplete!(executionId, executionInfo);
-              if (result instanceof Promise) {
-                await result;
+              const callback = this.backgroundProcessCallbacks.onComplete;
+              if (callback) {
+                const result = callback(executionId, executionInfo);
+                if (result instanceof Promise) {
+                  await result;
+                }
               }
             } catch (callbackError) {
               // コールバックエラーは内部ログに記録のみ
@@ -1112,7 +1153,9 @@ export class ProcessManager {
 
     childProcess.on('error', (error) => {
       clearTimeout(timeout);
-      this.processes.delete(childProcess.pid!);
+      if (childProcess.pid) {
+        this.processes.delete(childProcess.pid);
+      }
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
         executionInfo.status = 'failed';
@@ -1129,9 +1172,12 @@ export class ProcessManager {
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
             try {
-              const result = this.backgroundProcessCallbacks.onError!(executionId, executionInfo, error);
-              if (result instanceof Promise) {
-                await result;
+              const callback = this.backgroundProcessCallbacks.onError;
+              if (callback) {
+                const result = callback(executionId, executionInfo, error);
+                if (result instanceof Promise) {
+                  await result;
+                }
               }
             } catch (callbackError) {
               // コールバックエラーは内部ログに記録のみ
@@ -1210,9 +1256,12 @@ export class ProcessManager {
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
             try {
-              const result = this.backgroundProcessCallbacks.onComplete!(executionId, executionInfo);
-              if (result instanceof Promise) {
-                await result;
+              const callback = this.backgroundProcessCallbacks.onComplete;
+              if (callback) {
+                const result = callback(executionId, executionInfo);
+                if (result instanceof Promise) {
+                  await result;
+                }
               }
             } catch (callbackError) {
               // コールバックエラーは内部ログに記録のみ
@@ -1235,9 +1284,12 @@ export class ProcessManager {
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
             try {
-              const result = this.backgroundProcessCallbacks.onError!(executionId, executionInfo, error);
-              if (result instanceof Promise) {
-                await result;
+              const callback = this.backgroundProcessCallbacks.onError;
+              if (callback) {
+                const result = callback(executionId, executionInfo, error);
+                if (result instanceof Promise) {
+                  await result;
+                }
               }
             } catch (callbackError) {
               // コールバックエラーは内部ログに記録のみ
@@ -1251,7 +1303,11 @@ export class ProcessManager {
     // プロセスをデタッチ
     childProcess.unref();
 
-    return this.executions.get(executionId)!;
+    const resultExecutionInfo = this.executions.get(executionId);
+    if (!resultExecutionInfo) {
+      throw new Error(`Execution info not found for ID: ${executionId}`);
+    }
+    return resultExecutionInfo;
   }
 
   private async saveOutputToFile(
@@ -1482,7 +1538,7 @@ export class ProcessManager {
     try {
       // プロセスを終了
       const signalName = signal === 'KILL' ? 'SIGKILL' : `SIG${signal}`;
-      const killed = childProcess.kill(signalName as any);
+  const killed = childProcess.kill(signalName as NodeJS.Signals);
 
       if (!killed && force && signal !== 'KILL') {
         // 強制終了

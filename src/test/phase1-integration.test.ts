@@ -262,8 +262,12 @@ describe('Phase 1 Integration Tests', () => {
     it('should integrate SecurityManager with ConfigManager', async () => {
       // Load config and update security manager
       const config = await configManager.loadConfig();
-      securityManager.setEnhancedConfig(config.enhanced_security!);
-      securityManager.setBasicSafetyRules(config.basic_safety_rules!);
+      if (config.enhanced_security) {
+        securityManager.setEnhancedConfig(config.enhanced_security);
+      }
+      if (config.basic_safety_rules) {
+        securityManager.setBasicSafetyRules(config.basic_safety_rules);
+      }
       
       // Test classification with loaded config
       const classification = securityManager.classifyCommandSafety('ls -la');

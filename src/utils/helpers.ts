@@ -234,7 +234,7 @@ export interface LogEntry {
   timestamp: string;
   level: LogLevel;
   message: string;
-  data?: any;
+  data?: unknown;
   component?: string;
 }
 
@@ -246,7 +246,7 @@ const MAX_LOG_ENTRIES = 1000;
 export function internalLog(
   level: LogLevel,
   message: string,
-  data?: any,
+  data?: unknown,
   component?: string
 ): void {
   const entry: LogEntry = {
@@ -292,12 +292,12 @@ export function getLogEntries(level?: LogLevel, component?: string, limit?: numb
 
 // 便利なログ関数
 export const logger = {
-  debug: (message: string, data?: any, component?: string) =>
+  debug: (message: string, data?: unknown, component?: string) =>
     internalLog(LogLevel.DEBUG, message, data, component),
-  info: (message: string, data?: any, component?: string) =>
+  info: (message: string, data?: unknown, component?: string) =>
     internalLog(LogLevel.INFO, message, data, component),
-  warn: (message: string, data?: any, component?: string) =>
+  warn: (message: string, data?: unknown, component?: string) =>
     internalLog(LogLevel.WARN, message, data, component),
-  error: (message: string, data?: any, component?: string) =>
+  error: (message: string, data?: unknown, component?: string) =>
     internalLog(LogLevel.ERROR, message, data, component),
 };

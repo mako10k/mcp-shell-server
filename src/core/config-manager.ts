@@ -72,7 +72,7 @@ export class ConfigManager {
       }
       
       // Return default config if file doesn't exist
-      if ((error as any).code === 'ENOENT') {
+  if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         console.warn(`Configuration file not found at ${this.configPath}, using defaults`);
         await this.saveConfig(); // Create default config file
         return this.config;

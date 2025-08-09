@@ -233,12 +233,14 @@ export class MonitoringManager {
       this.processMetrics.set(processId, []);
     }
 
-    const metricsHistory = this.processMetrics.get(processId)!;
-    metricsHistory.push(metrics);
+    const metricsHistory = this.processMetrics.get(processId);
+    if (metricsHistory) {
+      metricsHistory.push(metrics);
 
-    // 履歴サイズの制限
-    if (metricsHistory.length > this.maxMetricsHistory) {
-      metricsHistory.shift();
+      // 履歴サイズの制限
+      if (metricsHistory.length > this.maxMetricsHistory) {
+        metricsHistory.shift();
+      }
     }
   }
 

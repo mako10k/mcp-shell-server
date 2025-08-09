@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { IPty } from 'node-pty';
 import { SystemProcessInfo, ForegroundProcessInfo } from '../types/index.js';
 
 export class ProcessUtils {
@@ -96,10 +97,11 @@ export class ProcessUtils {
   /**
    * ターミナルのフォアグラウンドプロセスを取得する
    */
-  static async getForegroundProcess(terminalPty: any): Promise<ForegroundProcessInfo> {
+  static async getForegroundProcess(terminalPty: IPty): Promise<ForegroundProcessInfo> {
     try {
       // pty の file descriptor を取得
-      const fd = terminalPty._fd || terminalPty.fd;
+      const ptyWithFd = terminalPty as IPty & { _fd?: number; fd?: number };
+      const fd = ptyWithFd._fd || ptyWithFd.fd;
       if (!fd) {
         return {
           available: false,

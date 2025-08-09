@@ -195,14 +195,17 @@ export class StreamingPipelineReader extends Readable {
   /**
    * ファイルに保存済みの最後のシーケンス番号を推定
    */
-  private estimateLastFileSequence(latestBuffers: any[]): number {
+  private estimateLastFileSequence(latestBuffers: Array<{ data: string; sequenceNumber: number }>): number {
     // 簡単な推定: ファイルサイズからバッファサイズを逆算
     // より正確な実装では、FileStorageSubscriberとの連携が必要
     let estimatedBytes = 0;
     for (let i = latestBuffers.length - 1; i >= 0; i--) {
-      estimatedBytes += latestBuffers[i].data.length;
-      if (estimatedBytes >= this.filePosition) {
-        return Math.max(0, latestBuffers[i].sequenceNumber - 1);
+      const buffer = latestBuffers[i];
+      if (buffer) {
+        estimatedBytes += buffer.data.length;
+        if (estimatedBytes >= this.filePosition) {
+          return Math.max(0, buffer.sequenceNumber - 1);
+        }
       }
     }
     return -1;

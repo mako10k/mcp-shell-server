@@ -80,7 +80,10 @@ export class StreamPublisher {
       this.executionSubscribers.set(executionId, new Set());
     }
     
-    this.executionSubscribers.get(executionId)!.add(subscriberId);
+    const subscriberSet = this.executionSubscribers.get(executionId);
+    if (subscriberSet) {
+      subscriberSet.add(subscriberId);
+    }
   }
   
   /**

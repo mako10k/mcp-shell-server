@@ -107,7 +107,7 @@ export abstract class BaseResponseParser {
   /**
    * レスポンスからJSONを抽出（共通ロジック）
    */
-  protected extractJsonFromResponse(rawContent: string): any {
+  protected extractJsonFromResponse(rawContent: string): unknown {
     try {
       // 直接JSONとしてパース試行
       return JSON.parse(rawContent.trim());
@@ -151,7 +151,7 @@ export abstract class BaseResponseParser {
   /**
    * 信頼度計算（共通ロジック）
    */
-  protected calculateConfidence(data: any, rawContent: string): number {
+  protected calculateConfidence(data: unknown, rawContent: string): number {
     let confidence = 0.8; // ベース信頼度
 
     // JSON構造の明確さ
@@ -159,12 +159,16 @@ export abstract class BaseResponseParser {
       confidence += 0.1;
     }
 
-    // データの完全性
-    if (data.reasoning && data.reasoning.length > 10) {
-      confidence += 0.05;
-    }
-
-    if (data.risk_factors && Array.isArray(data.risk_factors)) {
+    // データの完全性（型ガードで安全にアクセス）
+    if (
+      typeof data === 'object' && data !== null &&
+      'reasoning' in data &&
+      Array.isArray((data as { risk_factors?: unknown }).risk_factors)
+    ) {
+      const reasoning = (data as { reasoning?: string }).reasoning;
+      if (typeof reasoning === 'string' && reasoning.length > 10) {
+        confidence += 0.05;
+      }
       confidence += 0.05;
     }
 

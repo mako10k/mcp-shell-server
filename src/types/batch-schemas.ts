@@ -32,7 +32,7 @@ export const BatchFileOperationParamsSchema = z.object({
 export const BatchTerminalOperationParamsSchema = z.object({
   terminal_ids: z.array(z.string()).min(1).max(10).describe('Array of terminal IDs to operate on'),
   operation: z.enum(['close', 'resize', 'send_input', 'get_output']).describe('Operation to perform on all terminals'),
-  parameters: z.record(z.any()).optional().describe('Parameters specific to the operation'),
+  parameters: z.record(z.string(), z.unknown()).optional().describe('Parameters specific to the operation'),
   parallel: z.boolean().default(true).describe('Execute operation on all terminals in parallel'),
 });
 
