@@ -83,42 +83,46 @@ export class SecurityResponseParser extends BaseResponseParser {
   /**
    * セキュリティ評価の追加バリデーション
    */
-  private validateSecurityEvaluation(data: any): { isValid: boolean; errors: SecurityParseError[] } {
+  private validateSecurityEvaluation(data: unknown): { isValid: boolean; errors: SecurityParseError[] } {
     const errors: SecurityParseError[] = [];
-
-    // 信頼度チェック
-    if (typeof data.confidence === 'number' && (data.confidence < 0 || data.confidence > 1)) {
-      errors.push({
-        type: 'security',
-        field: 'confidence',
-        message: 'Confidence must be between 0 and 1',
-        severity: 'error'
-      });
-    }
-
-    // 評価結果とリスク要因の整合性チェック
-    if (data.evaluation_result === 'ALLOW' && data.risk_factors && data.risk_factors.length > 0) {
-      const criticalRisks = data.risk_factors.filter((risk: any) => risk.severity === 'critical');
-      if (criticalRisks.length > 0) {
+    if (typeof data === 'object' && data !== null) {
+      // 信頼度チェック
+      if (typeof (data as { confidence?: number }).confidence === 'number' && ((data as { confidence: number }).confidence < 0 || (data as { confidence: number }).confidence > 1)) {
         errors.push({
           type: 'security',
-          field: 'evaluation_result',
-          message: 'ALLOW evaluation should not have critical risk factors',
+          field: 'confidence',
+          message: 'Confidence must be between 0 and 1',
+          severity: 'error'
+        });
+      }
+
+      // 評価結果とリスク要因の整合性チェック
+      const evaluation_result = (data as { evaluation_result?: string }).evaluation_result;
+      const risk_factors = (data as { risk_factors?: unknown[] }).risk_factors;
+      if (evaluation_result === 'ALLOW' && Array.isArray(risk_factors) && risk_factors.length > 0) {
+        const criticalRisks = risk_factors.filter(
+          (risk) => typeof risk === 'object' && risk !== null && (risk as { severity?: string }).severity === 'critical'
+        );
+        if (criticalRisks.length > 0) {
+          errors.push({
+            type: 'security',
+            field: 'evaluation_result',
+            message: 'ALLOW evaluation should not have critical risk factors',
+            severity: 'warning'
+          });
+        }
+      }
+
+      // DENY評価の信頼度チェック
+      if (evaluation_result === 'DENY' && typeof (data as { confidence?: number }).confidence === 'number' && (data as { confidence: number }).confidence < 0.7) {
+        errors.push({
+          type: 'security',
+          field: 'confidence',
+          message: 'DENY evaluation should have high confidence (>= 0.7)',
           severity: 'warning'
         });
       }
     }
-
-    // DENY評価の信頼度チェック
-    if (data.evaluation_result === 'DENY' && data.confidence < 0.7) {
-      errors.push({
-        type: 'security',
-        field: 'confidence',
-        message: 'DENY evaluation should have high confidence (>= 0.7)',
-        severity: 'warning'
-      });
-    }
-
     return {
       isValid: errors.filter(e => e.severity === 'error').length === 0,
       errors

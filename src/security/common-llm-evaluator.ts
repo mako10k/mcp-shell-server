@@ -43,7 +43,7 @@ export interface CommonEvaluationContext {
   command: string;
   workingDirectory: string;
   comment?: string;
-  additionalContext?: Record<string, any>;
+  additionalContext?: Record<string, unknown>;
 }
 
 export class CommonLLMEvaluator {
@@ -67,7 +67,7 @@ export class CommonLLMEvaluator {
   protected async callLLMWithStructuredOutput<T>(
     systemPrompt: string,
     userMessage: string,
-    parserMethod: (content: string, requestId: string) => Promise<{ success: boolean; data?: T; errors?: any; metadata: any }>,
+  parserMethod: (content: string, requestId: string) => Promise<{ success: boolean; data?: T; errors?: unknown; metadata: unknown }>,
     maxTokens: number = 200,
     temperature: number = 0.1
   ): Promise<CommonLLMEvaluationResult> {
@@ -114,13 +114,26 @@ export class CommonLLMEvaluator {
   /**
    * Structured Outputから評価結果を抽出
    */
-  private extractEvaluationFromStructuredResult(data: any, model?: string, parseTime?: number): CommonLLMEvaluationResult {
+  private extractEvaluationFromStructuredResult(data: unknown, model?: string, parseTime?: number): CommonLLMEvaluationResult {
+    let evaluation_result: EvaluationResult = 'CONDITIONAL_DENY';
+    let confidence = 0.5;
+    let llm_reasoning = 'No reasoning provided';
+    let eval_time = Date.now();
+    if (typeof data === 'object' && data !== null) {
+      const d = data as { evaluation_result?: EvaluationResult; final_evaluation?: EvaluationResult; confidence?: number; reasoning?: string };
+      evaluation_result = d.evaluation_result || d.final_evaluation || 'CONDITIONAL_DENY';
+      confidence = d.confidence ?? 0.5;
+      llm_reasoning = d.reasoning ?? 'No reasoning provided';
+    }
+    if (typeof parseTime === 'number') {
+      eval_time = parseTime;
+    }
     return {
-      evaluation_result: data.evaluation_result || data.final_evaluation,
-      confidence: data.confidence || 0.5,
-      llm_reasoning: data.reasoning || 'No reasoning provided',
+      evaluation_result,
+      confidence,
+      llm_reasoning,
       model: model || 'unknown',
-      evaluation_time_ms: parseTime || Date.now()
+      evaluation_time_ms: eval_time
     };
   }
 
@@ -195,7 +208,7 @@ export class CommonLLMEvaluator {
   async evaluateWithUserIntent(
     context: CommonEvaluationContext,
     userResponse: string,
-    initialEvaluation: any
+  initialEvaluation: unknown
   ): Promise<CommonLLMEvaluationResult> {
     const userIntentContext = {
       originalCommand: context.command,
@@ -221,7 +234,7 @@ export class CommonLLMEvaluator {
   async evaluateWithAdditionalContext(
     context: CommonEvaluationContext,
     additionalHistory: string[],
-    initialEvaluation: any
+  initialEvaluation: unknown
   ): Promise<CommonLLMEvaluationResult> {
     const additionalContextContext = {
       originalCommand: context.command,

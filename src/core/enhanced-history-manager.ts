@@ -43,7 +43,7 @@ export class CommandHistoryManager {
       const rawHistory = JSON.parse(historyData);
       
       // Validate each entry
-      this.history = rawHistory.entries?.map((entry: any) => 
+      this.history = rawHistory.entries?.map((entry: unknown) => 
         CommandHistoryEntrySchema.parse(entry)
       ) || [];
       
@@ -53,7 +53,7 @@ export class CommandHistoryManager {
       await this.cleanupOldEntries();
       
     } catch (error) {
-      if ((error as any).code === 'ENOENT') {
+  if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         // Start with empty history if file doesn't exist
         this.history = [];
         this.userPatterns = [];

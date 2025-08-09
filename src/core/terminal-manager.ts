@@ -11,12 +11,22 @@ import { generateId, getCurrentTimestamp, getSafeEnvironment } from '../utils/he
 import { ResourceNotFoundError, ResourceLimitError, ExecutionError } from '../utils/errors.js';
 import { ProcessUtils } from '../utils/process-utils.js';
 
+interface TerminalOutputResult {
+  output: string;
+  line_count: number;
+  total_lines: number;
+  has_more: boolean;
+  start_line: number;
+  next_start_line: number;
+  foreground_process?: ForegroundProcessInfo | undefined;
+}
+
 export interface TerminalOptions {
-  sessionName?: string;
+  sessionName?: string | undefined;
   shellType: ShellType;
   dimensions: Dimensions;
-  workingDirectory?: string;
-  environmentVariables?: EnvironmentVariables;
+  workingDirectory?: string | undefined;
+  environmentVariables?: EnvironmentVariables | undefined;
   autoSaveHistory: boolean;
 }
 
@@ -360,7 +370,7 @@ export class TerminalManager {
     has_more: boolean;
     start_line: number;
     next_start_line: number;
-    foreground_process?: ForegroundProcessInfo;
+    foreground_process?: ForegroundProcessInfo | undefined;
   }> {
     const session = this.terminals.get(terminalId);
     if (!session) {
@@ -392,7 +402,7 @@ export class TerminalManager {
     const nextStartLine = endLine;
     this.terminalReadPositions.set(terminalId, nextStartLine);
 
-    const result: any = {
+  const result: TerminalOutputResult = {
       output,
       line_count: outputLines.length,
       total_lines: totalLines,

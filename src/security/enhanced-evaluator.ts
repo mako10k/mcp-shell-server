@@ -56,7 +56,7 @@ interface ElicitationResponse {
 
 // MCP Server interface for elicitation
 interface MCPServerInterface {
-  request(request: { method: string; params?: any }, schema?: any): Promise<any>;
+  request(request: { method: string; params?: Record<string, unknown> }, schema?: unknown): Promise<unknown>;
 }
 
 // LLM evaluation result (using common interface)

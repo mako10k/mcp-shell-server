@@ -18,19 +18,33 @@ export interface SecurityPromptContext {
 
 export interface UserIntentContext {
   originalCommand: string;
-  initialEvaluation: any;
+  initialEvaluation: unknown;
   userResponse: string;
   additionalContext?: string;
 }
 
 export interface AdditionalContextContext {
   originalCommand: string;
-  initialEvaluation: any;
+  initialEvaluation: unknown;
   additionalHistory: string[];
   environmentInfo?: string;
 }
 
 export class SecurityLLMPromptGenerator {
+  /**
+   * 初期評価の結果と推論を抽出する共通ヘルパー
+   */
+  private extractInitialEvaluation(initialEvaluation: unknown): { result: string; reasoning: string } {
+    let initialEvalResult = '';
+    let initialReasoning = '';
+    if (typeof initialEvaluation === 'object' && initialEvaluation !== null) {
+      const evalObj = initialEvaluation as { evaluation_result?: string; reasoning?: string };
+      initialEvalResult = evalObj.evaluation_result ?? '';
+      initialReasoning = evalObj.reasoning ?? '';
+    }
+    return { result: initialEvalResult, reasoning: initialReasoning };
+  }
+
   /**
    * 初回セキュリティ評価用のStructured OutputプロンプトTO生成
    */
@@ -125,12 +139,13 @@ REQUIRED JSON SCHEMA:
 
 Respond with ONLY the JSON object.`;
 
+    const { result: initialEvalResult, reasoning: initialReasoning } = this.extractInitialEvaluation(context.initialEvaluation);
     const userMessage = `Re-evaluate the security of this command based on user intent clarification:
 
 Original Command: \`${context.originalCommand}\`
 
-Initial Evaluation Result: ${context.initialEvaluation.evaluation_result}
-Initial Reasoning: ${context.initialEvaluation.reasoning}
+Initial Evaluation Result: ${initialEvalResult}
+Initial Reasoning: ${initialReasoning}
 
 User's Intent Clarification: "${context.userResponse}"
 
@@ -178,12 +193,13 @@ REQUIRED JSON SCHEMA:
 
 Respond with ONLY the JSON object.`;
 
+    const { result: initialEvalResult, reasoning: initialReasoning } = this.extractInitialEvaluation(context.initialEvaluation);
     const userMessage = `Re-evaluate security with additional context:
 
 Original Command: \`${context.originalCommand}\`
 
-Initial Evaluation: ${context.initialEvaluation.evaluation_result}
-Initial Reasoning: ${context.initialEvaluation.reasoning}
+Initial Evaluation: ${initialEvalResult}
+Initial Reasoning: ${initialReasoning}
 
 Additional Command History:
 ${context.additionalHistory.map((cmd, i) => `${i + 1}. ${cmd}`).join('\n')}
@@ -201,7 +217,7 @@ Provide comprehensive final security evaluation as JSON only.`;
    */
   generateFunctionCallEmulationPrompt(
     functionName: 'security_evaluate' | 'user_intent_reevaluate' | 'context_reevaluate',
-    args: Record<string, any>
+  args: Record<string, unknown>
   ): {
     systemPrompt: string;
     userMessage: string;
@@ -232,7 +248,7 @@ Return function execution result as JSON only.`;
   generateDebugPrompt(context: SecurityPromptContext): {
     systemPrompt: string;
     userMessage: string;
-    expectedSchema: any;
+  expectedSchema: Record<string, unknown>;
   } {
     const { systemPrompt, userMessage } = this.generateSecurityEvaluationPrompt(context);
     
