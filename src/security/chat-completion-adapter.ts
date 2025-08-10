@@ -85,46 +85,18 @@ export class CCCToMCPCMAdapter {
     this.createMessage = createMessage;
   }
 
-  // Updated helper function to handle content and role conversion
-  private convertCCCRequestMessagesToMCPCMMessages(requestMessages: CCCRequest['messages']): Array<{ role: 'user' | 'assistant'; content: { type: 'text'; text: string } }> {
-    return requestMessages
-      .filter(message => message.role !== 'system') // Exclude 'system' role as it's not supported
-      .map(message => ({
-        role: message.role as 'user' | 'assistant', // Cast role to the expected type
-        content: { type: 'text', text: message.content }, // Wrap content in the expected structure
-      }));
-  }
-
-  private generateFilteredMessages(requestMessages: CCCRequest['messages']) {
-    return requestMessages
-      .filter(message => message.role !== 'system') // Exclude 'system' role
-      .map(message => ({
-        role: message.role as 'user' | 'assistant',
-        content: { type: 'text', text: message.content },
-      }));
-  }
-
   // Update chatCompletion to handle optional properties explicitly
   async chatCompletion(request: CCCRequest): Promise<CCCResponse> {
-    const convertedMessages = this.convertCCCRequestMessagesToMCPCMMessages(request.messages);
-
-    const filteredMessages = this.generateFilteredMessages(request.messages).map(message => ({
-      ...message,
-      content: { ...message.content, type: 'text' }, // Ensure type is explicitly 'text'
-    }));
-    CCCMessageSchema.parse(filteredMessages); // Validate using zod schema
-
     // Use the schemas for validation in chatCompletion
     CCCRequestSchema.parse(request);
 
-    const response = await this.createMessage({
-      messages: convertedMessages,
-      maxTokens: request.max_tokens ?? 0, // Provide a default value if undefined
-      temperature: request.temperature ?? 0.7, // Provide a default value if undefined
-      systemPrompt: request.model,
-      stopSequences: request.stop ?? [], // Provide an empty array if undefined
-      includeContext: 'none',
-    });
+    // Use adaptOpenAIRequestToMCP to convert the request
+    const mcpRequest = adaptOpenAIRequestToMCP(request);
+
+    // Validate the converted MCP request
+    MCPCreateMessageRequestSchema.parse(mcpRequest);
+
+    const response = await this.createMessage(mcpRequest);
 
     CCCResponseSchema.parse(response);
 
@@ -238,6 +210,9 @@ async function handleToolCall(toolName: string, args: Record<string, unknown>): 
   console.log('Example Tool Response:', exampleResponse);
 })();
 
+// Type for MCP Create Message Request (extracted from CreateMessageCallback)
+type MCPCreateMessageRequest = Parameters<CreateMessageCallback>[0];
+
 // Adapt OpenAI Request to MCP Request
 export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRequest {
   // (1) messages のフィルターと SystemMessage 抽出
@@ -263,8 +238,7 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
     createSystemPromptFromTools(toolNames, toolChoiceString),
   ].join('\n');
 
-  // (3) metadata は不要
-  const metadata = null;
+  // (3) metadata は不要 - 直接nullを使用
 
   // (4) user は捨てる
   // 処理不要（無視）
@@ -275,18 +249,28 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
   };
 
   // MCPRequest の生成
-  return {
+  const mcpRequest: MCPCreateMessageRequest = {
     messages: filteredMessages,
-    maxTokens: request.max_tokens,
-    temperature: request.temperature,
     systemPrompt,
-    stopSequences: request.stop,
-    metadata,
-    modelPreferences
+    includeContext: 'none',
+    modelPreferences,
   };
+
+  // 条件付きでオプショナルプロパティを追加
+  if (request.max_tokens !== undefined) {
+    mcpRequest.maxTokens = request.max_tokens;
+  }
+  if (request.temperature !== undefined) {
+    mcpRequest.temperature = request.temperature;
+  }
+  if (request.stop !== undefined) {
+    mcpRequest.stopSequences = request.stop;
+  }
+
+  return mcpRequest;
 }
 
-// Zod schema for MCPCreateMessageRequest
+// Zod schema for MCPCreateMessageRequest (validation only)
 const MCPCreateMessageRequestSchema = z.object({
   messages: z.array(
     z.object({
@@ -309,9 +293,6 @@ const MCPCreateMessageRequestSchema = z.object({
   metadata: z.record(z.unknown()).nullable().optional(),
   modelPreferences: z.record(z.unknown()).optional(),
 });
-
-// Type definition from Zod schema
-type MCPCreateMessageRequest = z.infer<typeof MCPCreateMessageRequestSchema>;
 
 // Generates a system prompt string based on the provided tools and tool choices.
 /**
