@@ -1,16 +1,17 @@
 import { SecurityRestrictions, SecurityMode } from '../types/index.js';
-import { 
-  EnhancedSecurityConfig, 
+import {
+  EnhancedSecurityConfig,
   DEFAULT_ENHANCED_SECURITY_CONFIG,
   DEFAULT_BASIC_SAFETY_RULES,
   CommandClassification,
-  BasicSafetyRule 
+  BasicSafetyRule,
 } from '../types/enhanced-security.js';
 import { SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { adaptOpenAIRequestToMCP } from './chat-completion-adapter.js';
 
 // MCP Protocol interfaces for type safety
 interface MCPRequest {
@@ -48,7 +49,7 @@ interface CreateMessageCallback {
 }
 
 // Command safety evaluation result interface
-interface CommandSafetyEvaluationResult {
+export interface CommandSafetyEvaluationResult {
   evaluation_result: 'ALLOW' | 'DENY' | 'CONDITIONAL_DENY';
   basic_classification?: CommandClassification;
   reasoning: string;
@@ -62,16 +63,18 @@ export class SecurityManager {
   private restrictions: SecurityRestrictions | null = null;
   private enhancedConfig: EnhancedSecurityConfig;
   private basicSafetyRules: BasicSafetyRule[];
-  private enhancedEvaluator: EnhancedSafetyEvaluator | null = null;
+  private enhancedEvaluator: EnhancedSafetyEvaluator;
 
-  constructor() {
+  constructor(enhancedEvaluator: EnhancedSafetyEvaluator) {
+    this.enhancedEvaluator = enhancedEvaluator;
+
     // Initialize Enhanced Security configuration
     this.enhancedConfig = { ...DEFAULT_ENHANCED_SECURITY_CONFIG };
     this.basicSafetyRules = [...DEFAULT_BASIC_SAFETY_RULES];
-    
+
     // Load Enhanced Security configuration from environment variables
     this.loadEnhancedConfigFromEnv();
-    
+
     // Set default security restrictions
     this.setDefaultRestrictions();
   }
@@ -87,14 +90,14 @@ export class SecurityManager {
     if (defaultMode === 'enhanced' || defaultMode === 'enhanced-fast') {
       this.enhancedConfig.enhanced_mode_enabled = true;
       this.enhancedConfig.llm_evaluation_enabled = true;
-      
+
       // For enhanced-fast, enable safe command skipping
-      this.enhancedConfig.enable_pattern_filtering = (defaultMode === 'enhanced-fast');
+      this.enhancedConfig.enable_pattern_filtering = defaultMode === 'enhanced-fast';
     }
 
     this.restrictions = {
       restriction_id: generateId(),
-      security_mode: defaultMode, 
+      security_mode: defaultMode,
       max_execution_time: defaultExecutionTime, // 5 minutes
       max_memory_mb: defaultMemoryMb, // 1GB
       enable_network: defaultNetworkEnabled,
@@ -111,44 +114,47 @@ export class SecurityManager {
     if (process.env['MCP_SHELL_ENHANCED_MODE'] === 'true') {
       this.enhancedConfig.enhanced_mode_enabled = true;
     }
-    
+
     // LLM evaluation (backward compatibility)
     if (process.env['MCP_SHELL_LLM_EVALUATION'] === 'true') {
       this.enhancedConfig.llm_evaluation_enabled = true;
     }
-    
+
     // Safe command skip (new simplified naming)
     if (process.env['MCP_SHELL_SKIP_SAFE_COMMANDS'] === 'true') {
       this.enhancedConfig.enable_pattern_filtering = true;
     }
-    
+
     // Pattern matching pre-filtering (backward compatibility)
     if (process.env['MCP_SHELL_ENABLE_PATTERN_FILTERING'] === 'true') {
       this.enhancedConfig.enable_pattern_filtering = true;
     }
-    
+
     // Other enhanced security settings
     if (process.env['MCP_SHELL_ELICITATION'] === 'true') {
       this.enhancedConfig.elicitation_enabled = true;
     }
-    
+
     if (process.env['MCP_SHELL_BASIC_SAFE_CLASSIFICATION'] === 'false') {
       this.enhancedConfig.basic_safe_classification = false;
     }
-    
+
     // LLM provider settings
     if (process.env['MCP_SHELL_LLM_PROVIDER']) {
-      this.enhancedConfig.llm_provider = process.env['MCP_SHELL_LLM_PROVIDER'] as 'openai' | 'anthropic' | 'custom';
+      this.enhancedConfig.llm_provider = process.env['MCP_SHELL_LLM_PROVIDER'] as
+        | 'openai'
+        | 'anthropic'
+        | 'custom';
     }
-    
+
     if (process.env['MCP_SHELL_LLM_MODEL']) {
       this.enhancedConfig.llm_model = process.env['MCP_SHELL_LLM_MODEL'];
     }
-    
+
     if (process.env['MCP_SHELL_LLM_API_KEY']) {
       this.enhancedConfig.llm_api_key = process.env['MCP_SHELL_LLM_API_KEY'];
     }
-    
+
     if (process.env['MCP_SHELL_LLM_TIMEOUT']) {
       const timeout = parseInt(process.env['MCP_SHELL_LLM_TIMEOUT']);
       if (!isNaN(timeout) && timeout > 0 && timeout <= 60) {
@@ -208,10 +214,13 @@ export class SecurityManager {
         // permissive mode: basically allow anything (only check dangerous patterns)
         const dangerousPatterns = this.detectDangerousPatterns(command);
         if (dangerousPatterns.length > 0) {
-          throw new SecurityError(`Command contains dangerous patterns: ${dangerousPatterns.join(', ')}`, {
-            command,
-            dangerousPatterns,
-          });
+          throw new SecurityError(
+            `Command contains dangerous patterns: ${dangerousPatterns.join(', ')}`,
+            {
+              command,
+              dangerousPatterns,
+            }
+          );
         }
         break;
 
@@ -219,10 +228,13 @@ export class SecurityManager {
         // moderate mode: basic security checks
         const moderateDangerousPatterns = this.detectDangerousPatterns(command);
         if (moderateDangerousPatterns.length > 0) {
-          throw new SecurityError(`Command contains dangerous patterns: ${moderateDangerousPatterns.join(', ')}`, {
-            command,
-            dangerousPatterns: moderateDangerousPatterns,
-          });
+          throw new SecurityError(
+            `Command contains dangerous patterns: ${moderateDangerousPatterns.join(', ')}`,
+            {
+              command,
+              dangerousPatterns: moderateDangerousPatterns,
+            }
+          );
         }
         break;
 
@@ -238,18 +250,67 @@ export class SecurityManager {
         // restrictive mode: only allow read-only and information retrieval commands
         const restrictiveAllowedCommands = [
           // File/directory operations (read-only)
-          'ls', 'cat', 'less', 'more', 'head', 'tail', 'file', 'stat', 'find', 'locate',
+          'ls',
+          'cat',
+          'less',
+          'more',
+          'head',
+          'tail',
+          'file',
+          'stat',
+          'find',
+          'locate',
           // Text processing
-          'grep', 'awk', 'sed', 'sort', 'uniq', 'wc', 'cut', 'tr', 'column',
+          'grep',
+          'awk',
+          'sed',
+          'sort',
+          'uniq',
+          'wc',
+          'cut',
+          'tr',
+          'column',
           // System information
-          'pwd', 'whoami', 'id', 'date', 'uptime', 'uname', 'hostname', 
-          'ps', 'top', 'df', 'du', 'free', 'lscpu', 'lsblk', 'lsusb', 'lspci',
+          'pwd',
+          'whoami',
+          'id',
+          'date',
+          'uptime',
+          'uname',
+          'hostname',
+          'ps',
+          'top',
+          'df',
+          'du',
+          'free',
+          'lscpu',
+          'lsblk',
+          'lsusb',
+          'lspci',
           // Network (read-only)
-          'ping', 'nslookup', 'dig', 'host', 'netstat', 'ss', 'lsof',
+          'ping',
+          'nslookup',
+          'dig',
+          'host',
+          'netstat',
+          'ss',
+          'lsof',
           // Basic commands
-          'echo', 'printf', 'which', 'type', 'command', 'history', 'env', 'printenv',
+          'echo',
+          'printf',
+          'which',
+          'type',
+          'command',
+          'history',
+          'env',
+          'printenv',
           // Archive (read-only)
-          'tar', 'zip', 'unzip', 'gzip', 'gunzip', 'zcat',
+          'tar',
+          'zip',
+          'unzip',
+          'gzip',
+          'gunzip',
+          'zcat',
         ];
         if (!this.isCommandAllowed(command, restrictiveAllowedCommands, [])) {
           throw new SecurityError(`Command '${command}' is not allowed in restrictive mode`, {
@@ -261,7 +322,13 @@ export class SecurityManager {
 
       case 'custom':
         // custom mode: use detailed settings
-        if (!this.isCommandAllowed(command, this.restrictions.allowed_commands, this.restrictions.blocked_commands)) {
+        if (
+          !this.isCommandAllowed(
+            command,
+            this.restrictions.allowed_commands,
+            this.restrictions.blocked_commands
+          )
+        ) {
           throw new SecurityError(`Command '${command}' is not allowed by security policy`, {
             command,
             allowedCommands: this.restrictions.allowed_commands,
@@ -407,7 +474,10 @@ export class SecurityManager {
   auditCommand(command: string, workingDirectory?: string): void {
     // Enhanced Security Modeの場合は従来の危険パターン検出をスキップ
     // Enhanced Safety Evaluator performs all validation
-    if (this.restrictions?.security_mode === 'enhanced' || this.restrictions?.security_mode === 'enhanced-fast') {
+    if (
+      this.restrictions?.security_mode === 'enhanced' ||
+      this.restrictions?.security_mode === 'enhanced-fast'
+    ) {
       // Rely only on Enhanced Safety Evaluator
       this.validateCommand(command);
 
@@ -436,33 +506,37 @@ export class SecurityManager {
     }
   }
 
-  private isCommandAllowed(command: string, allowedCommands?: string[], blockedCommands?: string[]): boolean {
+  private isCommandAllowed(
+    command: string,
+    allowedCommands?: string[],
+    blockedCommands?: string[]
+  ): boolean {
     // Extract the first word (actual command name) from the command
     const cmdName = command.trim().split(/\s+/)[0];
-    
+
     // Block if cmdName is empty
     if (!cmdName) {
       return false;
     }
-    
+
     // Check blocked commands
     if (blockedCommands && blockedCommands.length > 0) {
-      if (blockedCommands.some(blocked => cmdName === blocked || cmdName.startsWith(blocked))) {
+      if (blockedCommands.some((blocked) => cmdName === blocked || cmdName.startsWith(blocked))) {
         return false;
       }
     }
-    
+
     // Check allowed commands
     if (allowedCommands && allowedCommands.length > 0) {
-      return allowedCommands.some(allowed => cmdName === allowed || cmdName.startsWith(allowed));
+      return allowedCommands.some((allowed) => cmdName === allowed || cmdName.startsWith(allowed));
     }
-    
+
     // Allow if allowedCommands is not specified (only blockedCommands check)
     return true;
   }
 
   // Enhanced Security Configuration Methods
-  
+
   /**
    * Update enhanced security configuration
    */
@@ -492,44 +566,6 @@ export class SecurityManager {
   }
 
   /**
-   * Classify command safety using basic rules
-   * Returns classification and safety level
-   */
-  classifyCommandBasicSafety(command: string): { 
-    classification: CommandClassification, 
-    safetyLevel: number,
-    matchedRule?: BasicSafetyRule 
-  } {
-    if (!this.enhancedConfig.basic_safe_classification) {
-      // Basic classification disabled, require LLM evaluation
-      return { classification: 'llm_required', safetyLevel: 3 };
-    }
-
-    // Check against basic safety rules
-    for (const rule of this.basicSafetyRules) {
-      try {
-        const regex = new RegExp(rule.pattern, 'i');
-        if (regex.test(command)) {
-          // Rule matched
-          const classification = rule.safety_level <= 2 ? 'basic_safe' : 'llm_required';
-          return {
-            classification,
-            safetyLevel: rule.safety_level,
-            matchedRule: rule
-          };
-        }
-      } catch (error) {
-        // Invalid regex pattern, skip this rule
-        console.warn(`Invalid regex pattern in safety rule: ${rule.pattern}`);
-        continue;
-      }
-    }
-
-    // No rule matched, default to requiring LLM evaluation
-    return { classification: 'llm_required', safetyLevel: 3 };
-  }
-
-  /**
    * Check if enhanced security mode is enabled
    */
   isEnhancedModeEnabled(): boolean {
@@ -549,47 +585,6 @@ export class SecurityManager {
   isCommandHistoryEnhanced(): boolean {
     return this.enhancedConfig.command_history_enhanced;
   }
-  
-  /**
-   * Classify command safety using basic rules
-   * Returns classification result ('basic_safe' or 'llm_required')
-   */
-  classifyCommandSafety(command: string): CommandClassification {
-    if (!this.enhancedConfig.basic_safe_classification) {
-      // Basic classification disabled, require LLM evaluation
-      return 'llm_required';
-    }
-
-    const trimmedCommand = command.trim();
-    
-    // Empty command is basic_safe
-    if (!trimmedCommand) {
-      return 'basic_safe';
-    }
-
-    // Check dangerous patterns (highest priority)
-    const dangerousPatterns = this.detectDangerousPatterns(trimmedCommand);
-    if (dangerousPatterns.length > 0) {
-      return 'llm_required';
-    }
-
-    // Check basic safety rules
-    for (const rule of this.basicSafetyRules) {
-      try {
-        const regex = new RegExp(rule.pattern);
-        if (regex.test(trimmedCommand)) {
-          // Level 1-3 is basic_safe, level 4-5 is llm_required
-          return rule.safety_level <= 3 ? 'basic_safe' : 'llm_required';
-        }
-      } catch (e) {
-        // Skip invalid regex patterns
-        continue;
-      }
-    }
-
-    // No rule matched, require LLM evaluation
-    return 'llm_required';
-  }
 
   /**
    * Detailed command safety analysis with reasoning
@@ -602,11 +597,11 @@ export class SecurityManager {
     dangerous_patterns?: string[];
   } {
     const trimmedCommand = command.trim();
-    
+
     if (!this.enhancedConfig.basic_safe_classification) {
       return {
         classification: 'llm_required',
-        reasoning: 'Basic safety classification is disabled'
+        reasoning: 'Basic safety classification is disabled',
       };
     }
 
@@ -614,7 +609,7 @@ export class SecurityManager {
       return {
         classification: 'basic_safe',
         reasoning: 'Empty command',
-        safety_level: 1
+        safety_level: 1,
       };
     }
 
@@ -625,7 +620,7 @@ export class SecurityManager {
         classification: 'llm_required',
         reasoning: 'Contains dangerous patterns',
         safety_level: 5,
-        dangerous_patterns: dangerousPatterns
+        dangerous_patterns: dangerousPatterns,
       };
     }
 
@@ -638,7 +633,7 @@ export class SecurityManager {
             classification: rule.safety_level <= 3 ? 'basic_safe' : 'llm_required',
             reasoning: rule.reasoning,
             safety_level: rule.safety_level,
-            matched_rule: rule.pattern
+            matched_rule: rule.pattern,
           };
         }
       } catch (e) {
@@ -650,7 +645,7 @@ export class SecurityManager {
     return {
       classification: 'llm_required',
       reasoning: 'No matching safety rule found - requires LLM evaluation',
-      safety_level: 4
+      safety_level: 4,
     };
   }
 
@@ -660,61 +655,55 @@ export class SecurityManager {
   initializeEnhancedEvaluator(historyManager: CommandHistoryManager, server?: Server): void {
     if (this.enhancedConfig.enhanced_mode_enabled) {
       this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager);
-      
-      // Set pattern filtering configuration
-      this.enhancedEvaluator.setPatternFiltering(this.enhancedConfig.enable_pattern_filtering);
-      
+
       // Enhanced mode requires LLM evaluation capability
       if (!server) {
-        throw new Error('Enhanced security mode requires LLM server connection but server is not available. Enhanced mode cannot function without LLM evaluation capability.');
+        throw new Error(
+          'Enhanced security mode requires LLM server connection but server is not available. Enhanced mode cannot function without LLM evaluation capability.'
+        );
       }
-      
+
       // Set up LLM sampling callback if server is provided
       this.enhancedEvaluator.setCreateMessageCallback(async (params) => {
         try {
-          // Transform our interface to MCP server format
-          const mcpParams = {
-            messages: params.messages,
-            maxTokens: params.maxTokens || 100,
+          // Create CCCRequest format for adaptOpenAIRequestToMCP
+          const cccRequest = {
+            model: 'gpt-4', // Default model
+            messages: [
+              ...(params.systemPrompt ? [{ role: 'system' as const, content: params.systemPrompt }] : []),
+              ...params.messages.map(msg => ({
+                role: msg.role,
+                content: msg.content.text
+              }))
+            ],
+            max_tokens: params.maxTokens,
             temperature: params.temperature,
-            systemPrompt: params.systemPrompt,
-            includeContext: params.includeContext || 'none' as const,
-            stopSequences: params.stopSequences,
-            metadata: params.metadata,
-            modelPreferences: params.modelPreferences
+            stop: params.stopSequences,
           };
-          
+
+          // Use adaptOpenAIRequestToMCP to convert the request
+          const mcpParams = adaptOpenAIRequestToMCP(cccRequest);
+
           const response = await server.createMessage(mcpParams);
-          
+
           // Transform MCP response to our expected format
-          const result: {
-            content: { type: 'text'; text: string };
-            model?: string;
-            stopReason?: string;
-          } = {
+          return {
             content: {
               type: 'text' as const,
-              text: response.content.type === 'text' ? response.content.text : 'Non-text response'
-            }
+              text: response.content.type === 'text' ? response.content.text : 'Non-text response',
+            },
+            model: response.model,
+            stopReason: response.stopReason,
           };
-          
-          if (response.model) {
-            result.model = response.model;
-          }
-          if (response.stopReason) {
-            result.stopReason = response.stopReason;
-          }
-          
-          return result;
         } catch (error) {
           // Fallback response on error
           return {
             content: {
               type: 'text' as const,
-              text: 'LLM_EVALUATION_ERROR'
+              text: 'LLM_EVALUATION_ERROR',
             },
             model: undefined,
-            stopReason: undefined
+            stopReason: undefined,
           };
         }
       });
@@ -725,7 +714,7 @@ export class SecurityManager {
           try {
             // Use actual MCP server.request method for elicitation protocol
             console.error('Sending MCP elicitation request:', request.method, request.params);
-            
+
             // This is the actual elicitation implementation using MCP protocol
             // Based on mcp-confirm: server.request(request, ElicitResultSchema, options)
             const result = await server.request(
@@ -735,18 +724,18 @@ export class SecurityManager {
               },
               ElicitResultSchema,
               {
-                timeout: (request.params?.['timeoutMs'] as number) || 180000 // 3 minutes default
+                timeout: (request.params?.['timeoutMs'] as number) || 180000, // 3 minutes default
               }
             );
             console.error('MCP elicitation result:', result);
-            
+
             return result;
           } catch (error) {
             console.error('MCP elicitation request failed:', error);
             // Elicitation failure should be a proper MCP error, not a generic error
             throw error;
           }
-        }
+        },
       });
     }
   }
@@ -763,29 +752,15 @@ export class SecurityManager {
   /**
    * Perform comprehensive safety evaluation using enhanced evaluator
    */
-  async evaluateCommandSafety(command: string, workingDirectory: string, comment?: string): Promise<CommandSafetyEvaluationResult> {
-    if (!this.enhancedEvaluator || !this.enhancedConfig.enhanced_mode_enabled) {
-      // Fallback to basic classification
-      return {
-        evaluation_result: 'ALLOW',
-        basic_classification: this.classifyCommandSafety(command),
-        reasoning: 'Enhanced evaluation not enabled - using basic classification only',
-        requires_confirmation: false
-      };
+  async evaluateCommandSafetyByEnhancedEvaluator(
+    command: string,
+    workingDirectory: string,
+    comment?: string
+  ): Promise<CommandSafetyEvaluationResult> {
+    if (!this.enhancedConfig.enhanced_mode_enabled) {
+      throw new Error('Enhanced mode is not enabled');
     }
 
-    try {
-      return await this.enhancedEvaluator.evaluateCommand(command, workingDirectory, 10, comment);
-    } catch (error) {
-      // Fallback to basic classification on error
-      console.warn('Enhanced evaluation failed, falling back to basic classification:', error);
-      const basicClassification = this.classifyCommandSafety(command);
-      return {
-        evaluation_result: basicClassification === 'basic_safe' ? 'ALLOW' : 'CONDITIONAL_DENY',
-        basic_classification: basicClassification,
-        reasoning: 'Enhanced evaluation failed - using basic classification',
-        requires_confirmation: basicClassification !== 'basic_safe'
-      };
-    }
+    return await this.enhancedEvaluator.evaluateCommand(command, workingDirectory, 10, comment);
   }
 }
