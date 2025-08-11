@@ -665,10 +665,12 @@ export class SecurityManager {
             model: 'gpt-4', // Default model
             messages: [
               ...(params.systemPrompt ? [{ role: 'system' as const, content: params.systemPrompt }] : []),
-              ...params.messages.map(msg => ({
-                role: msg.role,
-                content: msg.content.text
-              }))
+              ...params.messages
+                .filter(msg => msg.role !== 'tool') // Filter out tool messages for compatibility
+                .map(msg => ({
+                  role: msg.role as 'user' | 'assistant', // Type assertion since we filtered out 'tool'
+                  content: msg.content.text
+                }))
             ],
             max_tokens: params.maxTokens,
             temperature: params.temperature,
@@ -740,7 +742,11 @@ export class SecurityManager {
    */
   setLLMSamplingCallback(callback: CreateMessageCallback): void {
     if (this.enhancedEvaluator) {
-      this.enhancedEvaluator.setCreateMessageCallback(callback);
+      // Type-safe wrapper to match enhanced evaluator's expected signature
+      const wrappedCallback = (request: unknown) => {
+        return callback(request as unknown as Parameters<CreateMessageCallback>[0]);
+      };
+      this.enhancedEvaluator.setCreateMessageCallback(wrappedCallback as Parameters<typeof this.enhancedEvaluator.setCreateMessageCallback>[0]);
     }
   }
 
