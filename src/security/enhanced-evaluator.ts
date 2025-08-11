@@ -1,4 +1,14 @@
-import { CommandHistoryEntry, EvaluationResult, SimplifiedLLMEvaluationResult } from '../types/enhanced-security.js';
+import { 
+  CommandHistoryEntry, 
+  EvaluationResult, 
+  SimplifiedLLMEvaluationResult,
+  FunctionCallHandlerRegistry,
+  FunctionCallContext,
+  FunctionCallResult,
+  EvaluateCommandSecurityArgs,
+  ReevaluateWithUserIntentArgs,
+  ReevaluateWithAdditionalContextArgs
+} from '../types/enhanced-security.js';
 import { CommandSafetyEvaluationResult, SecurityManager } from './manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId } from '../utils/helpers.js';
@@ -11,12 +21,20 @@ import {
   CommonEvaluationContext,
 } from './common-llm-evaluator.js';
 
+// Tools for Function Calling
+import {
+  securityEvaluationTool,
+  // userIntentReevaluationTool,
+  // additionalContextReevaluationTool
+} from './security-tools.js';
+
 // MCP sampling protocol interface (matches manager.ts implementation)
 interface CreateMessageCallback {
   (request: {
     messages: Array<{
-      role: 'user' | 'assistant';
+      role: 'user' | 'assistant' | 'tool';
       content: { type: 'text'; text: string };
+      tool_call_id?: string;
     }>;
     maxTokens?: number;
     temperature?: number;
@@ -25,10 +43,27 @@ interface CreateMessageCallback {
     stopSequences?: string[];
     metadata?: Record<string, unknown>;
     modelPreferences?: Record<string, unknown>;
+    tools?: Array<{
+      type: 'function';
+      function: {
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+      };
+    }>;
+    tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
   }): Promise<{
     content: { type: 'text'; text: string };
     model?: string | undefined;
     stopReason?: string | undefined;
+    tool_calls?: Array<{
+      id: string;
+      type: 'function';
+      function: {
+        name: string;
+        arguments: string;
+      };
+    }>;
   }>;
 }
 
@@ -96,11 +131,13 @@ interface SafetyEvaluation {
  */
 export class EnhancedSafetyEvaluator {
   private createMessageCallback: CreateMessageCallback;
-  private responseParser: SecurityResponseParser;
   private promptGenerator: SecurityLLMPromptGenerator;
+  // @ts-expect-error - Will be used for Function Call handling implementation
+  private responseParser: SecurityResponseParser;
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
   private mcpServer: MCPServerInterface | undefined;
+  private functionCallHandlers: FunctionCallHandlerRegistry;
 
   constructor(
     securityManager: SecurityManager,
@@ -112,6 +149,9 @@ export class EnhancedSafetyEvaluator {
     this.securityManager = securityManager;
     this.historyManager = historyManager;
     this.mcpServer = mcpServer;
+
+    // Initialize Function Call handler registry
+    this.functionCallHandlers = this.initializeFunctionCallHandlers();
 
     // Initialize parser and generator
     const parser = new SecurityResponseParser(parserConfig);
@@ -126,6 +166,87 @@ export class EnhancedSafetyEvaluator {
       (() => {
         throw new Error('LLM evaluation attempted before createMessageCallback was set');
       });
+  }
+
+  /**
+   * Initialize Function Call handlers registry
+   */
+  private initializeFunctionCallHandlers(): FunctionCallHandlerRegistry {
+    return {
+      'evaluate_command_security': this.handleEvaluateCommandSecurity.bind(this),
+      'reevaluate_with_user_intent': this.handleReevaluateWithUserIntent.bind(this),
+      'reevaluate_with_additional_context': this.handleReevaluateWithAdditionalContext.bind(this)
+    };
+  }
+
+  /**
+   * Handler for evaluate_command_security Function Call
+   */
+  private async handleEvaluateCommandSecurity(
+    args: EvaluateCommandSecurityArgs, 
+    _context: FunctionCallContext
+  ): Promise<FunctionCallResult> {
+    // TODO: Implement actual evaluation logic
+    return {
+      success: true,
+      result: args
+    };
+  }
+
+  /**
+   * Handler for reevaluate_with_user_intent Function Call
+   */
+  private async handleReevaluateWithUserIntent(
+    args: ReevaluateWithUserIntentArgs, 
+    _context: FunctionCallContext
+  ): Promise<FunctionCallResult> {
+    // TODO: Implement user intent reevaluation logic
+    return {
+      success: true,
+      result: args
+    };
+  }
+
+  /**
+   * Handler for reevaluate_with_additional_context Function Call
+   */
+  private async handleReevaluateWithAdditionalContext(
+    args: ReevaluateWithAdditionalContextArgs, 
+    _context: FunctionCallContext
+  ): Promise<FunctionCallResult> {
+    // TODO: Implement additional context reevaluation logic
+    return {
+      success: true,
+      result: args
+    };
+  }
+
+  /**
+   * Execute a Function Call by looking up the handler and calling it
+   */
+  private async executeFunctionCall(
+    functionName: string, 
+    args: unknown, 
+    context: FunctionCallContext
+  ): Promise<FunctionCallResult> {
+    const handler = this.functionCallHandlers[functionName as keyof FunctionCallHandlerRegistry];
+    
+    if (!handler) {
+      return {
+        success: false,
+        error: `No handler found for function: ${functionName}`
+      };
+    }
+
+    try {
+      // Type-safe handler invocation with explicit casting
+      return await (handler as (args: unknown, context: FunctionCallContext) => Promise<FunctionCallResult>)(args, context);
+    } catch (error) {
+      return {
+        success: false,
+        error: `Handler execution failed: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
   }
 
   setCreateMessageCallback(callback: CreateMessageCallback | undefined): void {
@@ -264,7 +385,7 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
-   * Call LLM for evaluation with Structured Output (using common implementation)
+   * Call LLM for evaluation with Function Calling (Tools)
    */
   private async callLLMForEvaluation(
     command: string,
@@ -287,7 +408,7 @@ export class EnhancedSafetyEvaluator {
     // Generate prompt for initial security evaluation
     const { systemPrompt, userMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
 
-    // Call LLM with structured output
+    // Call LLM with tools (Function Calling)
     try {
       const response = await this.createMessageCallback({
         messages: [
@@ -299,27 +420,60 @@ export class EnhancedSafetyEvaluator {
             },
           },
         ],
-        maxTokens: 300,
+        maxTokens: 500,
         temperature: 0.1,
         systemPrompt,
+        tools: [securityEvaluationTool],
+        tool_choice: { type: 'function', function: { name: 'evaluate_command_security' } }
       });
 
-      // Parse response using simplified schema
-      const requestId = generateId();
-      const parseResult = await this.responseParser.parseSimplifiedSecurityEvaluation(
-        response.content.text,
-        requestId
-      );
+      // Process tool calls - Function Calling required
+      if (response.tool_calls && response.tool_calls.length > 0) {
+        const toolCall = response.tool_calls[0];
+        if (toolCall && toolCall.function.name === 'evaluate_command_security') {
+          try {
+            const result = JSON.parse(toolCall.function.arguments);
+            
+            // Validate required fields
+            if (!result.evaluation_result || !result.reasoning || !result.requires_additional_context) {
+              throw new Error('Missing required fields in tool call response');
+            }
 
-      if (parseResult.success && parseResult.data) {
-        return parseResult.data;
-      } else {
-        console.warn('Failed to parse LLM response, using fallback:', parseResult.errors);
-        return this.createFallbackEvaluation(response.content.text);
+            // Execute the actual Function Call handler
+            const functionCallResult = await this.executeFunctionCall(
+              toolCall.function.name,
+              result,
+              {
+                command,
+                ...(comment && { comment }),
+                historyManager: this.historyManager
+              }
+            );
+
+            if (!functionCallResult.success) {
+              throw new Error(`Function call execution failed: ${functionCallResult.error}`);
+            }
+            
+            return {
+              evaluation_result: result.evaluation_result,
+              reasoning: result.reasoning,
+              requires_additional_context: result.requires_additional_context,
+              suggested_alternatives: result.suggested_alternatives || []
+            };
+          } catch (parseError) {
+            console.error('Failed to parse tool call arguments:', parseError);
+            throw new Error(`Function Calling parse error: ${parseError}`);
+          }
+        } else {
+          throw new Error(`Unexpected tool call: ${toolCall?.function.name || 'unknown'}`);
+        }
       }
+
+      // Function Calling is required - no fallback
+      throw new Error('No tool calls in response - Function Calling required for security evaluation');
     } catch (error) {
       console.error('LLM evaluation failed:', error);
-      return this.createFallbackEvaluation('LLM evaluation failed');
+      throw new Error(`Security evaluation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -559,44 +713,6 @@ This command has been flagged for review. Please provide your intent:
       console.error('User intent elicitation failed:', error);
       return { userIntent: null, elicitationResponse: null };
     }
-  }
-
-  /**
-   * Create fallback evaluation when Structured Output parsing fails
-   */
-  private createFallbackEvaluation(
-    rawResponse: string,
-    _model?: string
-  ): LLMEvaluationResult {
-    // Use the original simple parsing logic as fallback
-    const llmResponse = rawResponse.trim().toUpperCase();
-    let evaluation_result: EvaluationResult;
-
-    if (llmResponse.includes('NEED_MORE_INFO')) {
-      evaluation_result = 'NEED_MORE_INFO';
-    } else if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
-      evaluation_result = 'DENY';
-    } else if (llmResponse.includes('CONDITIONAL_DENY')) {
-      evaluation_result = 'CONDITIONAL_DENY';
-    } else if (llmResponse.includes('ALLOW')) {
-      evaluation_result = 'ALLOW';
-    } else {
-      // Default to safe denial for unclear responses
-      evaluation_result = 'CONDITIONAL_DENY';
-      console.warn('LLM evaluation response unclear, defaulting to CONDITIONAL_DENY:', llmResponse);
-    }
-
-    return {
-      evaluation_result,
-      reasoning: rawResponse,
-      requires_additional_context: {
-        command_history_depth: 0,
-        execution_results_count: 0,
-        user_intent_search_keywords: null,
-        user_intent_question: null
-      },
-      suggested_alternatives: [],
-    };
   }
 
   /**
