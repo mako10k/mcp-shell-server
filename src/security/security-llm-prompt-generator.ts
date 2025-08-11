@@ -6,14 +6,29 @@
 
 import { SafetyLevel } from '../types/enhanced-security.js';
 
+export interface ElicitationHistoryEntry {
+  command: string;
+  timestamp: string;
+  question: string;
+  userResponse: string;
+  evaluationResult?: string;
+}
+
+export interface CommandHistoryEntry {
+  command: string;
+  timestamp: string;
+  exitCode?: number;
+  workingDirectory?: string;
+}
+
 export interface SecurityPromptContext {
   command: string;
-  commandHistory: string[];
   workingDirectory: string;
   sessionId?: string;
   comment?: string;
   detectedPatterns?: string[];
-  userContextFromHistory?: string;
+  userContextFromHistory?: ElicitationHistoryEntry[];
+  commandHistoryWithTimestamp?: CommandHistoryEntry[];
 }
 
 export interface UserIntentContext {
@@ -31,6 +46,47 @@ export interface AdditionalContextContext {
 }
 
 export class SecurityLLMPromptGenerator {
+  /**
+   * コマンド履歴とELICITATION履歴を時系列でマージ
+   */
+  private mergeHistoryByTimestamp(
+    commandHistory: CommandHistoryEntry[],
+    elicitationHistory: ElicitationHistoryEntry[]
+  ): Array<{
+    type: 'command' | 'elicitation';
+    timestamp: string;
+    content: string;
+  }> {
+    const merged: Array<{
+      type: 'command' | 'elicitation';
+      timestamp: string;
+      content: string;
+    }> = [];
+
+    // コマンド履歴を追加
+    commandHistory.forEach(entry => {
+      merged.push({
+        type: 'command',
+        timestamp: entry.timestamp,
+        content: `Command: ${entry.command}${entry.exitCode !== undefined ? ` (exit: ${entry.exitCode})` : ''}${entry.workingDirectory ? ` [${entry.workingDirectory}]` : ''}`
+      });
+    });
+
+    // ELICITATION履歴を追加
+    elicitationHistory.forEach(entry => {
+      merged.push({
+        type: 'elicitation',
+        timestamp: entry.timestamp,
+        content: `Security Question: "${entry.question}" for command "${entry.command}"
+User Response: "${entry.userResponse}"${entry.evaluationResult ? `
+Final Decision: ${entry.evaluationResult}` : ''}`
+      });
+    });
+
+    // 時系列でソート（新しい順）
+    return merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
   /**
    * 初期評価の結果と推論を抽出する共通ヘルパー
    */
@@ -55,63 +111,116 @@ export class SecurityLLMPromptGenerator {
     systemPrompt: string;
     userMessage: string;
   } {
-    const systemPrompt = `You are an expert security evaluator for shell commands. You must respond ONLY with valid JSON matching this exact schema - NO additional text, explanations, or markdown formatting.
+    const systemPrompt = `PURPOSE:
+Evaluate the safety of shell commands that an AI assistant is attempting to execute. For unsafe commands, strictly evaluate their alignment with the AI assistant's user intent to determine whether execution should proceed.
+
+ARCHITECTURE:
+- User messages in this chat represent the AI assistant's messages
+- The AI assistant conducts conversations with its user and requests command evaluations from you
+- You evaluate these requests and make execution decisions
+- You can directly confirm the AI assistant's user intent through "user_intent_question"
+- Your past confirmation history with the AI assistant's user can be included as context in evaluations
+
+You are an expert security evaluator for shell commands. You must respond ONLY with valid JSON matching this exact schema - NO additional text, explanations, or markdown formatting.
 
 REQUIRED JSON SCHEMA:
 {
-  "evaluation_result": "ALLOW" | "CONDITIONAL_ALLOW" | "CONDITIONAL_DENY" | "DENY" | "ELICIT_USER_INTENT" | "NEED_MORE_INFO",
-  "confidence": number (0.0 to 1.0),
-  "reasoning": "string explaining the decision",
-  "risk_factors": [
-    {
-      "category": "destructive_action" | "data_access" | "network_access" | "system_modification" | "unclear_intent" | "suspicious_pattern",
-      "description": "string",
-      "severity": "low" | "medium" | "high" | "critical"
-    }
-  ],
-  "metadata": {
-    "requires_additional_context": boolean,
-    "requires_user_intent": boolean,
-    "suggested_alternatives": ["string"],
-    "safety_level": 1 | 2 | 3 | 4 | 5
-  }
+  "evaluation_result": "ALLOW" | "CONDITIONAL_ALLOW" | "CONDITIONAL_DENY" | "DENY" | "NEED_MORE_INFO",
+  "reasoning": "string explaining the decision (include risk factors analysis if any)",
+  "requires_additional_context": {
+    "command_history_depth": number (0 = no additional history needed, 1+ = how many more commands back to look),
+    "execution_results_count": number (0 = no execution results needed, 1+ = how many recent commands need their results),
+    "user_intent_search_keywords": ["string"] | null (keywords to search for previous AI assistant's user intent responses, null if not needed),
+    "user_intent_question": "string (question to ask AI assistant's user)" | null (specific question when AI assistant's user intent clarification is needed)
+  },
+  "suggested_alternatives": ["string"]
 }
 
 EVALUATION GUIDELINES:
 - ALLOW: Safe commands with no significant risks
 - CONDITIONAL_ALLOW: Generally safe but may need monitoring
-- CONDITIONAL_DENY: Risky commands that need user confirmation
+- CONDITIONAL_DENY: MUST be used only when "user_intent_question" is provided. Use when AI assistant's user intent is unclear and requires direct confirmation.
 - DENY: Dangerous commands that should be blocked
-- ELICIT_USER_INTENT: Command intent is unclear, need user clarification
 - NEED_MORE_INFO: Need additional context/history to make decision
 
-Safety levels: 1=completely safe, 2=mostly safe, 3=moderate risk, 4=high risk, 5=critical risk
+DECISION PRIORITY: Prefer ALLOW/DENY conclusions. Use CONDITIONAL_DENY ONLY when you include a specific "user_intent_question" for direct AI assistant's user clarification.
+
+CRITICAL RULE: If evaluation_result is "CONDITIONAL_DENY", then "user_intent_question" MUST NOT be null. This triggers the ELICITATION process.
+
+REASONING FORMAT:
+Include risk factors analysis in the reasoning text when applicable. Mention specific categories like:
+- destructive_action, data_access, network_access, system_modification, unclear_intent, suspicious_pattern
+- severity levels: low, medium, high, critical
+
+ADDITIONAL CONTEXT SPECIFICATION:
+- command_history_depth: How many more commands back in history to examine (0 = no more needed)
+- execution_results_count: How many recent commands need their execution details (runtime, exit codes, first 10 lines of output)
+- user_intent_search_keywords: Keywords to search for in previous AI assistant's user intent responses (null if not needed)
+- user_intent_question: Specific question to ask AI assistant's user for intent clarification (null if not needed)
+
+Examples:
+- {"command_history_depth": 5, "execution_results_count": 0, "user_intent_search_keywords": null, "user_intent_question": null} = Need 5 more commands back
+- {"command_history_depth": 0, "execution_results_count": 3, "user_intent_search_keywords": null, "user_intent_question": null} = Need execution results for last 3 commands
+- {"command_history_depth": 0, "execution_results_count": 0, "user_intent_search_keywords": ["git", "repository"], "user_intent_question": null} = Search for AI assistant's user intent about git/repository
+- {"command_history_depth": 0, "execution_results_count": 0, "user_intent_search_keywords": null, "user_intent_question": "What specific files are you trying to delete?"} = Ask AI assistant's user for clarification
 
 Respond with ONLY the JSON object, no other text.`;
 
-    const userMessage = `Evaluate this shell command for security:
+    const userMessage = `AI assistant is requesting evaluation for this shell command:
 
 Command: \`${context.command}\`
 Working Directory: ${context.workingDirectory}
-${context.comment ? `User Comment: ${context.comment}` : ''}
+${context.comment ? `AI Assistant Comment: ${context.comment}` : ''}
 
-${
-  context.commandHistory.length > 0
-    ? `Recent Command History:
-${context.commandHistory
-  .slice(-5)
-  .map((cmd, i) => `${i + 1}. ${cmd}`)
-  .join('\n')}`
-    : 'No recent command history'
-}
+${this.generateHistorySection(context)}
 
 ${context.detectedPatterns ? `Detected Patterns: ${context.detectedPatterns.join(', ')}` : ''}
-
-${context.userContextFromHistory ? `User Context: ${context.userContextFromHistory}` : ''}
 
 Return the security evaluation as JSON only.`;
 
     return { systemPrompt, userMessage };
+  }
+
+  /**
+   * 履歴セクションを生成（時系列マージまたは個別表示）
+   */
+  private generateHistorySection(context: SecurityPromptContext): string {
+    const commandHistory = context.commandHistoryWithTimestamp;
+    const elicitationHistory = context.userContextFromHistory;
+    
+    const hasCommandHistory = commandHistory && commandHistory.length > 0;
+    const hasElicitationHistory = elicitationHistory && elicitationHistory.length > 0;
+
+    // 両方の履歴がある場合は時系列マージ
+    if (hasCommandHistory && hasElicitationHistory) {
+      const mergedHistory = this.mergeHistoryByTimestamp(commandHistory, elicitationHistory);
+
+      return `Recent Activity Timeline (most recent first):
+${mergedHistory.slice(0, 10).map((entry, i) => 
+  `${i + 1}. [${entry.timestamp}] ${entry.type.toUpperCase()}: ${entry.content}`
+).join('\n')}`;
+    }
+
+    // 個別履歴の表示
+    const sections: string[] = [];
+
+    if (hasCommandHistory) {
+      sections.push(`Recent Command History:
+${commandHistory.slice(-5).map((entry, i) => 
+  `${i + 1}. [${entry.timestamp}] ${entry.command}${entry.exitCode !== undefined ? ` (exit: ${entry.exitCode})` : ''}`
+).join('\n')}`);
+    }
+
+    if (hasElicitationHistory) {
+      sections.push(`Previous User Intent Confirmation History:
+${elicitationHistory.map(entry => 
+  `- Command: ${entry.command} (${entry.timestamp})
+    Question: ${entry.question}
+    User Response: ${entry.userResponse}${entry.evaluationResult ? `\n    Final Decision: ${entry.evaluationResult}` : ''}`
+).join('\n')}`);
+    }
+
+    return sections.length > 0 ? sections.join('\n\n') : 'No activity history available';
   }
 
   /**
@@ -151,14 +260,14 @@ Respond with ONLY the JSON object.`;
 
     const { result: initialEvalResult, reasoning: initialReasoning } =
       this.extractInitialEvaluation(context.initialEvaluation);
-    const userMessage = `Re-evaluate the security of this command based on user intent clarification:
+    const userMessage = `Re-evaluate the security of this command based on AI assistant's user intent clarification:
 
 Original Command: \`${context.originalCommand}\`
 
 Initial Evaluation Result: ${initialEvalResult}
 Initial Reasoning: ${initialReasoning}
 
-User's Intent Clarification: "${context.userResponse}"
+AI Assistant's User Intent Clarification: "${context.userResponse}"
 
 ${context.additionalContext ? `Additional Context: ${context.additionalContext}` : ''}
 
@@ -240,7 +349,7 @@ CRITICAL: Your response must be ONLY valid JSON with no additional text, explana
 
 Available Functions:
 1. security_evaluate: Evaluates shell command security
-2. user_intent_reevaluate: Re-evaluates based on user intent clarification  
+2. user_intent_reevaluate: Re-evaluates based on AI assistant's user intent clarification  
 3. context_reevaluate: Re-evaluates with additional context
 
 Execute the requested function and return results as JSON only.`;

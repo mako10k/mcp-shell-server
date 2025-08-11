@@ -9,6 +9,8 @@ import { BaseResponseParser, BaseParseResult, BaseParseError } from './base-resp
 import {
   SecurityEvaluationResult,
   SecurityEvaluationResultSchema,
+  SimplifiedSecurityEvaluationResult,
+  SimplifiedSecurityEvaluationResultSchema,
   UserIntentReevaluation,
   UserIntentReevaluationSchema,
   AdditionalContextReevaluation,
@@ -55,6 +57,21 @@ export class SecurityResponseParser extends BaseResponseParser {
   }
 
   /**
+   * 簡略化されたセキュリティ評価のレスポンスを解析 (新しいスキーマ)
+   */
+  async parseSimplifiedSecurityEvaluation(
+    rawContent: string,
+    requestId?: string
+  ): Promise<SecurityParseResult<SimplifiedSecurityEvaluationResult>> {
+    return this.parseWithSchema(
+      rawContent,
+      SimplifiedSecurityEvaluationResultSchema,
+      requestId,
+      this.validateSimplifiedSecurityEvaluation
+    );
+  }
+
+  /**
    * ユーザ意図確認後の再評価レスポンスを解析
    */
   async parseUserIntentReevaluation(
@@ -72,6 +89,57 @@ export class SecurityResponseParser extends BaseResponseParser {
     requestId?: string
   ): Promise<SecurityParseResult<AdditionalContextReevaluation>> {
     return this.parseWithSchema(rawContent, AdditionalContextReevaluationSchema, requestId);
+  }
+
+  /**
+   * 簡略化されたセキュリティ評価の追加バリデーション
+   */
+  private validateSimplifiedSecurityEvaluation(data: unknown): {
+    isValid: boolean;
+    errors: SecurityParseError[];
+  } {
+    const errors: SecurityParseError[] = [];
+    if (typeof data === 'object' && data !== null) {
+      const evalData = data as SimplifiedSecurityEvaluationResult;
+      
+      // requires_additional_context の整合性チェック
+      if (evalData.requires_additional_context) {
+        const ctx = evalData.requires_additional_context;
+        
+        // 数値の範囲チェック
+        if (ctx.command_history_depth < 0) {
+          errors.push({
+            type: 'security',
+            field: 'requires_additional_context.command_history_depth',
+            message: 'command_history_depth must be non-negative',
+            severity: 'error',
+          });
+        }
+        
+        if (ctx.execution_results_count < 0) {
+          errors.push({
+            type: 'security',
+            field: 'requires_additional_context.execution_results_count',
+            message: 'execution_results_count must be non-negative',
+            severity: 'error',
+          });
+        }
+        
+        // user_intent_question と evaluation_result の整合性
+        if (ctx.user_intent_question && evalData.evaluation_result === 'ALLOW') {
+          errors.push({
+            type: 'security',
+            field: 'requires_additional_context.user_intent_question',
+            message: 'ALLOW evaluation should not require user intent clarification',
+            severity: 'warning',
+          });
+        }
+      }
+    }
+    return {
+      isValid: errors.filter((e) => e.severity === 'error').length === 0,
+      errors,
+    };
   }
 
   /**

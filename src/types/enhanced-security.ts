@@ -12,15 +12,30 @@ export const SafetyLevelSchema = z
   .describe('Safety level from 1 (safest) to 5 (most dangerous)');
 export type SafetyLevel = z.infer<typeof SafetyLevelSchema>;
 
-// 評価結果 (LLM中心設計)
+// 評価結果 (LLM中心設計) - 後方互換性のためELICIT_USER_INTENTを維持
 export const EvaluationResultSchema = z
-  .enum(['ALLOW', 'ELICIT_USER_INTENT', 'NEED_MORE_INFO', 'CONDITIONAL_DENY', 'DENY'])
+  .enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO', 'ELICIT_USER_INTENT'])
   .describe('Command evaluation result from LLM-centric evaluation');
 export const FinalEvaluationResultSchema = z
-  .enum(['ALLOW', 'CONDITIONAL_DENY', 'DENY'])
+  .enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY'])
   .describe('Final command evaluation result');
 export type EvaluationResult = z.infer<typeof EvaluationResultSchema>;
 export type FinalEvaluationResult = z.infer<typeof FinalEvaluationResultSchema>;
+
+// 新しいLLM評価結果スキーマ (simplified)
+export const SimplifiedLLMEvaluationResultSchema = z.object({
+  evaluation_result: z.enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO']),
+  reasoning: z.string(),
+  requires_additional_context: z.object({
+    command_history_depth: z.number().int().min(0),
+    execution_results_count: z.number().int().min(0), 
+    user_intent_search_keywords: z.array(z.string()).nullable(),
+    user_intent_question: z.string().nullable()
+  }),
+  suggested_alternatives: z.array(z.string())
+});
+
+export type SimplifiedLLMEvaluationResult = z.infer<typeof SimplifiedLLMEvaluationResultSchema>;
 
 // コマンド分類
 export const CommandClassificationSchema = z

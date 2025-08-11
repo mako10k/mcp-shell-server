@@ -77,10 +77,12 @@ export class ShellTools {
       let safetyEvaluation: SafetyEvaluationResult | null = null;
 
       if (this.securityManager.isEnhancedModeEnabled()) {
+        // Evaluate command safety with enhanced evaluator
         safetyEvaluation = await this.securityManager.evaluateCommandSafetyByEnhancedEvaluator(
           params.command,
           workingDir,
-          params.comment
+          params.comment,
+          params.force_user_confirm // Pass force_user_confirm flag
         );
 
         // Handle evaluation results with strict safety guards

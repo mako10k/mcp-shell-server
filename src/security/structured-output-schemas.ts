@@ -33,10 +33,19 @@ const SecurityMetadataSchema = z.object({
   safety_level: z.number().min(1).max(5),
 });
 
-// Main security evaluation result schema
+// Simplified additional context schema (new schema)
+const SimplifiedAdditionalContextSchema = z.object({
+  command_history_depth: z.number().int().min(0),
+  execution_results_count: z.number().int().min(0),
+  user_intent_search_keywords: z.array(z.string()).nullable(),
+  user_intent_question: z.string().nullable()
+});
+
+// Main security evaluation result schema (original - keep for backward compatibility)
 export const SecurityEvaluationResultSchema = z.object({
   evaluation_result: z.enum([
     'ALLOW',
+    'CONDITIONAL_ALLOW',
     'CONDITIONAL_DENY',
     'DENY',
     'ELICIT_USER_INTENT',
@@ -46,6 +55,20 @@ export const SecurityEvaluationResultSchema = z.object({
   reasoning: z.string(),
   risk_factors: z.array(RiskFactorSchema).optional(),
   metadata: SecurityMetadataSchema,
+});
+
+// Simplified security evaluation result schema (new)
+export const SimplifiedSecurityEvaluationResultSchema = z.object({
+  evaluation_result: z.enum([
+    'ALLOW',
+    'CONDITIONAL_ALLOW', 
+    'CONDITIONAL_DENY',
+    'DENY',
+    'NEED_MORE_INFO',
+  ]),
+  reasoning: z.string(),
+  requires_additional_context: SimplifiedAdditionalContextSchema,
+  suggested_alternatives: z.array(z.string())
 });
 
 // User intent impact schema
@@ -95,6 +118,7 @@ export const AdditionalContextReevaluationSchema = z.object({
 
 // Export TypeScript types
 export type SecurityEvaluationResult = z.infer<typeof SecurityEvaluationResultSchema>;
+export type SimplifiedSecurityEvaluationResult = z.infer<typeof SimplifiedSecurityEvaluationResultSchema>;
 export type UserIntentReevaluation = z.infer<typeof UserIntentReevaluationSchema>;
 export type AdditionalContextReevaluation = z.infer<typeof AdditionalContextReevaluationSchema>;
 export type RiskFactor = z.infer<typeof RiskFactorSchema>;

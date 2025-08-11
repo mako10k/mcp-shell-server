@@ -169,8 +169,8 @@ export class CommonLLMEvaluator {
     let evaluation_result: EvaluationResult;
 
     // 共通のパースロジック
-    if (llmResponse.includes('ELICIT_USER_INTENT')) {
-      evaluation_result = 'ELICIT_USER_INTENT';
+    if (llmResponse.includes('ELICIT_USER_INTENT') || llmResponse.includes('user_intent_question')) {
+      evaluation_result = 'NEED_MORE_INFO';
     } else if (llmResponse.includes('NEED_MORE_INFO')) {
       evaluation_result = 'NEED_MORE_INFO';
     } else if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
@@ -214,6 +214,32 @@ export class CommonLLMEvaluator {
       systemPrompt,
       userMessage,
       this.responseParser.parseSecurityEvaluation,
+      300,
+      0.1
+    );
+  }
+
+  /**
+   * 簡略化されたセキュリティ評価（新しいスキーマ用）
+   */
+  async evaluateSimplifiedSecurityByLLM(
+    context: CommonEvaluationContext,
+    historyContext: string[]
+  ): Promise<CommonLLMEvaluationResult> {
+    const promptContext = {
+      command: context.command,
+      commandHistory: historyContext,
+      workingDirectory: context.workingDirectory,
+      ...(context.comment && { comment: context.comment }),
+    };
+
+    const { systemPrompt, userMessage } =
+      this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
+
+    return this.callLLMWithStructuredOutput(
+      systemPrompt,
+      userMessage,
+      this.responseParser.parseSimplifiedSecurityEvaluation,
       300,
       0.1
     );

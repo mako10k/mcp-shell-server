@@ -1,4 +1,4 @@
-import { CommandHistoryEntry, EvaluationResult } from '../types/enhanced-security.js';
+import { CommandHistoryEntry, EvaluationResult, SimplifiedLLMEvaluationResult } from '../types/enhanced-security.js';
 import { CommandSafetyEvaluationResult, SecurityManager } from './manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId } from '../utils/helpers.js';
@@ -8,8 +8,6 @@ import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { SecurityResponseParser, SecurityParserConfig } from './security-response-parser.js';
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
 import {
-  CommonLLMEvaluator,
-  CommonLLMEvaluationResult,
   CommonEvaluationContext,
 } from './common-llm-evaluator.js';
 
@@ -65,8 +63,8 @@ interface MCPServerInterface {
   ): Promise<unknown>;
 }
 
-// LLM evaluation result (using common interface)
-interface LLMEvaluationResult extends CommonLLMEvaluationResult { }
+// LLM evaluation result (using simplified structure)
+interface LLMEvaluationResult extends SimplifiedLLMEvaluationResult { }
 
 // User intent data from elicitation
 interface UserIntentData {
@@ -93,11 +91,13 @@ interface SafetyEvaluation {
 }
 
 /**
- * Enhanced Safety Evaluator - LLM-Centric Design
- * Simple implementation focusing on LLM decision making without algorithmic complexity
- * Now extends CommonLLMEvaluator to reduce code duplication
+ * Enhanced Security Evaluator (Unified)
+ * LLM-centric security evaluation with structured output
  */
-export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
+export class EnhancedSafetyEvaluator {
+  private createMessageCallback: CreateMessageCallback;
+  private responseParser: SecurityResponseParser;
+  private promptGenerator: SecurityLLMPromptGenerator;
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
   private mcpServer: MCPServerInterface | undefined;
@@ -109,22 +109,23 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
     mcpServer?: MCPServerInterface,
     parserConfig?: SecurityParserConfig
   ) {
-    // Initialize parent class with shared components
+    this.securityManager = securityManager;
+    this.historyManager = historyManager;
+    this.mcpServer = mcpServer;
+
+    // Initialize parser and generator
     const parser = new SecurityResponseParser(parserConfig);
     const generator = new SecurityLLMPromptGenerator();
 
+    this.responseParser = parser;
+    this.promptGenerator = generator;
+
     // Use placeholder callback if not provided - will be set later via setCreateMessageCallback
-    const callback =
+    this.createMessageCallback =
       createMessageCallback ||
       (() => {
         throw new Error('LLM evaluation attempted before createMessageCallback was set');
       });
-
-    super(callback, parser, generator);
-
-    this.securityManager = securityManager;
-    this.historyManager = historyManager;
-    this.mcpServer = mcpServer;
   }
 
   setCreateMessageCallback(callback: CreateMessageCallback | undefined): void {
@@ -137,20 +138,22 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
     this.mcpServer = server;
   }
 
-    /**
+  /**
    * Simple LLM-centric command safety evaluation
    */
   async evaluateCommandLLMCentric(
     command: string,
     workingDirectory: string,
     history: CommandHistoryEntry[],
-    comment?: string
+    comment?: string,
+    forceUserConfirm?: boolean
   ): Promise<CommandSafetyEvaluationResult> {
     const result = await this.performLLMCentricEvaluation(
       command,
       workingDirectory,
       history,
-      comment
+      comment,
+      forceUserConfirm
     );
     
     // Convert SafetyEvaluation to CommandSafetyEvaluationResult
@@ -164,7 +167,8 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
     command: string,
     workingDirectory: string,
     history: CommandHistoryEntry[],
-    comment?: string
+    comment?: string,
+    forceUserConfirm?: boolean
   ): Promise<SafetyEvaluation> {
     let maxIteration = 5;
     try {
@@ -192,22 +196,44 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
           case 'ALLOW':
           case 'CONDITIONAL_DENY':
           case 'DENY':
+            // If force user confirm is enabled, always trigger ELICITATION regardless of LLM result
+            if (forceUserConfirm) {
+              return await this._handleUserIntentElicitation(
+                command,
+                workingDirectory,
+                history,
+                "AI Assistantによるユーザ確認の強制：この操作を実行してもよろしいですか？",
+                comment
+              );
+            }
+            
+            // Check for user intent question in the new schema structure
+            if (llmResult.requires_additional_context?.user_intent_question) {
+              return await this._handleUserIntentElicitation(
+                command, 
+                workingDirectory, 
+                history,
+                llmResult.requires_additional_context.user_intent_question,
+                comment
+              );
+            }
             return this.llmResultToSafetyEvaluation(
               llmResult,
               'llm_required'
             );
 
-          case 'ELICIT_USER_INTENT':
-            // Handle user intent elicitation
-            return await this.handleUserIntentElicitation(
-              command,
-              workingDirectory,
-              history,
-              comment
-            );
-
           case 'NEED_MORE_INFO':
-            // Handle additional context request
+            // If force user confirm is enabled, always trigger ELICITATION
+            if (forceUserConfirm) {
+              return await this._handleUserIntentElicitation(
+                command,
+                workingDirectory,
+                history,
+                "AI Assistantによるユーザ確認の強制：この操作を実行してもよろしいですか？",
+                comment
+              );
+            }
+            // Handle additional context request (history, execution results, etc.)
             return await this.handleMoreInfoRequest(command, workingDirectory, history, comment);
 
           default:
@@ -251,26 +277,64 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
       .map((entry) => entry.command)
       .filter((cmd) => cmd && cmd.trim().length > 0);
 
-    const context: CommonEvaluationContext = {
+    const promptContext = {
       command,
+      commandHistory: historyContext,
       workingDirectory,
       ...(comment && { comment }),
     };
 
-    return this.evaluateInitialSecurityByLLM(context, historyContext);
+    // Generate prompt for initial security evaluation
+    const { systemPrompt, userMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
+
+    // Call LLM with structured output
+    try {
+      const response = await this.createMessageCallback({
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: userMessage,
+            },
+          },
+        ],
+        maxTokens: 300,
+        temperature: 0.1,
+        systemPrompt,
+      });
+
+      // Parse response using simplified schema
+      const requestId = generateId();
+      const parseResult = await this.responseParser.parseSimplifiedSecurityEvaluation(
+        response.content.text,
+        requestId
+      );
+
+      if (parseResult.success && parseResult.data) {
+        return parseResult.data;
+      } else {
+        console.warn('Failed to parse LLM response, using fallback:', parseResult.errors);
+        return this.createFallbackEvaluation(response.content.text);
+      }
+    } catch (error) {
+      console.error('LLM evaluation failed:', error);
+      return this.createFallbackEvaluation('LLM evaluation failed');
+    }
   }
 
   /**
    * Handle user intent elicitation
    */
-  private async handleUserIntentElicitation(
+  private async _handleUserIntentElicitation(
     command: string,
     workingDirectory: string,
     history: CommandHistoryEntry[],
+    userIntentQuestion: string,
     comment?: string
   ): Promise<SafetyEvaluation> {
     try {
-      const { userIntent, elicitationResponse } = await this.elicitUserIntent(command);
+      const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, userIntentQuestion);
 
       if (userIntent && elicitationResponse?.action === 'accept') {
         // Re-evaluate with user intent
@@ -359,7 +423,7 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
     command: string,
     _workingDirectory: string,
     _history: CommandHistoryEntry[],
-    userIntent: UserIntentData,
+    _userIntent: UserIntentData,
     comment?: string
   ): Promise<LLMEvaluationResult> {
     const context: CommonEvaluationContext = {
@@ -368,13 +432,14 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
       ...(comment && { comment }),
     };
 
-    const userResponse = `Intent: ${userIntent.intent}, Justification: ${userIntent.justification}`;
-    const initialEvaluation = {
-      evaluation_result: 'ELICIT_USER_INTENT',
-      reasoning: 'User intent was requested',
-    };
-
-    return this.evaluateWithUserIntentByLLM(context, userResponse, initialEvaluation);
+    // For now, simply re-evaluate with basic context
+    // TODO: Implement proper user intent evaluation using userIntent data
+    return await this.callLLMForEvaluation(
+      context.command,
+      context.workingDirectory || '',
+      [],
+      context.comment
+    );
   }
 
   /**
@@ -383,33 +448,25 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
   private async callLLMForEvaluationWithMoreInfo(
     command: string,
     workingDirectory: string,
-    history: CommandHistoryEntry[],
+    _history: CommandHistoryEntry[],
     comment?: string
   ): Promise<LLMEvaluationResult> {
-    const additionalHistory = history
-      .slice(0, 15)
-      .map((entry) => entry.command)
-      .filter((cmd) => cmd && cmd.trim().length > 0);
-
-    const context: CommonEvaluationContext = {
+    // For now, simply re-evaluate with additional context
+    // TODO: Implement proper additional context evaluation using history data
+    return await this.callLLMForEvaluation(
       command,
       workingDirectory,
-      ...(comment && { comment }),
-    };
-
-    const initialEvaluation = {
-      evaluation_result: 'NEED_MORE_INFO',
-      reasoning: 'Additional context was requested',
-    };
-
-    return this.evaluateWithAdditionalContextByLLM(context, additionalHistory, initialEvaluation);
+      [],
+      comment
+    );
   }
 
   /**
    * Elicit user intent using MCP protocol
    */
   private async elicitUserIntent(
-    command: string
+    command: string,
+    userIntentQuestion?: string
   ): Promise<{
     userIntent: UserIntentData | null;
     elicitationResponse: ElicitationResponse | null;
@@ -423,7 +480,14 @@ export class EnhancedSafetyEvaluator extends CommonLLMEvaluator {
       throw new Error('MCP server not available for elicitation');
     }
 
-    const elicitationMessage = `🔐 SECURITY CONFIRMATION REQUIRED
+    // Use specific question from LLM if provided, otherwise use default message
+    const elicitationMessage = userIntentQuestion 
+      ? `🔐 SECURITY CONFIRMATION REQUIRED
+
+Command: ${command}
+
+${userIntentQuestion}`
+      : `🔐 SECURITY CONFIRMATION REQUIRED
 
 Command: ${command}
 
@@ -500,17 +564,15 @@ This command has been flagged for review. Please provide your intent:
   /**
    * Create fallback evaluation when Structured Output parsing fails
    */
-  protected override createFallbackEvaluation(
+  private createFallbackEvaluation(
     rawResponse: string,
-    model?: string
+    _model?: string
   ): LLMEvaluationResult {
     // Use the original simple parsing logic as fallback
     const llmResponse = rawResponse.trim().toUpperCase();
     let evaluation_result: EvaluationResult;
 
-    if (llmResponse.includes('ELICIT_USER_INTENT')) {
-      evaluation_result = 'ELICIT_USER_INTENT';
-    } else if (llmResponse.includes('NEED_MORE_INFO')) {
+    if (llmResponse.includes('NEED_MORE_INFO')) {
       evaluation_result = 'NEED_MORE_INFO';
     } else if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
       evaluation_result = 'DENY';
@@ -526,9 +588,14 @@ This command has been flagged for review. Please provide your intent:
 
     return {
       evaluation_result,
-      llm_reasoning: rawResponse,
-      model: model || 'unknown',
-      evaluation_time_ms: Date.now(),
+      reasoning: rawResponse,
+      requires_additional_context: {
+        command_history_depth: 0,
+        execution_results_count: 0,
+        user_intent_search_keywords: null,
+        user_intent_question: null
+      },
+      suggested_alternatives: [],
     };
   }
 
@@ -546,7 +613,6 @@ This command has been flagged for review. Please provide your intent:
       case 'DENY':
         evaluation_result = 'DENY';
         break;
-      case 'ELICIT_USER_INTENT':
       case 'NEED_MORE_INFO':
       case 'CONDITIONAL_DENY':
       default:
@@ -574,7 +640,7 @@ This command has been flagged for review. Please provide your intent:
       evaluation_result: llmResult.evaluation_result,
       safety_level: 0.7, 
       basic_classification: classification,
-      reasoning: llmResult.llm_reasoning,
+      reasoning: llmResult.reasoning,
       requires_confirmation: llmResult.evaluation_result === 'CONDITIONAL_DENY',
       suggested_alternatives: [],
       llm_evaluation_used: true,

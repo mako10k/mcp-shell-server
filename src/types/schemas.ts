@@ -105,6 +105,12 @@ export const ShellExecuteParamsSchema = z
     terminal_dimensions: DimensionsSchema.optional().describe(
       'Terminal dimensions in characters (width x height). Only used when create_terminal is true. Default: 120x30.'
     ),
+    force_user_confirm: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Force user confirmation regardless of LLM evaluation result. Use this to test ELICITATION functionality or when you want direct user confirmation even for safe commands.'
+      ),
   })
   .strict()
   .refine((data) => !(data.input_data && data.input_output_id), {
