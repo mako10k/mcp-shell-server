@@ -33,13 +33,10 @@ const SecurityMetadataSchema = z.object({
   safety_level: z.number().min(1).max(5),
 });
 
-// Simplified additional context schema (new schema)
-const SimplifiedAdditionalContextSchema = z.object({
-  command_history_depth: z.number().int().min(0),
-  execution_results_count: z.number().int().min(0),
-  user_intent_search_keywords: z.array(z.string()).nullable(),
-  user_intent_question: z.string().nullable()
-});
+import { SimplifiedLLMEvaluationResultSchema } from '../types/enhanced-security.js';
+
+// Simplified additional context schema (new schema) - use from enhanced-security.ts
+const SimplifiedAdditionalContextSchema = SimplifiedLLMEvaluationResultSchema.shape.requires_additional_context;
 
 // Main security evaluation result schema (original - keep for backward compatibility)
 export const SecurityEvaluationResultSchema = z.object({
