@@ -312,3 +312,49 @@ export const DEFAULT_BASIC_SAFETY_RULES: BasicSafetyRule[] = [
   { pattern: '^wc(\\s+-[lwc])?\\s+[^|>;&]+$', reasoning: 'Word count', safety_level: 1 },
   { pattern: '^which\\s+[a-zA-Z0-9_-]+$', reasoning: 'Command location', safety_level: 1 },
 ];
+
+// ========================================
+// Function Call Handler Types and Interfaces
+// ========================================
+
+// Function Call Handler Arguments Types
+export type EvaluateCommandSecurityArgs = z.infer<typeof SimplifiedLLMEvaluationResultSchema>;
+
+export const ReevaluateWithUserIntentArgsSchema = z.object({
+  evaluation_result: z.enum(['ALLOW', 'CONDITIONAL_DENY', 'DENY']),
+  reasoning: z.string(),
+  confidence_level: z.number().min(0.0).max(1.0),
+  suggested_alternatives: z.array(z.string())
+});
+
+export type ReevaluateWithUserIntentArgs = z.infer<typeof ReevaluateWithUserIntentArgsSchema>;
+export type ReevaluateWithAdditionalContextArgs = z.infer<typeof SimplifiedLLMEvaluationResultSchema>;
+
+// Function Call Handler Context
+export interface FunctionCallContext {
+  command: string;
+  comment?: string;
+  historyManager?: unknown; // CommandHistoryManager - to be typed properly later
+  securityManager?: unknown; // SecurityManager - to be typed properly later
+  userIntentMemory?: Map<string, unknown>;
+}
+
+// Function Call Handler Results
+export interface FunctionCallResult {
+  success: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+// Function Call Handler Signature
+export type FunctionCallHandler<TArgs = unknown> = (
+  args: TArgs,
+  context: FunctionCallContext
+) => Promise<FunctionCallResult>;
+
+// Function Call Handler Registry
+export interface FunctionCallHandlerRegistry {
+  'evaluate_command_security': FunctionCallHandler<EvaluateCommandSecurityArgs>;
+  'reevaluate_with_user_intent': FunctionCallHandler<ReevaluateWithUserIntentArgs>;
+  'reevaluate_with_additional_context': FunctionCallHandler<ReevaluateWithAdditionalContextArgs>;
+}
