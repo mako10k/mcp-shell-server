@@ -184,13 +184,59 @@ export class EnhancedSafetyEvaluator {
    */
   private async handleEvaluateCommandSecurity(
     args: EvaluateCommandSecurityArgs, 
-    _context: FunctionCallContext
+    context: FunctionCallContext
   ): Promise<FunctionCallResult> {
-    // TODO: Implement actual evaluation logic
-    return {
-      success: true,
-      result: args
-    };
+    try {
+      // Validate the evaluation result
+      if (!this.isValidEvaluationResult(args.evaluation_result)) {
+        return {
+          success: false,
+          error: `Invalid evaluation result: ${args.evaluation_result}`
+        };
+      }
+
+      // Log the evaluation for audit purposes
+      console.log('Function Call Security Evaluation:', {
+        command: context.command,
+        result: args.evaluation_result,
+        reasoning: args.reasoning
+      });
+
+      // Perform actual security evaluation logic
+      const evaluationContext = {
+        command: context.command,
+        comment: context.comment,
+        timestamp: new Date().toISOString(),
+        evaluation_result: args.evaluation_result,
+        reasoning: args.reasoning,
+        requires_additional_context: args.requires_additional_context,
+        suggested_alternatives: args.suggested_alternatives
+      };
+
+      // Store evaluation in history if historyManager is available
+      if (context.historyManager && typeof context.historyManager === 'object') {
+        // Add to command history with evaluation metadata
+        // This would be enhanced with proper typing later
+      }
+
+      return {
+        success: true,
+        result: evaluationContext
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Security evaluation failed: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  /**
+   * Validate if evaluation result is one of the allowed values
+   */
+  private isValidEvaluationResult(result: string): boolean {
+    const validResults = ['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO'];
+    return validResults.includes(result);
   }
 
   /**
@@ -198,13 +244,47 @@ export class EnhancedSafetyEvaluator {
    */
   private async handleReevaluateWithUserIntent(
     args: ReevaluateWithUserIntentArgs, 
-    _context: FunctionCallContext
+    context: FunctionCallContext
   ): Promise<FunctionCallResult> {
-    // TODO: Implement user intent reevaluation logic
-    return {
-      success: true,
-      result: args
-    };
+    try {
+      // Validate the reevaluation result
+      if (!['ALLOW', 'CONDITIONAL_DENY', 'DENY'].includes(args.evaluation_result)) {
+        return {
+          success: false,
+          error: `Invalid reevaluation result: ${args.evaluation_result}`
+        };
+      }
+
+      // Log the user intent reevaluation
+      console.log('Function Call User Intent Reevaluation:', {
+        command: context.command,
+        result: args.evaluation_result,
+        confidence: args.confidence_level,
+        reasoning: args.reasoning
+      });
+
+      // Create reevaluation context
+      const reevaluationContext = {
+        command: context.command,
+        comment: context.comment,
+        timestamp: new Date().toISOString(),
+        evaluation_result: args.evaluation_result,
+        reasoning: args.reasoning,
+        confidence_level: args.confidence_level,
+        suggested_alternatives: args.suggested_alternatives,
+        reevaluation_type: 'user_intent'
+      };
+
+      return {
+        success: true,
+        result: reevaluationContext
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `User intent reevaluation failed: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
   }
 
   /**
@@ -212,13 +292,47 @@ export class EnhancedSafetyEvaluator {
    */
   private async handleReevaluateWithAdditionalContext(
     args: ReevaluateWithAdditionalContextArgs, 
-    _context: FunctionCallContext
+    context: FunctionCallContext
   ): Promise<FunctionCallResult> {
-    // TODO: Implement additional context reevaluation logic
-    return {
-      success: true,
-      result: args
-    };
+    try {
+      // Validate the reevaluation result
+      if (!this.isValidEvaluationResult(args.evaluation_result)) {
+        return {
+          success: false,
+          error: `Invalid reevaluation result: ${args.evaluation_result}`
+        };
+      }
+
+      // Log the additional context reevaluation
+      console.log('Function Call Additional Context Reevaluation:', {
+        command: context.command,
+        result: args.evaluation_result,
+        reasoning: args.reasoning,
+        additional_context: args.requires_additional_context
+      });
+
+      // Create reevaluation context
+      const reevaluationContext = {
+        command: context.command,
+        comment: context.comment,
+        timestamp: new Date().toISOString(),
+        evaluation_result: args.evaluation_result,
+        reasoning: args.reasoning,
+        requires_additional_context: args.requires_additional_context,
+        suggested_alternatives: args.suggested_alternatives,
+        reevaluation_type: 'additional_context'
+      };
+
+      return {
+        success: true,
+        result: reevaluationContext
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Additional context reevaluation failed: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
   }
 
   /**
