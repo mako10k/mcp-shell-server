@@ -121,20 +121,7 @@ ARCHITECTURE:
 - You can directly confirm the AI assistant's user intent through "user_intent_question"
 - Your past confirmation history with the AI assistant's user can be included as context in evaluations
 
-You are an expert security evaluator for shell commands. You must respond ONLY with valid JSON matching this exact schema - NO additional text, explanations, or markdown formatting.
-
-REQUIRED JSON SCHEMA:
-{
-  "evaluation_result": "ALLOW" | "CONDITIONAL_ALLOW" | "CONDITIONAL_DENY" | "DENY" | "NEED_MORE_INFO",
-  "reasoning": "string explaining the decision (include risk factors analysis if any)",
-  "requires_additional_context": {
-    "command_history_depth": number (0 = no additional history needed, 1+ = how many more commands back to look),
-    "execution_results_count": number (0 = no execution results needed, 1+ = how many recent commands need their results),
-    "user_intent_search_keywords": ["string"] | null (keywords to search for previous AI assistant's user intent responses, null if not needed),
-    "user_intent_question": "string (question to ask AI assistant's user)" | null (specific question when AI assistant's user intent clarification is needed)
-  },
-  "suggested_alternatives": ["string"]
-}
+You are an expert security evaluator for shell commands. Use the evaluate_command_security function to provide structured security evaluation.
 
 EVALUATION GUIDELINES:
 - ALLOW: Safe commands with no significant risks
@@ -164,7 +151,7 @@ Examples:
 - {"command_history_depth": 0, "execution_results_count": 0, "user_intent_search_keywords": ["git", "repository"], "user_intent_question": null} = Search for AI assistant's user intent about git/repository
 - {"command_history_depth": 0, "execution_results_count": 0, "user_intent_search_keywords": null, "user_intent_question": "What specific files are you trying to delete?"} = Ask AI assistant's user for clarification
 
-Respond with ONLY the JSON object, no other text.`;
+Use the evaluate_command_security function to provide your evaluation.`;
 
     const userMessage = `AI assistant is requesting evaluation for this shell command:
 
@@ -176,7 +163,7 @@ ${this.generateHistorySection(context)}
 
 ${context.detectedPatterns ? `Detected Patterns: ${context.detectedPatterns.join(', ')}` : ''}
 
-Return the security evaluation as JSON only.`;
+Please evaluate this command using the evaluate_command_security function.`;
 
     return { systemPrompt, userMessage };
   }
