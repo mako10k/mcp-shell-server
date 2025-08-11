@@ -1,10 +1,10 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { 
-  CommandHistoryEntry, 
+import {
+  CommandHistoryEntry,
   CommandHistoryEntrySchema,
   UserConfirmationPattern,
-  EnhancedSecurityConfig 
+  EnhancedSecurityConfig,
 } from '../types/enhanced-security.js';
 import { getCurrentTimestamp, generateId } from '../utils/helpers.js';
 
@@ -41,19 +41,17 @@ export class CommandHistoryManager {
       await fs.access(this.historyPath);
       const historyData = await fs.readFile(this.historyPath, 'utf-8');
       const rawHistory = JSON.parse(historyData);
-      
+
       // Validate each entry
-      this.history = rawHistory.entries?.map((entry: unknown) => 
-        CommandHistoryEntrySchema.parse(entry)
-      ) || [];
-      
+      this.history =
+        rawHistory.entries?.map((entry: unknown) => CommandHistoryEntrySchema.parse(entry)) || [];
+
       this.userPatterns = rawHistory.userPatterns || [];
-      
+
       // Cleanup old entries
       await this.cleanupOldEntries();
-      
     } catch (error) {
-  if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         // Start with empty history if file doesn't exist
         this.history = [];
         this.userPatterns = [];
@@ -70,7 +68,7 @@ export class CommandHistoryManager {
     try {
       const historyDir = path.dirname(this.historyPath);
       await fs.mkdir(historyDir, { recursive: true });
-      
+
       const historyData = {
         metadata: {
           version: '2.2.0',
@@ -82,10 +80,9 @@ export class CommandHistoryManager {
         entries: this.history,
         userPatterns: this.userPatterns,
       };
-      
+
       const historyJson = JSON.stringify(historyData, null, 2);
       await fs.writeFile(this.historyPath, historyJson, 'utf-8');
-      
     } catch (error) {
       throw new Error(`Failed to save command history: ${error}`);
     }
@@ -94,28 +91,30 @@ export class CommandHistoryManager {
   /**
    * Add new command history entry
    */
-  async addHistoryEntry(entry: Omit<CommandHistoryEntry, 'execution_id' | 'timestamp'>): Promise<string> {
+  async addHistoryEntry(
+    entry: Omit<CommandHistoryEntry, 'execution_id' | 'timestamp'>
+  ): Promise<string> {
     const fullEntry: CommandHistoryEntry = {
       ...entry,
       execution_id: generateId(),
       timestamp: getCurrentTimestamp(),
     };
-    
+
     // Validation
     const validatedEntry = CommandHistoryEntrySchema.parse(fullEntry);
-    
+
     this.history.unshift(validatedEntry); // Add newest at front
-    
+
     // Remove old entries if max exceeded
     if (this.history.length > this.config.max_history_entries) {
       this.history = this.history.slice(0, this.config.max_history_entries);
     }
-    
+
     // Auto-save (optional)
     if (this.config.command_history_enhanced) {
       await this.saveHistory();
     }
-    
+
     return fullEntry.execution_id;
   }
 
@@ -123,40 +122,40 @@ export class CommandHistoryManager {
    * Update history entry (add evaluation results, etc.)
    */
   async updateHistoryEntry(
-    executionId: string, 
+    executionId: string,
     updates: Partial<Omit<CommandHistoryEntry, 'execution_id' | 'timestamp'>>
   ): Promise<boolean> {
-    const entryIndex = this.history.findIndex(entry => entry.execution_id === executionId);
-    
+    const entryIndex = this.history.findIndex((entry) => entry.execution_id === executionId);
+
     if (entryIndex === -1) {
       return false;
     }
-    
+
     const currentEntry = this.history[entryIndex];
     if (!currentEntry) {
       return false;
     }
-    
+
     // Update (preserve required fields)
-    const updatedEntry: CommandHistoryEntry = { 
-      ...currentEntry, 
+    const updatedEntry: CommandHistoryEntry = {
+      ...currentEntry,
       ...updates,
       execution_id: currentEntry.execution_id,
       command: currentEntry.command,
       timestamp: currentEntry.timestamp,
       working_directory: currentEntry.working_directory,
       was_executed: currentEntry.was_executed,
-      resubmission_count: currentEntry.resubmission_count
+      resubmission_count: currentEntry.resubmission_count,
     };
-    
+
     // Validation
     this.history[entryIndex] = CommandHistoryEntrySchema.parse(updatedEntry);
-    
+
     // Auto-save
     if (this.config.command_history_enhanced) {
       await this.saveHistory();
     }
-    
+
     return true;
   }
 
@@ -165,15 +164,17 @@ export class CommandHistoryManager {
    */
   findSimilarCommands(command: string, limit = 10): CommandHistoryEntry[] {
     const normalizedCommand = command.toLowerCase().trim();
-    
+
     return this.history
-      .filter(entry => {
+      .filter((entry) => {
         const entryCommand = entry.command.toLowerCase().trim();
         // Exact match, partial match, or first word match
-        return entryCommand === normalizedCommand ||
-               entryCommand.includes(normalizedCommand) ||
-               normalizedCommand.includes(entryCommand) ||
-               entryCommand.split(' ')[0] === normalizedCommand.split(' ')[0];
+        return (
+          entryCommand === normalizedCommand ||
+          entryCommand.includes(normalizedCommand) ||
+          normalizedCommand.includes(entryCommand) ||
+          entryCommand.split(' ')[0] === normalizedCommand.split(' ')[0]
+        );
       })
       .slice(0, limit);
   }
@@ -185,30 +186,30 @@ export class CommandHistoryManager {
     if (!entry.user_confirmation_context || !this.config.enable_resubmission_learning) {
       return;
     }
-    
+
     const commandWords = entry.command.toLowerCase().trim().split(/\s+/);
     const baseCommand = commandWords[0];
-    
+
     if (!baseCommand) {
       return; // Skip if command is empty
     }
-    
+
     // Find existing pattern
-    let pattern = this.userPatterns.find(p => 
-      p.command_pattern === baseCommand || 
-      new RegExp(p.command_pattern).test(entry.command)
+    let pattern = this.userPatterns.find(
+      (p) => p.command_pattern === baseCommand || new RegExp(p.command_pattern).test(entry.command)
     );
-    
+
     if (pattern) {
       // Update existing pattern
       const totalCount = pattern.confidence * 10; // Arbitrary weight
       const newCount = totalCount + 1;
-      const confirmations = totalCount * pattern.confirmation_rate + 
-                          (entry.user_confirmation_context.user_response ? 1 : 0);
-      
+      const confirmations =
+        totalCount * pattern.confirmation_rate +
+        (entry.user_confirmation_context.user_response ? 1 : 0);
+
       pattern.confirmation_rate = confirmations / newCount;
       pattern.confidence = Math.min(1.0, newCount / 10);
-      
+
       // Add reasoning (avoid duplicates)
       const reasoning = entry.user_confirmation_context.user_reasoning;
       if (reasoning && !pattern.typical_reasoning.includes(reasoning)) {
@@ -223,8 +224,9 @@ export class CommandHistoryManager {
       const newPattern: UserConfirmationPattern = {
         command_pattern: baseCommand,
         confirmation_rate: entry.user_confirmation_context.user_response ? 1.0 : 0.0,
-        typical_reasoning: entry.user_confirmation_context.user_reasoning ? 
-                          [entry.user_confirmation_context.user_reasoning] : [],
+        typical_reasoning: entry.user_confirmation_context.user_reasoning
+          ? [entry.user_confirmation_context.user_reasoning]
+          : [],
         confidence: 0.1, // Low initial confidence
       };
       this.userPatterns.push(newPattern);
@@ -241,17 +243,19 @@ export class CommandHistoryManager {
   } {
     const commandWords = command.toLowerCase().trim().split(/\s+/);
     const baseCommand = commandWords[0];
-    
+
     // Find matching patterns
-    const matchingPatterns = this.userPatterns.filter(pattern => {
+    const matchingPatterns = this.userPatterns.filter((pattern) => {
       try {
-        return pattern.command_pattern === baseCommand ||
-               new RegExp(pattern.command_pattern).test(command);
+        return (
+          pattern.command_pattern === baseCommand ||
+          new RegExp(pattern.command_pattern).test(command)
+        );
       } catch {
         return pattern.command_pattern === baseCommand;
       }
     });
-    
+
     if (matchingPatterns.length === 0) {
       return {
         likely_to_confirm: false,
@@ -259,22 +263,22 @@ export class CommandHistoryManager {
         reasoning: [],
       };
     }
-    
+
     // Weighted average prediction
     let totalWeight = 0;
     let weightedConfirmationRate = 0;
     const allReasoning: string[] = [];
-    
-    matchingPatterns.forEach(pattern => {
+
+    matchingPatterns.forEach((pattern) => {
       const weight = pattern.confidence;
       totalWeight += weight;
       weightedConfirmationRate += pattern.confirmation_rate * weight;
       allReasoning.push(...pattern.typical_reasoning);
     });
-    
+
     const avgConfirmationRate = totalWeight > 0 ? weightedConfirmationRate / totalWeight : 0;
     const confidence = totalWeight / matchingPatterns.length;
-    
+
     return {
       likely_to_confirm: avgConfirmationRate > 0.5,
       confidence,
@@ -288,13 +292,13 @@ export class CommandHistoryManager {
   private async cleanupOldEntries(): Promise<void> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.config.history_retention_days);
-    
+
     const initialCount = this.history.length;
-    this.history = this.history.filter(entry => {
+    this.history = this.history.filter((entry) => {
       const entryDate = new Date(entry.timestamp);
       return entryDate >= cutoffDate;
     });
-    
+
     const removedCount = initialCount - this.history.length;
     if (removedCount > 0) {
       console.error(`Cleaned up ${removedCount} old command history entries`);
@@ -314,31 +318,31 @@ export class CommandHistoryManager {
     const commandCounts = new Map<string, number>();
     let entriesWithEvaluation = 0;
     let entriesWithConfirmation = 0;
-    
-    this.history.forEach(entry => {
+
+    this.history.forEach((entry) => {
       // Count commands
       const baseCommand = entry.command.split(' ')[0];
       if (baseCommand) {
         commandCounts.set(baseCommand, (commandCounts.get(baseCommand) || 0) + 1);
       }
-      
+
       // Check evaluation results
       if (entry.llm_evaluation_result || entry.safety_classification) {
         entriesWithEvaluation++;
       }
-      
+
       // Check confirmations
       if (entry.user_confirmation_context) {
         entriesWithConfirmation++;
       }
     });
-    
+
     // Get top commands
     const topCommands = Array.from(commandCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([command, count]) => ({ command, count }));
-    
+
     return {
       totalEntries: this.history.length,
       entriesWithEvaluation,
@@ -359,32 +363,26 @@ export class CommandHistoryManager {
     limit?: number;
   }): CommandHistoryEntry[] {
     let filtered = this.history;
-    
+
     if (query.command) {
       const searchTerm = query.command.toLowerCase();
-      filtered = filtered.filter(entry => 
-        entry.command.toLowerCase().includes(searchTerm)
-      );
+      filtered = filtered.filter((entry) => entry.command.toLowerCase().includes(searchTerm));
     }
-    
+
     if (query.working_directory) {
-      filtered = filtered.filter(entry => 
-        entry.working_directory === query.working_directory
-      );
+      filtered = filtered.filter((entry) => entry.working_directory === query.working_directory);
     }
-    
+
     if (query.was_executed !== undefined) {
-      filtered = filtered.filter(entry => 
-        entry.was_executed === query.was_executed
-      );
+      filtered = filtered.filter((entry) => entry.was_executed === query.was_executed);
     }
-    
+
     if (query.safety_classification) {
-      filtered = filtered.filter(entry => 
-        entry.safety_classification === query.safety_classification
+      filtered = filtered.filter(
+        (entry) => entry.safety_classification === query.safety_classification
       );
     }
-    
+
     return filtered.slice(0, query.limit || 50);
   }
 

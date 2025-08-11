@@ -1,13 +1,13 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { z } from 'zod';
-import { 
-  ShellServerConfig, 
+import {
+  ShellServerConfig,
   ShellServerConfigSchema,
   EnhancedSecurityConfig,
   BasicSafetyRule,
   DEFAULT_ENHANCED_SECURITY_CONFIG,
-  DEFAULT_BASIC_SAFETY_RULES 
+  DEFAULT_BASIC_SAFETY_RULES,
 } from '../types/enhanced-security.js';
 import { getCurrentTimestamp } from '../utils/helpers.js';
 
@@ -55,29 +55,28 @@ export class ConfigManager {
     try {
       // Check if config file exists
       await fs.access(this.configPath);
-      
+
       // Read file content
       const configData = await fs.readFile(this.configPath, 'utf-8');
       const rawConfig = JSON.parse(configData);
-      
+
       // Validate with Zod schema
       const validatedConfig = ShellServerConfigSchema.parse(rawConfig);
-      
+
       this.config = validatedConfig;
       return this.config;
-      
     } catch (error) {
       if (error instanceof z.ZodError) {
         throw new Error(`Configuration validation failed: ${error.message}`);
       }
-      
+
       // Return default config if file doesn't exist
-  if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         console.warn(`Configuration file not found at ${this.configPath}, using defaults`);
         await this.saveConfig(); // Create default config file
         return this.config;
       }
-      
+
       throw new Error(`Failed to load configuration: ${error}`);
     }
   }
@@ -87,21 +86,20 @@ export class ConfigManager {
    */
   async saveConfig(config?: ShellServerConfig): Promise<void> {
     const configToSave = config || this.config;
-    
+
     try {
       // Validate with Zod schema
       const validatedConfig = ShellServerConfigSchema.parse(configToSave);
-      
+
       // Create directory if it doesn't exist
       const configDir = path.dirname(this.configPath);
       await fs.mkdir(configDir, { recursive: true });
-      
+
       // Save to file (formatted JSON)
       const configJson = JSON.stringify(validatedConfig, null, 2);
       await fs.writeFile(this.configPath, configJson, 'utf-8');
-      
+
       this.config = validatedConfig;
-      
     } catch (error) {
       if (error instanceof z.ZodError) {
         throw new Error(`Configuration validation failed: ${error.message}`);
@@ -121,32 +119,32 @@ export class ConfigManager {
    * Get enhanced security configuration
    */
   getEnhancedSecurityConfig(): EnhancedSecurityConfig {
-    return { ...this.config.enhanced_security || DEFAULT_ENHANCED_SECURITY_CONFIG };
+    return { ...(this.config.enhanced_security || DEFAULT_ENHANCED_SECURITY_CONFIG) };
   }
 
   /**
    * Update enhanced security configuration
    */
   async updateEnhancedSecurityConfig(
-    updates: Partial<EnhancedSecurityConfig>, 
+    updates: Partial<EnhancedSecurityConfig>,
     saveToFile: boolean = true
   ): Promise<EnhancedSecurityConfig> {
     const currentConfig = this.getEnhancedSecurityConfig();
-    const newConfig = { 
-      ...currentConfig, 
+    const newConfig = {
+      ...currentConfig,
       ...updates,
       safety_level_thresholds: {
         ...currentConfig.safety_level_thresholds,
         ...updates.safety_level_thresholds,
-      }
+      },
     };
-    
+
     this.config.enhanced_security = newConfig;
-    
+
     if (saveToFile) {
       await this.saveConfig();
     }
-    
+
     return newConfig;
   }
 
@@ -160,9 +158,12 @@ export class ConfigManager {
   /**
    * Update basic safety rules
    */
-  async updateBasicSafetyRules(rules: BasicSafetyRule[], saveToFile: boolean = true): Promise<void> {
+  async updateBasicSafetyRules(
+    rules: BasicSafetyRule[],
+    saveToFile: boolean = true
+  ): Promise<void> {
     this.config.basic_safety_rules = [...rules];
-    
+
     if (saveToFile) {
       await this.saveConfig();
     }
@@ -192,11 +193,11 @@ export class ConfigManager {
    */
   async resetToDefaults(saveToFile: boolean = true): Promise<ShellServerConfig> {
     this.config = this.getDefaultConfig();
-    
+
     if (saveToFile) {
       await this.saveConfig();
     }
-    
+
     return this.config;
   }
 
@@ -206,7 +207,7 @@ export class ConfigManager {
   async createBackup(): Promise<string> {
     const timestamp = getCurrentTimestamp().replace(/[:.]/g, '-');
     const backupPath = `${this.configPath}.backup.${timestamp}`;
-    
+
     try {
       await fs.copyFile(this.configPath, backupPath);
       return backupPath;

@@ -34,7 +34,10 @@ export class SecurityLLMPromptGenerator {
   /**
    * 初期評価の結果と推論を抽出する共通ヘルパー
    */
-  private extractInitialEvaluation(initialEvaluation: unknown): { result: string; reasoning: string } {
+  private extractInitialEvaluation(initialEvaluation: unknown): {
+    result: string;
+    reasoning: string;
+  } {
     let initialEvalResult = '';
     let initialReasoning = '';
     if (typeof initialEvaluation === 'object' && initialEvaluation !== null) {
@@ -92,8 +95,15 @@ Command: \`${context.command}\`
 Working Directory: ${context.workingDirectory}
 ${context.comment ? `User Comment: ${context.comment}` : ''}
 
-${context.commandHistory.length > 0 ? `Recent Command History:
-${context.commandHistory.slice(-5).map((cmd, i) => `${i + 1}. ${cmd}`).join('\n')}` : 'No recent command history'}
+${
+  context.commandHistory.length > 0
+    ? `Recent Command History:
+${context.commandHistory
+  .slice(-5)
+  .map((cmd, i) => `${i + 1}. ${cmd}`)
+  .join('\n')}`
+    : 'No recent command history'
+}
 
 ${context.detectedPatterns ? `Detected Patterns: ${context.detectedPatterns.join(', ')}` : ''}
 
@@ -139,7 +149,8 @@ REQUIRED JSON SCHEMA:
 
 Respond with ONLY the JSON object.`;
 
-    const { result: initialEvalResult, reasoning: initialReasoning } = this.extractInitialEvaluation(context.initialEvaluation);
+    const { result: initialEvalResult, reasoning: initialReasoning } =
+      this.extractInitialEvaluation(context.initialEvaluation);
     const userMessage = `Re-evaluate the security of this command based on user intent clarification:
 
 Original Command: \`${context.originalCommand}\`
@@ -193,7 +204,8 @@ REQUIRED JSON SCHEMA:
 
 Respond with ONLY the JSON object.`;
 
-    const { result: initialEvalResult, reasoning: initialReasoning } = this.extractInitialEvaluation(context.initialEvaluation);
+    const { result: initialEvalResult, reasoning: initialReasoning } =
+      this.extractInitialEvaluation(context.initialEvaluation);
     const userMessage = `Re-evaluate security with additional context:
 
 Original Command: \`${context.originalCommand}\`
@@ -217,7 +229,7 @@ Provide comprehensive final security evaluation as JSON only.`;
    */
   generateFunctionCallEmulationPrompt(
     functionName: 'security_evaluate' | 'user_intent_reevaluate' | 'context_reevaluate',
-  args: Record<string, unknown>
+    args: Record<string, unknown>
   ): {
     systemPrompt: string;
     userMessage: string;
@@ -248,10 +260,10 @@ Return function execution result as JSON only.`;
   generateDebugPrompt(context: SecurityPromptContext): {
     systemPrompt: string;
     userMessage: string;
-  expectedSchema: Record<string, unknown>;
+    expectedSchema: Record<string, unknown>;
   } {
     const { systemPrompt, userMessage } = this.generateSecurityEvaluationPrompt(context);
-    
+
     return {
       systemPrompt: systemPrompt + '\n\nDEBUG MODE: Include parsing metadata in response.',
       userMessage: userMessage + '\n\nDEBUG: This is a test evaluation.',
@@ -260,8 +272,8 @@ Return function execution result as JSON only.`;
         confidence: 'number',
         reasoning: 'string',
         risk_factors: 'array',
-        metadata: 'object'
-      }
+        metadata: 'object',
+      },
     };
   }
 
@@ -277,15 +289,16 @@ Return function execution result as JSON only.`;
       2: 'Be somewhat permissive. Allow most common operations.',
       3: 'Be balanced. Careful evaluation of moderate risks.',
       4: 'Be conservative. Require confirmation for risky operations.',
-      5: 'Be very strict. Block any potentially dangerous commands.'
+      5: 'Be very strict. Block any potentially dangerous commands.',
     };
 
-    const enhancedSystemPrompt = basePrompt.systemPrompt + 
+    const enhancedSystemPrompt =
+      basePrompt.systemPrompt +
       `\n\nSAFETY LEVEL ${targetSafetyLevel}: ${safetyInstructions[targetSafetyLevel]}`;
 
     return {
       systemPrompt: enhancedSystemPrompt,
-      userMessage: basePrompt.userMessage
+      userMessage: basePrompt.userMessage,
     };
   }
 }

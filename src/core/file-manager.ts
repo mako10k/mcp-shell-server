@@ -370,7 +370,7 @@ export class FileManager {
 
       if (cleanupCandidates.length > 0) {
         const estimatedSavingsMB = Math.round((estimatedSavings / (1024 * 1024)) * 100) / 100;
-        
+
         let warning: string;
         if (currentSizeMB > maxSizeMB) {
           warning = `Output directory size: ${result.current_directory_size_mb}MB exceeds threshold (${maxSizeMB}MB). Consider cleanup.`;
@@ -382,7 +382,8 @@ export class FileManager {
           ...result,
           recommendations: {
             warning,
-            suggested_action: 'Use delete_execution_outputs with cleanup_candidates for automatic cleanup',
+            suggested_action:
+              'Use delete_execution_outputs with cleanup_candidates for automatic cleanup',
             cleanup_candidates: cleanupCandidates.slice(0, 20), // Limit to top 20 candidates
             estimated_savings_mb: estimatedSavingsMB,
           },
@@ -424,9 +425,9 @@ export class FileManager {
     for (let i = 0; i < sortedFiles.length; i++) {
       const entry = sortedFiles[i];
       if (!entry) continue;
-      
+
       const [outputId, fileInfo] = entry;
-      
+
       if (i < preserveRecent) {
         // 最新のN個は保持
         preserveCandidates.push(outputId);

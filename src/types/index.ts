@@ -36,17 +36,26 @@ const ErrorCategorySchema = z.enum([
 export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
 
 // 基本スキーマ
-export const EnvironmentVariablesSchema = z.record(z.string(), z.string()).describe('Environment variables');
+export const EnvironmentVariablesSchema = z
+  .record(z.string(), z.string())
+  .describe('Environment variables');
 export type EnvironmentVariables = z.infer<typeof EnvironmentVariablesSchema>;
 
-export const DimensionsSchema = z.object({
-  width: z.number().int().min(1).max(500).describe('Width in characters'),
-  height: z.number().int().min(1).max(200).describe('Height in lines'),
-}).describe('Terminal dimensions');
+export const DimensionsSchema = z
+  .object({
+    width: z.number().int().min(1).max(500).describe('Width in characters'),
+    height: z.number().int().min(1).max(200).describe('Height in lines'),
+  })
+  .describe('Terminal dimensions');
 export type Dimensions = z.infer<typeof DimensionsSchema>;
 
 // 出力切り捨て理由
-export type OutputTruncationReason = 'size_limit' | 'timeout' | 'user_interrupt' | 'error' | 'background_transition';
+export type OutputTruncationReason =
+  | 'size_limit'
+  | 'timeout'
+  | 'user_interrupt'
+  | 'error'
+  | 'background_transition';
 
 // 出力状態情報
 export interface OutputStatus {
@@ -195,23 +204,30 @@ export interface ErrorInfo {
 export interface SecurityRestrictions {
   restriction_id: string;
   security_mode: SecurityMode;
-  
+
   // customモード時のみ有効
   allowed_commands?: string[];
   blocked_commands?: string[];
   allowed_directories?: string[];
-  
+
   // 共通設定
   max_execution_time?: number;
   max_memory_mb?: number;
   enable_network?: boolean;
-  
+
   active: boolean;
   configured_at: string;
 }
 
 // セキュリティモード
-export const SecurityModeSchema = z.enum(['permissive', 'moderate', 'restrictive', 'custom', 'enhanced', 'enhanced-fast']);
+export const SecurityModeSchema = z.enum([
+  'permissive',
+  'moderate',
+  'restrictive',
+  'custom',
+  'enhanced',
+  'enhanced-fast',
+]);
 export type SecurityMode = z.infer<typeof SecurityModeSchema>;
 
 // 実行プロセス情報（Process Manager用）

@@ -15,11 +15,11 @@ describe('Pipeline Output Feature (Issue #13)', () => {
     fileManager = new FileManager('/tmp/mcp-shell-test-pipeline');
     processManager = new ProcessManager(50, '/tmp/mcp-shell-test-pipeline', fileManager);
     processManager.setFileManager(fileManager);
-    
+
     const terminalManager = new TerminalManager();
     const monitoringManager = new MonitoringManager();
     const securityManager = new SecurityManager();
-    
+
     shellTools = new ShellTools(
       processManager,
       terminalManager,
@@ -40,7 +40,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         max_output_size: 1048576,
         capture_stderr: true,
         return_partial_on_timeout: true,
-        create_terminal: false
+        create_terminal: false,
       });
 
       expect(firstResult.status).toBe('completed');
@@ -57,7 +57,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         capture_stderr: true,
         return_partial_on_timeout: true,
         create_terminal: false,
-        input_output_id: firstResult.output_id
+        input_output_id: firstResult.output_id,
       });
 
       expect(secondResult.status).toBe('completed');
@@ -73,7 +73,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         max_output_size: 1048576,
         capture_stderr: true,
         return_partial_on_timeout: true,
-        create_terminal: false
+        create_terminal: false,
       });
 
       // This should be tested at the schema validation level
@@ -88,7 +88,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         return_partial_on_timeout: true,
         create_terminal: false,
         input_data: 'direct input that should be ignored',
-        input_output_id: firstResult.output_id
+        input_output_id: firstResult.output_id,
       });
 
       // Should use input_output_id data, not input_data
@@ -98,17 +98,19 @@ describe('Pipeline Output Feature (Issue #13)', () => {
     });
 
     test('should handle non-existent output_id gracefully', async () => {
-      await expect(shellTools.executeShell({
-        command: 'cat',
-        execution_mode: 'foreground',
-        timeout_seconds: 10,
-        foreground_timeout_seconds: 10,
-        max_output_size: 1048576,
-        capture_stderr: true,
-        return_partial_on_timeout: true,
-        create_terminal: false,
-        input_output_id: 'non-existent-id'
-      })).rejects.toThrow(/Failed to read input from output_id/);
+      await expect(
+        shellTools.executeShell({
+          command: 'cat',
+          execution_mode: 'foreground',
+          timeout_seconds: 10,
+          foreground_timeout_seconds: 10,
+          max_output_size: 1048576,
+          capture_stderr: true,
+          return_partial_on_timeout: true,
+          create_terminal: false,
+          input_output_id: 'non-existent-id',
+        })
+      ).rejects.toThrow(/Failed to read input from output_id/);
     });
 
     test('should work with complex pipeline transformations', async () => {
@@ -121,7 +123,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         max_output_size: 1048576,
         capture_stderr: true,
         return_partial_on_timeout: true,
-        create_terminal: false
+        create_terminal: false,
       });
 
       // Filter data starting with 'a'
@@ -134,7 +136,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         capture_stderr: true,
         return_partial_on_timeout: true,
         create_terminal: false,
-        input_output_id: dataResult.output_id
+        input_output_id: dataResult.output_id,
       });
 
       expect(filterResult.status).toBe('completed');
@@ -153,7 +155,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         capture_stderr: true,
         return_partial_on_timeout: true,
         create_terminal: false,
-        input_output_id: filterResult.output_id
+        input_output_id: filterResult.output_id,
       });
 
       expect(countResult.status).toBe('completed');
@@ -170,7 +172,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         max_output_size: 1048576,
         capture_stderr: true,
         return_partial_on_timeout: true,
-        create_terminal: false
+        create_terminal: false,
       });
 
       expect(emptyResult.status).toBe('completed');
@@ -186,7 +188,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         capture_stderr: true,
         return_partial_on_timeout: true,
         create_terminal: false,
-        input_output_id: emptyResult.output_id
+        input_output_id: emptyResult.output_id,
       });
 
       expect(catResult.status).toBe('completed');
@@ -203,7 +205,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         max_output_size: 2048,
         capture_stderr: true,
         return_partial_on_timeout: true,
-        create_terminal: false
+        create_terminal: false,
       });
 
       expect(largeDataResult.status).toBe('completed');
@@ -219,7 +221,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         capture_stderr: true,
         return_partial_on_timeout: true,
         create_terminal: false,
-        input_output_id: largeDataResult.output_id
+        input_output_id: largeDataResult.output_id,
       });
 
       expect(countResult.status).toBe('completed');
@@ -236,7 +238,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         max_output_size: 1048576,
         capture_stderr: true,
         return_partial_on_timeout: true,
-        create_terminal: false
+        create_terminal: false,
       });
 
       expect(multilineResult.status).toBe('completed');
@@ -252,7 +254,7 @@ describe('Pipeline Output Feature (Issue #13)', () => {
         capture_stderr: true,
         return_partial_on_timeout: true,
         create_terminal: false,
-        input_output_id: multilineResult.output_id
+        input_output_id: multilineResult.output_id,
       });
 
       expect(lineCountResult.status).toBe('completed');

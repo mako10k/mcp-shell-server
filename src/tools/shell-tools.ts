@@ -72,21 +72,22 @@ export class ShellTools {
   async executeShell(params: ShellExecuteParams) {
     try {
       // Enhanced security evaluation (if enabled)
-      const workingDir = params.working_directory || this.processManager.getDefaultWorkingDirectory();
+      const workingDir =
+        params.working_directory || this.processManager.getDefaultWorkingDirectory();
       let safetyEvaluation: SafetyEvaluationResult | null = null;
-      
+
       if (this.securityManager.isEnhancedModeEnabled()) {
-        safetyEvaluation = await this.securityManager.evaluateCommandSafety(
+        safetyEvaluation = await this.securityManager.evaluateCommandSafetyByEnhancedEvaluator(
           params.command,
           workingDir,
           params.comment
         );
-        
+
         // Handle evaluation results with strict safety guards
         if (safetyEvaluation.evaluation_result === 'DENY') {
           throw new Error(`Command denied: ${safetyEvaluation.reasoning}`);
         }
-        
+
         // For CONDITIONAL_DENY, return evaluation info without executing
         // User can review suggested alternatives and re-run if appropriate
         if (safetyEvaluation.evaluation_result === 'CONDITIONAL_DENY') {
@@ -103,13 +104,16 @@ export class ShellTools {
               llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
               context_analysis: safetyEvaluation.context_analysis,
             },
-            message: 'Command requires confirmation before execution. Please review the suggested alternatives and re-run if appropriate.',
+            message:
+              'Command requires confirmation before execution. Please review the suggested alternatives and re-run if appropriate.',
           };
         }
-        
+
         // CRITICAL SAFETY GUARD: Only execute if explicitly ALLOWED
         if (safetyEvaluation.evaluation_result !== 'ALLOW') {
-          throw new Error(`Command execution blocked: evaluation result '${safetyEvaluation.evaluation_result}' is not ALLOW. Reasoning: ${safetyEvaluation.reasoning}`);
+          throw new Error(
+            `Command execution blocked: evaluation result '${safetyEvaluation.evaluation_result}' is not ALLOW. Reasoning: ${safetyEvaluation.reasoning}`
+          );
         }
       }
 
@@ -157,15 +161,16 @@ export class ShellTools {
 
       // Add command to history
       try {
-        const safetyClassification = this.securityManager.classifyCommandSafety(params.command);
+        const safetyClassification = this.securityManager.analyzeCommandSafety(params.command);
         await this.historyManager.addHistoryEntry({
           command: params.command,
-          working_directory: params.working_directory || this.processManager.getDefaultWorkingDirectory(),
+          working_directory:
+            params.working_directory || this.processManager.getDefaultWorkingDirectory(),
           was_executed: true,
           resubmission_count: 0,
-          safety_classification: safetyClassification,
+          safety_classification: safetyClassification.classification,
           execution_status: executionInfo.status,
-          output_summary: `Exit code: ${executionInfo.exit_code}, Duration: ${executionInfo.execution_time_ms}ms, Output size: ${(executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0)} bytes`
+          output_summary: `Exit code: ${executionInfo.exit_code}, Duration: ${executionInfo.execution_time_ms}ms, Output size: ${(executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0)} bytes`,
         });
       } catch (historyError) {
         // Log history error but don't fail the execution
@@ -173,9 +178,9 @@ export class ShellTools {
       }
 
       // Include safety evaluation in response if available
-  const response: Record<string, unknown> = { ...executionInfo };
+      const response: Record<string, unknown> = { ...executionInfo };
       if (safetyEvaluation) {
-  response['safety_evaluation'] = {
+        response['safety_evaluation'] = {
           evaluation_result: safetyEvaluation.evaluation_result,
           reasoning: safetyEvaluation.reasoning,
           basic_classification: safetyEvaluation.basic_classification,
@@ -217,19 +222,19 @@ export class ShellTools {
         statusFilter = undefined;
       }
 
-  const listOptions: Record<string, unknown> = {
+      const listOptions: Record<string, unknown> = {
         limit: params.limit,
         offset: params.offset,
       };
 
       if (statusFilter !== undefined) {
-  listOptions['status'] = statusFilter;
+        listOptions['status'] = statusFilter;
       }
       if (params.command_pattern !== undefined) {
-  listOptions['commandPattern'] = params.command_pattern;
+        listOptions['commandPattern'] = params.command_pattern;
       }
       if (params.session_id !== undefined) {
-  listOptions['sessionId'] = params.session_id;
+        listOptions['sessionId'] = params.session_id;
       }
 
       const result = this.processManager.listExecutions(listOptions);
@@ -281,18 +286,18 @@ export class ShellTools {
   // File Operations
   async listFiles(params: FileListParams) {
     try {
-  const listOptions: Record<string, unknown> = {
+      const listOptions: Record<string, unknown> = {
         limit: params.limit,
       };
 
       if (params.output_type !== undefined) {
-  listOptions['outputType'] = params.output_type;
+        listOptions['outputType'] = params.output_type;
       }
       if (params.execution_id !== undefined) {
-  listOptions['executionId'] = params.execution_id;
+        listOptions['executionId'] = params.execution_id;
       }
       if (params.name_pattern !== undefined) {
-  listOptions['namePattern'] = params.name_pattern;
+        listOptions['namePattern'] = params.name_pattern;
       }
 
       const result = this.fileManager.listFiles(listOptions);
@@ -329,7 +334,7 @@ export class ShellTools {
   }
 
   // Terminal Management
-// ...existing code...
+  // ...existing code...
   async createTerminal(params: TerminalCreateParams) {
     try {
       const terminalOptions: TerminalOptions = {
@@ -353,7 +358,7 @@ export class ShellTools {
     try {
       const listOptions: {
         sessionNamePattern?: string;
-        statusFilter?: string;
+        statusFilter?: 'active' | 'idle' | 'closed' | 'all';
         limit?: number;
       } = {};
       if (params.limit !== undefined) {
@@ -363,7 +368,7 @@ export class ShellTools {
         listOptions.sessionNamePattern = params.session_name_pattern;
       }
       if (params.status_filter !== undefined) {
-        listOptions.statusFilter = params.status_filter;
+        listOptions.statusFilter = params.status_filter as 'active' | 'idle' | 'closed' | 'all';
       }
 
       const result = this.terminalManager.listTerminals(listOptions);
@@ -465,7 +470,7 @@ export class ShellTools {
   // Security & Monitoring
   async setSecurityRestrictions(params: SecuritySetRestrictionsParams) {
     try {
-  const restrictionParams: Record<string, unknown> = {
+      const restrictionParams: Record<string, unknown> = {
         enable_network: params.enable_network,
       };
 
@@ -503,7 +508,7 @@ export class ShellTools {
 
       // 要求されたメトリクスのみを含める
       if (params.include_metrics) {
-  const filteredStats: Record<string, unknown> = {
+        const filteredStats: Record<string, unknown> = {
           collected_at: stats.collected_at,
         };
 
@@ -538,7 +543,7 @@ export class ShellTools {
   async setDefaultWorkingDirectory(params: ShellSetDefaultWorkdirParams) {
     try {
       const result = this.processManager.setDefaultWorkingDirectory(params.working_directory);
-      
+
       return {
         success: result.success,
         previous_working_directory: result.previous_working_directory,
@@ -556,7 +561,7 @@ export class ShellTools {
   async getCleanupSuggestions(params?: CleanupSuggestionsParams) {
     try {
       const options: Parameters<typeof this.fileManager.getCleanupSuggestions>[0] = {};
-      
+
       if (params?.max_size_mb !== undefined) options.maxSizeMB = params.max_size_mb;
       if (params?.max_age_hours !== undefined) options.maxAgeHours = params.max_age_hours;
       if (params?.include_warnings !== undefined) options.includeWarnings = params.include_warnings;
@@ -572,7 +577,7 @@ export class ShellTools {
   async performAutoCleanup(params?: AutoCleanupParams) {
     try {
       const options: Parameters<typeof this.fileManager.performAutoCleanup>[0] = {};
-      
+
       if (params?.max_age_hours !== undefined) options.maxAgeHours = params.max_age_hours;
       if (params?.dry_run !== undefined) options.dryRun = params.dry_run;
       if (params?.preserve_recent !== undefined) options.preserveRecent = params.preserve_recent;
@@ -590,7 +595,7 @@ export class ShellTools {
       let terminalId = params.terminal_id;
       let terminalInfo = null;
       let inputRejected = false;
-      let rejectionReason = "";
+      let rejectionReason = '';
       let unreadOutput: {
         output: string;
         line_count: number;
@@ -606,7 +611,7 @@ export class ShellTools {
         if (!params.command) {
           throw new Error('Either terminal_id or command must be provided');
         }
-        
+
         // 新規ターミナル作成
         const createOptions: TerminalOptions = {
           shellType: params.shell_type || 'bash',
@@ -614,7 +619,7 @@ export class ShellTools {
           autoSaveHistory: true,
           sessionName: params.session_name ?? undefined,
           workingDirectory: params.working_directory ?? undefined,
-          environmentVariables: params.environment_variables ?? undefined
+          environmentVariables: params.environment_variables ?? undefined,
         };
 
         terminalInfo = await this.terminalManager.createTerminal(createOptions);
@@ -634,27 +639,29 @@ export class ShellTools {
       } else {
         // 既存ターミナル使用
         terminalInfo = await this.terminalManager.getTerminal(terminalId);
-        
+
         // dimensionsが指定されている場合、現在のサイズと比較してリサイズ
         if (params.dimensions) {
           const currentDimensions = terminalInfo.dimensions;
           const newDimensions = params.dimensions;
-          
-          if (currentDimensions.width !== newDimensions.width || 
-              currentDimensions.height !== newDimensions.height) {
+
+          if (
+            currentDimensions.width !== newDimensions.width ||
+            currentDimensions.height !== newDimensions.height
+          ) {
             // サイズが異なる場合はリサイズ実行
             await this.terminalManager.resizeTerminal(terminalId, newDimensions);
             // 最新のターミナル情報を再取得
             terminalInfo = await this.terminalManager.getTerminal(terminalId);
           }
         }
-        
+
         // inputまたはcommandが指定されていれば送信（未読出力チェック付き）
-    const inputToSend = params.input || params.command;
-    if (typeof inputToSend === "string" && inputToSend.length > 0) {
+        const inputToSend = params.input || params.command;
+        if (typeof inputToSend === 'string' && inputToSend.length > 0) {
           // 制御コード送信時は自動的にforce_inputをtrueにする（Ctrl+C等の緊急操作のため）
           const effectiveForceInput = params.force_input || params.control_codes;
-          
+
           // 未読出力チェック（force_inputまたはcontrol_codesがfalseの場合のみ）
           if (!effectiveForceInput) {
             const unreadCheck = await this.terminalManager.getOutput(
@@ -666,11 +673,12 @@ export class ShellTools {
             );
             if (unreadCheck.output && unreadCheck.output.trim().length > 0) {
               inputRejected = true;
-              rejectionReason = "Unread output exists. Read output first or use force_input=true to override.";
+              rejectionReason =
+                'Unread output exists. Read output first or use force_input=true to override.';
               unreadOutput = unreadCheck;
             }
           }
-          
+
           // 制約に引っかからなかった場合のみ入力送信
           if (!inputRejected) {
             await this.terminalManager.sendInput(
@@ -687,7 +695,7 @@ export class ShellTools {
 
       // 2. 遅延処理（コマンド完了待ち）
       if (params.output_delay_ms > 0) {
-        await new Promise(resolve => setTimeout(resolve, params.output_delay_ms));
+        await new Promise((resolve) => setTimeout(resolve, params.output_delay_ms));
       }
 
       // 3. 出力取得
@@ -704,7 +712,7 @@ export class ShellTools {
       }
 
       // 4. レスポンス構築
-  const response: Record<string, unknown> = {
+      const response: Record<string, unknown> = {
         terminal_id: terminalId,
         success: !inputRejected, // 入力が拒否された場合はfalse
       };
@@ -762,36 +770,38 @@ export class ShellTools {
     try {
       // Handle individual entry reference
       if (params.entry_id) {
-        const entries = this.historyManager.searchHistory({ 
-          limit: 1000 // Get all entries to search for the specific ID
+        const entries = this.historyManager.searchHistory({
+          limit: 1000, // Get all entries to search for the specific ID
         });
-        
-        const entry = entries.find(e => e.execution_id === params.entry_id);
+
+        const entry = entries.find((e) => e.execution_id === params.entry_id);
         if (!entry) {
           return {
             success: false,
             error: `Entry with ID ${params.entry_id} not found`,
           };
         }
-        
+
         return {
           success: true,
-          entry: params.include_full_details ? entry : {
-            execution_id: entry.execution_id,
-            command: entry.command,
-            timestamp: entry.timestamp,
-            working_directory: entry.working_directory,
-            safety_classification: entry.safety_classification,
-            was_executed: entry.was_executed,
-            output_summary: entry.output_summary,
-          },
+          entry: params.include_full_details
+            ? entry
+            : {
+                execution_id: entry.execution_id,
+                command: entry.command,
+                timestamp: entry.timestamp,
+                working_directory: entry.working_directory,
+                safety_classification: entry.safety_classification,
+                was_executed: entry.was_executed,
+                output_summary: entry.output_summary,
+              },
         };
       }
 
       // Handle analytics
       if (params.analytics_type) {
         const stats = this.historyManager.getHistoryStats();
-        
+
         switch (params.analytics_type) {
           case 'stats':
             return {
@@ -823,8 +833,8 @@ export class ShellTools {
       }
 
       // Handle search and pagination
-  const searchQuery: Record<string, unknown> = {};
-      
+      const searchQuery: Record<string, unknown> = {};
+
       if (params.command_pattern || params.query) {
         searchQuery['command'] = params.command_pattern || params.query;
       }
@@ -840,26 +850,26 @@ export class ShellTools {
       // Calculate pagination
       const offset = (params.page - 1) * params.page_size;
       searchQuery['limit'] = params.page_size + offset; // Get more to handle offset
-      
+
       let results = this.historyManager.searchHistory(searchQuery);
-      
+
       // Apply date filtering if specified
       if (params.date_from || params.date_to) {
         const fromDate = params.date_from ? new Date(params.date_from) : new Date(0);
         const toDate = params.date_to ? new Date(params.date_to) : new Date();
-        
-        results = results.filter(entry => {
+
+        results = results.filter((entry) => {
           const entryDate = new Date(entry.timestamp);
           return entryDate >= fromDate && entryDate <= toDate;
         });
       }
-      
+
       // Apply pagination
       const totalEntries = results.length;
       const paginatedResults = results.slice(offset, offset + params.page_size);
-      
+
       // Format results
-      const entries = paginatedResults.map(entry => {
+      const entries = paginatedResults.map((entry) => {
         if (params.include_full_details) {
           return entry;
         } else {
@@ -875,14 +885,15 @@ export class ShellTools {
             resubmission_count: entry.resubmission_count,
             output_summary: entry.output_summary,
             // IDs for external tool integration
-            ...(entry.was_executed && { 
+            ...(entry.was_executed && {
               // These can be used with process_get_execution and read_execution_output
-              reference_note: "Use process_get_execution with execution_id for detailed execution info, or read_execution_output for full output"
+              reference_note:
+                'Use process_get_execution with execution_id for detailed execution info, or read_execution_output for full output',
             }),
           };
         }
       });
-      
+
       return {
         success: true,
         entries,
@@ -895,7 +906,6 @@ export class ShellTools {
           has_previous: params.page > 1,
         },
       };
-      
     } catch (error) {
       throw MCPShellError.fromError(error);
     }

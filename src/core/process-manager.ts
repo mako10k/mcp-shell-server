@@ -51,7 +51,11 @@ export interface ExecutionOptions {
 // バックグラウンドプロセス終了時のコールバック型
 interface BackgroundProcessCallback {
   onComplete?: (executionId: string, executionInfo: ExecutionInfo) => void | Promise<void>;
-  onError?: (executionId: string, executionInfo: ExecutionInfo, error: unknown) => void | Promise<void>;
+  onError?: (
+    executionId: string,
+    executionInfo: ExecutionInfo,
+    error: unknown
+  ) => void | Promise<void>;
   onTimeout?: (executionId: string, executionInfo: ExecutionInfo) => void | Promise<void>;
 }
 
@@ -65,32 +69,36 @@ export class ProcessManager {
   private defaultWorkingDirectory: string;
   private allowedWorkingDirectories: string[];
   private backgroundProcessCallbacks: BackgroundProcessCallback = {}; // バックグラウンドプロセス終了コールバック
-  
+
   // Issue #13: PUB/SUB統合 - Feature Flag付きで段階的統合
   private streamPublisher: StreamPublisher;
   private fileStorageSubscriber: FileStorageSubscriber | undefined;
   private realtimeStreamSubscriber: RealtimeStreamSubscriber | undefined;
   private enableStreaming: boolean = false; // Feature Flag
 
-  constructor(maxConcurrentProcesses = 50, outputDir = '/tmp/mcp-shell-outputs', fileManager?: FileManager) {
+  constructor(
+    maxConcurrentProcesses = 50,
+    outputDir = '/tmp/mcp-shell-outputs',
+    fileManager?: FileManager
+  ) {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
     this.outputDir = outputDir;
     this.fileManager = fileManager;
     this.defaultWorkingDirectory = process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd();
-    this.allowedWorkingDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS'] 
-      ? process.env['MCP_SHELL_ALLOWED_WORKDIRS'].split(',').map(dir => dir.trim())
+    this.allowedWorkingDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS']
+      ? process.env['MCP_SHELL_ALLOWED_WORKDIRS'].split(',').map((dir) => dir.trim())
       : [process.cwd()];
-    
+
     // StreamPublisher初期化
     this.streamPublisher = new StreamPublisher({
       enableRealtimeStreaming: false, // 初期状態は無効
       bufferSize: 8192,
-      notificationInterval: 100
+      notificationInterval: 100,
     });
-    
+
     // 環境変数でStreaming機能を制御（段階的展開、デフォルト有効）
     this.enableStreaming = process.env['MCP_SHELL_ENABLE_STREAMING'] !== 'false';
-    
+
     if (this.enableStreaming) {
       this.initializeStreamingComponents();
     }
@@ -105,7 +113,7 @@ export class ProcessManager {
   // FileManager への参照を設定
   setFileManager(fileManager: FileManager): void {
     this.fileManager = fileManager;
-    
+
     // FileManagerが設定された時にStreaming機能を再初期化
     if (this.enableStreaming) {
       this.initializeStreamingComponents();
@@ -116,34 +124,34 @@ export class ProcessManager {
   setBackgroundProcessCallbacks(callbacks: BackgroundProcessCallback): void {
     this.backgroundProcessCallbacks = callbacks;
   }
-  
+
   // Issue #13: Streaming コンポーネントの初期化
   private initializeStreamingComponents(): void {
     if (!this.fileManager) {
       console.error('ProcessManager: FileManager is required for streaming components');
       return;
     }
-    
+
     // FileStorageSubscriber初期化（既存FileManager機能を代替）
     this.fileStorageSubscriber = new FileStorageSubscriber(this.fileManager, this.outputDir);
     this.streamPublisher.subscribe(this.fileStorageSubscriber);
-    
+
     // RealtimeStreamSubscriber初期化
     this.realtimeStreamSubscriber = new RealtimeStreamSubscriber({
       bufferSize: 8192,
       notificationInterval: 100,
       maxRetentionSeconds: 3600,
-      maxBuffers: 1000
+      maxBuffers: 1000,
     });
     this.streamPublisher.subscribe(this.realtimeStreamSubscriber);
-    
+
     console.error('ProcessManager: Streaming components initialized');
   }
-  
+
   // Issue #13: Streaming機能の有効/無効切り替え
   enableStreamingFeature(enable: boolean = true): void {
     this.enableStreaming = enable;
-    
+
     if (enable && this.fileManager) {
       this.initializeStreamingComponents();
     } else if (!enable) {
@@ -153,14 +161,14 @@ export class ProcessManager {
         this.realtimeStreamSubscriber.destroy();
         this.realtimeStreamSubscriber = undefined;
       }
-      
+
       if (this.fileStorageSubscriber) {
         this.streamPublisher.unsubscribe(this.fileStorageSubscriber.id);
         this.fileStorageSubscriber = undefined;
       }
     }
   }
-  
+
   // Issue #13: RealtimeStreamSubscriber への参照を取得（新しいMCPツール用）
   getRealtimeStreamSubscriber(): RealtimeStreamSubscriber | undefined {
     return this.realtimeStreamSubscriber;
@@ -190,22 +198,24 @@ export class ProcessManager {
     // 入力データの準備 - input_output_idが指定された場合の処理
     let resolvedInputData: string | undefined = options.inputData;
     let inputStream: StreamingPipelineReader | undefined = undefined;
-    
+
     if (options.inputOutputId) {
       if (!this.fileManager) {
         throw new ExecutionError('FileManager is not available for input_output_id processing', {
           inputOutputId: options.inputOutputId,
         });
       }
-      
+
       // output_idから実行IDを特定
       const sourceExecutionId = this.findExecutionIdByOutputId(options.inputOutputId);
-      
+
       if (sourceExecutionId && this.realtimeStreamSubscriber) {
         // 実行中プロセスの場合: StreamingPipelineReaderを使用
         const streamState = this.realtimeStreamSubscriber.getStreamState(sourceExecutionId);
         if (streamState && streamState.isActive) {
-          console.error(`ProcessManager: Using streaming pipeline for active process ${sourceExecutionId}`);
+          console.error(
+            `ProcessManager: Using streaming pipeline for active process ${sourceExecutionId}`
+          );
           inputStream = new StreamingPipelineReader(
             this.fileManager,
             this.realtimeStreamSubscriber,
@@ -214,7 +224,7 @@ export class ProcessManager {
           );
         }
       }
-      
+
       // 実行中プロセスでない場合、または失敗した場合: 従来のファイル読み取り
       if (!inputStream) {
         try {
@@ -227,10 +237,13 @@ export class ProcessManager {
           );
           resolvedInputData = result.content;
         } catch (error) {
-          throw new ExecutionError(`Failed to read input from output_id: ${options.inputOutputId}`, {
-            inputOutputId: options.inputOutputId,
-            originalError: String(error),
-          });
+          throw new ExecutionError(
+            `Failed to read input from output_id: ${options.inputOutputId}`,
+            {
+              inputOutputId: options.inputOutputId,
+              originalError: String(error),
+            }
+          );
         }
       }
     }
@@ -298,16 +311,16 @@ export class ProcessManager {
     try {
       // 実行オプションを準備
       const { inputOutputId: _inputOutputId, ...baseOptions } = options;
-      const updatedOptions: ExecutionOptions = { 
+      const updatedOptions: ExecutionOptions = {
         ...baseOptions,
-        ...(resolvedInputData !== undefined && { inputData: resolvedInputData })
+        ...(resolvedInputData !== undefined && { inputData: resolvedInputData }),
       };
-      
+
       // StreamingPipelineReaderがある場合は特別処理
       if (inputStream) {
         return await this.executeCommandWithInputStream(executionId, updatedOptions, inputStream);
       }
-      
+
       switch (options.executionMode) {
         case 'foreground':
           return await this.executeForegroundCommand(executionId, updatedOptions);
@@ -341,7 +354,7 @@ export class ProcessManager {
     inputStream: StreamingPipelineReader
   ): Promise<ExecutionInfo> {
     console.error(`ProcessManager: Executing command with input stream for ${executionId}`);
-    
+
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
       let stdout = '';
@@ -365,7 +378,7 @@ export class ProcessManager {
       if (child.stdin) {
         inputStream.pipe(child.stdin);
       }
-      
+
       inputStream.on('error', (error) => {
         console.error(`StreamingPipelineReader error for ${executionId}: ${error.message}`);
         child.kill('SIGTERM');
@@ -456,20 +469,22 @@ export class ProcessManager {
 
       child.on('error', (error) => {
         console.error(`Process error for ${executionId}: ${error.message}`);
-        
+
         // StreamPublisher通知
         if (this.streamPublisher) {
           this.streamPublisher.notifyError(executionId, error);
         }
 
-        reject(new ExecutionError(`Process error: ${error.message}`, { originalError: String(error) }));
+        reject(
+          new ExecutionError(`Process error: ${error.message}`, { originalError: String(error) })
+        );
       });
 
       // タイムアウト処理
       const timeout = setTimeout(() => {
         console.error(`Process timeout for ${executionId}`);
         child.kill('SIGTERM');
-        
+
         setTimeout(() => {
           if (!child.killed) {
             child.kill('SIGKILL');
@@ -538,7 +553,10 @@ export class ProcessManager {
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
-            console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+            console.error(
+              `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+              error
+            );
             executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
@@ -617,7 +635,10 @@ export class ProcessManager {
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
-            console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+            console.error(
+              `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+              error
+            );
             executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
@@ -724,7 +745,10 @@ export class ProcessManager {
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
-            console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+            console.error(
+              `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+              error
+            );
             executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
@@ -748,7 +772,7 @@ export class ProcessManager {
           executionInfo.status = 'running';
           executionInfo.stdout = sanitizeString(stdout);
           executionInfo.stderr = sanitizeString(stderr);
-          
+
           // 移行理由を記録
           if (backgroundTransitionReason === 'timeout') {
             executionInfo.transition_reason = 'foreground_timeout';
@@ -767,19 +791,30 @@ export class ProcessManager {
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
-            console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+            console.error(
+              `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+              error
+            );
             executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
           }
 
           // 出力状態の詳細情報を設定（バックグラウンド移行）
-          this.setOutputStatus(executionInfo, outputTruncated, 'background_transition', outputFileId);
+          this.setOutputStatus(
+            executionInfo,
+            outputTruncated,
+            'background_transition',
+            outputFileId
+          );
 
           this.executions.set(executionId, executionInfo);
 
           // バックグラウンド処理の継続設定（adaptive mode専用）
           this.handleAdaptiveBackgroundTransition(executionId, childProcess, {
             ...options,
-            timeoutSeconds: Math.max(1, options.timeoutSeconds - Math.floor((Date.now() - startTime) / 1000))
+            timeoutSeconds: Math.max(
+              1,
+              options.timeoutSeconds - Math.floor((Date.now() - startTime) / 1000)
+            ),
           });
 
           resolve(executionInfo);
@@ -802,7 +837,7 @@ export class ProcessManager {
         } else {
           stdout += output.substring(0, options.maxOutputSize - stdout.length);
           outputTruncated = true;
-          
+
           // 出力サイズ制限に達した場合、バックグラウンドに移行
           if (!backgroundTransitionReason) {
             backgroundTransitionReason = 'output_size_limit';
@@ -820,7 +855,7 @@ export class ProcessManager {
           } else {
             stderr += output.substring(0, options.maxOutputSize - stderr.length);
             outputTruncated = true;
-            
+
             // 出力サイズ制限に達した場合、バックグラウンドに移行
             if (!backgroundTransitionReason) {
               backgroundTransitionReason = 'output_size_limit';
@@ -861,7 +896,10 @@ export class ProcessManager {
               executionInfo.output_id = outputFileId;
             } catch (error) {
               // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
-              console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+              console.error(
+                `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+                error
+              );
               executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
             }
 
@@ -969,12 +1007,15 @@ export class ProcessManager {
           executionInfo.output_id = outputFileId;
         } catch (error) {
           // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
-          console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+          console.error(
+            `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+            error
+          );
           executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
         }
 
         this.executions.set(executionId, executionInfo);
-        
+
         // バックグラウンドプロセスタイムアウトのコールバック呼び出し
         if (this.backgroundProcessCallbacks.onTimeout) {
           setImmediate(async () => {
@@ -1026,12 +1067,15 @@ export class ProcessManager {
           executionInfo.output_id = outputFileId;
         } catch (error) {
           // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
-          console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+          console.error(
+            `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+            error
+          );
           executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
         }
 
         this.executions.set(executionId, executionInfo);
-        
+
         // バックグラウンドプロセス正常終了のコールバック呼び出し
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
@@ -1063,7 +1107,7 @@ export class ProcessManager {
         executionInfo.execution_time_ms = Date.now() - startTime;
         executionInfo.completed_at = getCurrentTimestamp();
         this.executions.set(executionId, executionInfo);
-        
+
         // バックグラウンドプロセスエラーのコールバック呼び出し
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
@@ -1104,7 +1148,7 @@ export class ProcessManager {
       if (executionInfo) {
         executionInfo.status = 'timeout';
         executionInfo.completed_at = getCurrentTimestamp();
-        
+
         // 既存の出力は保持（adaptive modeで既にキャプチャ済み）
         this.executions.set(executionId, executionInfo);
       }
@@ -1122,7 +1166,7 @@ export class ProcessManager {
         executionInfo.status = 'completed';
         executionInfo.exit_code = code || 0;
         executionInfo.completed_at = getCurrentTimestamp();
-        
+
         // 実行時間は全体（フォアグラウンド + バックグラウンド）で計算
         if (executionInfo.started_at) {
           const startTime = new Date(executionInfo.started_at).getTime();
@@ -1130,7 +1174,7 @@ export class ProcessManager {
         }
 
         this.executions.set(executionId, executionInfo);
-        
+
         // adaptive modeバックグラウンドプロセス正常終了のコールバック呼び出し
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
@@ -1160,14 +1204,14 @@ export class ProcessManager {
       if (executionInfo) {
         executionInfo.status = 'failed';
         executionInfo.completed_at = getCurrentTimestamp();
-        
+
         if (executionInfo.started_at) {
           const startTime = new Date(executionInfo.started_at).getTime();
           executionInfo.execution_time_ms = Date.now() - startTime;
         }
-        
+
         this.executions.set(executionId, executionInfo);
-        
+
         // adaptive modeバックグラウンドプロセスエラーのコールバック呼び出し
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
@@ -1246,12 +1290,15 @@ export class ProcessManager {
           executionInfo.output_id = outputFileId;
         } catch (error) {
           // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
-          console.error(`[CRITICAL] Failed to save output file for execution ${executionId}:`, error);
+          console.error(
+            `[CRITICAL] Failed to save output file for execution ${executionId}:`,
+            error
+          );
           executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
         }
 
         this.executions.set(executionId, executionInfo);
-        
+
         // detachedプロセス正常終了のコールバック呼び出し
         if (this.backgroundProcessCallbacks.onComplete) {
           setImmediate(async () => {
@@ -1279,7 +1326,7 @@ export class ProcessManager {
         executionInfo.execution_time_ms = Date.now() - startTime;
         executionInfo.completed_at = getCurrentTimestamp();
         this.executions.set(executionId, executionInfo);
-        
+
         // detachedプロセスエラーのコールバック呼び出し
         if (this.backgroundProcessCallbacks.onError) {
           setImmediate(async () => {
@@ -1342,17 +1389,18 @@ export class ProcessManager {
    * 改善: outputTruncated の代わりに reason ベースで状態を判定
    */
   private setOutputStatus(
-    executionInfo: ExecutionInfo, 
+    executionInfo: ExecutionInfo,
     actuallyTruncated: boolean, // 実際に出力が切り捨てられたか
     reason: OutputTruncationReason,
     outputId?: string
   ): void {
     // reasonに基づいて出力状態を設定
     const needsGuidance = !!outputId; // output_idがあれば常にガイダンスを提供
-    
+
     // 後方互換性のため outputTruncated を設定
-    executionInfo.output_truncated = actuallyTruncated || reason === 'timeout' || reason === 'background_transition';
-    
+    executionInfo.output_truncated =
+      actuallyTruncated || reason === 'timeout' || reason === 'background_transition';
+
     // Issue #14: バックグラウンド移行とタイムアウトは特別扱い
     if (reason === 'background_transition') {
       executionInfo.truncation_reason = reason;
@@ -1360,14 +1408,15 @@ export class ProcessManager {
         complete: false, // バックグラウンド実行中は未完了
         reason: reason,
         available_via_output_id: !!outputId,
-        recommended_action: outputId ? 'use_read_execution_output' : undefined
+        recommended_action: outputId ? 'use_read_execution_output' : undefined,
       };
 
-      executionInfo.message = 'Command moved to background execution. Use process_list to monitor progress.';
+      executionInfo.message =
+        'Command moved to background execution. Use process_list to monitor progress.';
       executionInfo.next_steps = [
-        'Use process_list to check status', 
+        'Use process_list to check status',
         'Use read_execution_output when completed',
-        'Use output_id for real-time pipeline processing'
+        'Use output_id for real-time pipeline processing',
       ];
       if (needsGuidance) {
         executionInfo.guidance = {
@@ -1375,44 +1424,44 @@ export class ProcessManager {
           suggested_commands: [
             'tail -f equivalent using input_output_id for live monitoring',
             'grep for real-time log filtering',
-            'awk for live data extraction and formatting'
+            'awk for live data extraction and formatting',
           ],
           background_processing: {
             status_check: 'Use process_get_execution for detailed status',
-            monitoring: 'Output_id supports real-time streaming while process runs'
-          }
+            monitoring: 'Output_id supports real-time streaming while process runs',
+          },
         };
       }
       return;
     }
-    
+
     if (reason === 'timeout') {
       executionInfo.truncation_reason = reason;
       executionInfo.output_status = {
         complete: false, // タイムアウトは未完了
         reason: reason,
         available_via_output_id: !!outputId,
-        recommended_action: outputId ? 'use_read_execution_output' : undefined
+        recommended_action: outputId ? 'use_read_execution_output' : undefined,
       };
 
       executionInfo.message = `Command timed out. ${outputId ? 'Use read_execution_output with output_id for complete results.' : 'Partial output available.'}`;
       if (needsGuidance) {
         executionInfo.next_steps = [
           'Use read_execution_output to get complete output',
-          'Use output_id for pipeline processing with grep/sed/awk commands'
+          'Use output_id for pipeline processing with grep/sed/awk commands',
         ];
         executionInfo.guidance = {
           pipeline_usage: `Use "input_output_id": "${outputId}" parameter for further processing`,
           suggested_commands: [
             'grep pattern search using input_output_id',
             'sed text transformations using input_output_id',
-            'awk data processing using input_output_id'
-          ]
+            'awk data processing using input_output_id',
+          ],
         };
       }
       return;
     }
-    
+
     // 実際に出力が切り捨てられた場合
     if (actuallyTruncated) {
       executionInfo.truncation_reason = reason;
@@ -1420,7 +1469,7 @@ export class ProcessManager {
         complete: false,
         reason: reason,
         available_via_output_id: !!outputId,
-        recommended_action: outputId ? 'use_read_execution_output' : undefined
+        recommended_action: outputId ? 'use_read_execution_output' : undefined,
       };
 
       // 状況に応じたメッセージとアクションの設定
@@ -1430,15 +1479,15 @@ export class ProcessManager {
           if (needsGuidance) {
             executionInfo.next_steps = [
               'Use read_execution_output to get complete output',
-              'Use output_id for streaming pipeline processing'
+              'Use output_id for streaming pipeline processing',
             ];
             executionInfo.guidance = {
               pipeline_usage: `Large output detected. Use "input_output_id": "${outputId}" for efficient processing`,
               suggested_commands: [
                 'head/tail for output sampling using input_output_id',
                 'grep for pattern matching without loading full output',
-                'wc for counting lines/words/bytes efficiently'
-              ]
+                'wc for counting lines/words/bytes efficiently',
+              ],
             };
           }
           break;
@@ -1447,15 +1496,15 @@ export class ProcessManager {
           if (needsGuidance) {
             executionInfo.next_steps = [
               'Use read_execution_output to get complete output',
-              'Use output_id for pipeline processing'
+              'Use output_id for pipeline processing',
             ];
             executionInfo.guidance = {
               pipeline_usage: `Use "input_output_id": "${outputId}" parameter for further processing`,
               suggested_commands: [
                 'grep for pattern searching',
                 'sed for text transformations',
-                'awk for data processing'
-              ]
+                'awk for data processing',
+              ],
             };
           }
       }
@@ -1463,18 +1512,18 @@ export class ProcessManager {
       // 完了した場合（切り捨てなし）
       executionInfo.output_status = {
         complete: true,
-        available_via_output_id: !!outputId
+        available_via_output_id: !!outputId,
       };
-      
+
       // Issue #14: Add guidance even for complete outputs to promote pipeline usage
       if (needsGuidance) {
         executionInfo.guidance = {
           pipeline_usage: `Output saved. Use "input_output_id": "${outputId}" for further processing`,
           suggested_commands: [
             'grep for pattern searching',
-            'sed for text transformations', 
-            'awk for data processing and formatting'
-          ]
+            'sed for text transformations',
+            'awk for data processing and formatting',
+          ],
         };
       }
     }
@@ -1538,7 +1587,7 @@ export class ProcessManager {
     try {
       // プロセスを終了
       const signalName = signal === 'KILL' ? 'SIGKILL' : `SIG${signal}`;
-  const killed = childProcess.kill(signalName as NodeJS.Signals);
+      const killed = childProcess.kill(signalName as NodeJS.Signals);
 
       if (!killed && force && signal !== 'KILL') {
         // 強制終了
@@ -1639,14 +1688,14 @@ export class ProcessManager {
     working_directory_changed: boolean;
   } {
     const previousWorkdir = this.defaultWorkingDirectory;
-    
+
     // ディレクトリの検証
     if (!this.isAllowedWorkingDirectory(workingDirectory)) {
       throw new Error(`Working directory not allowed: ${workingDirectory}`);
     }
 
     this.defaultWorkingDirectory = workingDirectory;
-    
+
     return {
       success: true,
       previous_working_directory: previousWorkdir,
@@ -1666,19 +1715,22 @@ export class ProcessManager {
   private isAllowedWorkingDirectory(workingDirectory: string): boolean {
     // パスの正規化を行って比較
     const normalizedPath = path.resolve(workingDirectory);
-    return this.allowedWorkingDirectories.some(allowedDir => {
+    return this.allowedWorkingDirectories.some((allowedDir) => {
       const normalizedAllowed = path.resolve(allowedDir);
-      return normalizedPath === normalizedAllowed || normalizedPath.startsWith(normalizedAllowed + path.sep);
+      return (
+        normalizedPath === normalizedAllowed ||
+        normalizedPath.startsWith(normalizedAllowed + path.sep)
+      );
     });
   }
 
   private resolveWorkingDirectory(workingDirectory?: string): string {
     const resolved = workingDirectory || this.defaultWorkingDirectory;
-    
+
     if (!this.isAllowedWorkingDirectory(resolved)) {
       throw new Error(`Working directory not allowed: ${resolved}`);
     }
-    
+
     return resolved;
   }
 }

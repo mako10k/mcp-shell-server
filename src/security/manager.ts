@@ -19,14 +19,6 @@ interface MCPRequest {
   params?: Record<string, unknown>;
 }
 
-interface _MCPRequestOptions {
-  timeout?: number;
-}
-
-interface _MCPServerInterface {
-  request(request: MCPRequest, schema?: unknown, options?: _MCPRequestOptions): Promise<unknown>;
-}
-
 // LLM Sampling interfaces for type safety (matching enhanced-evaluator.ts)
 interface CreateMessageCallback {
   (request: {
@@ -63,10 +55,12 @@ export class SecurityManager {
   private restrictions: SecurityRestrictions | null = null;
   private enhancedConfig: EnhancedSecurityConfig;
   private basicSafetyRules: BasicSafetyRule[];
-  private enhancedEvaluator: EnhancedSafetyEvaluator;
+  private enhancedEvaluator?: EnhancedSafetyEvaluator;
 
-  constructor(enhancedEvaluator: EnhancedSafetyEvaluator) {
-    this.enhancedEvaluator = enhancedEvaluator;
+  constructor(enhancedEvaluator?: EnhancedSafetyEvaluator) {
+    if (enhancedEvaluator) {
+      this.enhancedEvaluator = enhancedEvaluator;
+    }
 
     // Initialize Enhanced Security configuration
     this.enhancedConfig = { ...DEFAULT_ENHANCED_SECURITY_CONFIG };
@@ -684,7 +678,8 @@ export class SecurityManager {
           // Use adaptOpenAIRequestToMCP to convert the request
           const mcpParams = adaptOpenAIRequestToMCP(cccRequest);
 
-          const response = await server.createMessage(mcpParams);
+          // Type cast to match server.createMessage signature
+          const response = await server.createMessage(mcpParams as Parameters<typeof server.createMessage>[0]);
 
           // Transform MCP response to our expected format
           return {
@@ -761,6 +756,9 @@ export class SecurityManager {
       throw new Error('Enhanced mode is not enabled');
     }
 
-    return await this.enhancedEvaluator.evaluateCommand(command, workingDirectory, 10, comment);
+    if (!this.enhancedEvaluator) {
+      throw new Error('Enhanced evaluator not initialized');
+    }
+    return await this.enhancedEvaluator.evaluateCommandLLMCentric(command, workingDirectory, [], comment);
   }
 }

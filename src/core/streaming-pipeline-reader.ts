@@ -10,10 +10,10 @@ import { RealtimeStreamSubscriber } from './realtime-stream-subscriber.js';
 interface StreamingPipelineOptions {
   /** 読み取りタイムアウト（ミリ秒）*/
   readTimeout?: number;
-  
+
   /** バッファサイズ（バイト）*/
   bufferSize?: number;
-  
+
   /** ポーリング間隔（ミリ秒）*/
   pollingInterval?: number;
 }
@@ -29,14 +29,14 @@ export class StreamingPipelineReader extends Readable {
   private outputId: string;
   private executionId: string;
   private options: Required<StreamingPipelineOptions>;
-  
+
   // State management
   private filePosition: number = 0;
   private isFileComplete: boolean = false;
   private lastSequenceNumber: number = -1;
   private readTimer: NodeJS.Timeout | null = null;
   private isDestroyed: boolean = false;
-  
+
   constructor(
     fileManager: FileManager,
     realtimeSubscriber: RealtimeStreamSubscriber,
@@ -45,19 +45,19 @@ export class StreamingPipelineReader extends Readable {
     options: StreamingPipelineOptions = {}
   ) {
     super({ objectMode: false });
-    
+
     this.fileManager = fileManager;
     this.realtimeSubscriber = realtimeSubscriber;
     this.outputId = outputId;
     this.executionId = executionId;
     this.options = {
-      readTimeout: 30000,  // 30秒
+      readTimeout: 30000, // 30秒
       bufferSize: 8192,
       pollingInterval: 100, // 100ms
-      ...options
+      ...options,
     };
   }
-  
+
   /**
    * Readable stream implementation
    */
@@ -66,15 +66,15 @@ export class StreamingPipelineReader extends Readable {
       this.push(null);
       return;
     }
-    
+
     // 既に読み取りタイマーが動いている場合はスキップ
     if (this.readTimer) {
       return;
     }
-    
+
     this.startReading();
   }
-  
+
   /**
    * 読み取り処理を開始
    */
@@ -87,7 +87,7 @@ export class StreamingPipelineReader extends Readable {
         this.destroy(error as Error);
       }
     }, this.options.pollingInterval);
-    
+
     // タイムアウト設定
     setTimeout(() => {
       if (!this.isDestroyed && this.readTimer) {
@@ -96,7 +96,7 @@ export class StreamingPipelineReader extends Readable {
       }
     }, this.options.readTimeout);
   }
-  
+
   /**
    * 実際の読み取り処理
    */
@@ -109,7 +109,7 @@ export class StreamingPipelineReader extends Readable {
       await this.readFromStream();
     }
   }
-  
+
   /**
    * Phase 1: Fileから既存データを読み取り
    */
@@ -121,25 +121,31 @@ export class StreamingPipelineReader extends Readable {
         this.options.bufferSize,
         'utf-8'
       );
-      
+
       if (result.content && result.content.length > 0) {
         // データがある場合は読み取り位置を更新
         this.filePosition += Buffer.byteLength(result.content, 'utf-8');
         this.push(result.content);
-        console.error(`StreamingPipelineReader: Read ${result.content.length} chars from file position ${this.filePosition - result.content.length}`);
+        console.error(
+          `StreamingPipelineReader: Read ${result.content.length} chars from file position ${this.filePosition - result.content.length}`
+        );
       } else {
         // ファイルの末尾に到達 - プロセスが終了しているかチェック
         const streamState = this.realtimeSubscriber.getStreamState(this.executionId);
         if (streamState && !streamState.isActive) {
           // プロセスが終了している場合は読み取り完了
-          console.error(`StreamingPipelineReader: Process ${this.executionId} completed, file reading finished`);
+          console.error(
+            `StreamingPipelineReader: Process ${this.executionId} completed, file reading finished`
+          );
           this.push(null); // EOF
           this.cleanup();
         } else {
           // プロセスがまだ実行中の場合は、Streamモードに移行
-          console.error(`StreamingPipelineReader: File EOF reached, switching to stream mode for ${this.outputId}`);
+          console.error(
+            `StreamingPipelineReader: File EOF reached, switching to stream mode for ${this.outputId}`
+          );
           this.isFileComplete = true;
-          
+
           // Fileに保存された最後のシーケンス番号を特定
           if (streamState) {
             // 最新のバッファから最後に保存されたシーケンス番号を推定
@@ -156,7 +162,7 @@ export class StreamingPipelineReader extends Readable {
       throw error;
     }
   }
-  
+
   /**
    * Phase 2: RealtimeStreamからデータを読み取り
    */
@@ -168,22 +174,24 @@ export class StreamingPipelineReader extends Readable {
       this.cleanup();
       return;
     }
-    
+
     // 最後に読み取ったシーケンス番号以降のバッファを取得
     const newBuffers = this.realtimeSubscriber.getBuffersFromSequence(
       this.executionId,
       this.lastSequenceNumber + 1,
       50 // 一度に最大50バッファ
     );
-    
+
     if (newBuffers.length > 0) {
       for (const buffer of newBuffers) {
         this.push(buffer.data);
         this.lastSequenceNumber = buffer.sequenceNumber;
-        console.error(`StreamingPipelineReader: Streamed buffer seq=${buffer.sequenceNumber}, ${buffer.data.length} chars`);
+        console.error(
+          `StreamingPipelineReader: Streamed buffer seq=${buffer.sequenceNumber}, ${buffer.data.length} chars`
+        );
       }
     }
-    
+
     // プロセスが終了していて、新しいバッファもない場合は完了
     if (!streamState.isActive && newBuffers.length === 0) {
       console.error(`StreamingPipelineReader: Stream completed for ${this.executionId}`);
@@ -191,11 +199,13 @@ export class StreamingPipelineReader extends Readable {
       this.cleanup();
     }
   }
-  
+
   /**
    * ファイルに保存済みの最後のシーケンス番号を推定
    */
-  private estimateLastFileSequence(latestBuffers: Array<{ data: string; sequenceNumber: number }>): number {
+  private estimateLastFileSequence(
+    latestBuffers: Array<{ data: string; sequenceNumber: number }>
+  ): number {
     // 簡単な推定: ファイルサイズからバッファサイズを逆算
     // より正確な実装では、FileStorageSubscriberとの連携が必要
     let estimatedBytes = 0;
@@ -210,7 +220,7 @@ export class StreamingPipelineReader extends Readable {
     }
     return -1;
   }
-  
+
   /**
    * リソースのクリーンアップ
    */
@@ -221,13 +231,15 @@ export class StreamingPipelineReader extends Readable {
     }
     this.isDestroyed = true;
   }
-  
+
   /**
    * Stream destroy implementation
    */
   override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
     this.cleanup();
-    console.error(`StreamingPipelineReader: Destroyed ${this.outputId}${error ? ` with error: ${error.message}` : ''}`);
+    console.error(
+      `StreamingPipelineReader: Destroyed ${this.outputId}${error ? ` with error: ${error.message}` : ''}`
+    );
     callback(error);
   }
 }

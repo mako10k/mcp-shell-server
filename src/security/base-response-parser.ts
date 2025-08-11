@@ -38,7 +38,7 @@ export abstract class BaseResponseParser {
   ): Promise<BaseParseResult<T>> {
     const startTime = Date.now();
     const retryCount = this.getRetryCount(requestId);
-    
+
     try {
       // JSON抽出とパース
       const extractedJson = this.extractJsonFromResponse(rawContent);
@@ -54,7 +54,7 @@ export abstract class BaseResponseParser {
 
       // Zodスキーマでバリデーション
       const parsed = schema.safeParse(extractedJson);
-      
+
       if (!parsed.success) {
         const errors = this.parseValidationErrors(parsed.error);
         return this.createErrorResult<T>(
@@ -89,10 +89,9 @@ export abstract class BaseResponseParser {
           rawContent,
           parseTime: Date.now() - startTime,
           confidence: this.calculateConfidence(parsed.data, rawContent),
-          retryCount
-        }
+          retryCount,
+        },
       };
-
     } catch (error) {
       return this.createErrorResult<T>(
         rawContent,
@@ -140,11 +139,11 @@ export abstract class BaseResponseParser {
    * Zodバリデーションエラーを解析（共通ロジック）
    */
   protected parseValidationErrors(zodError: z.ZodError): BaseParseError[] {
-    return zodError.issues.map(issue => ({
+    return zodError.issues.map((issue) => ({
       type: 'validation' as const,
       field: issue.path.join('.'),
       message: issue.message,
-      severity: 'error' as const
+      severity: 'error' as const,
     }));
   }
 
@@ -161,7 +160,8 @@ export abstract class BaseResponseParser {
 
     // データの完全性（型ガードで安全にアクセス）
     if (
-      typeof data === 'object' && data !== null &&
+      typeof data === 'object' &&
+      data !== null &&
       'reasoning' in data &&
       Array.isArray((data as { risk_factors?: unknown }).risk_factors)
     ) {
@@ -190,9 +190,9 @@ export abstract class BaseResponseParser {
       {
         type: errorType,
         message,
-        severity: 'error'
+        severity: 'error',
       },
-      ...additionalErrors
+      ...additionalErrors,
     ];
 
     return {
@@ -202,8 +202,8 @@ export abstract class BaseResponseParser {
         rawContent,
         parseTime: Date.now() - startTime,
         confidence: 0.0,
-        retryCount
-      }
+        retryCount,
+      },
     };
   }
 
@@ -212,7 +212,7 @@ export abstract class BaseResponseParser {
    */
   protected getRetryCount(requestId?: string): number {
     if (!requestId) return 0;
-    
+
     const count = this.parseAttempts.get(requestId) || 0;
     this.parseAttempts.set(requestId, count + 1);
     return count;

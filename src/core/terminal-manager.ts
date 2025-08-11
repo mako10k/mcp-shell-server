@@ -378,9 +378,8 @@ export class TerminalManager {
     }
 
     // startLineが指定されていない場合は、前回の読み取り位置を使用
-    const actualStartLine = startLine !== undefined 
-      ? startLine 
-      : (this.terminalReadPositions.get(terminalId) || 0);
+    const actualStartLine =
+      startLine !== undefined ? startLine : this.terminalReadPositions.get(terminalId) || 0;
 
     // フォアグラウンドプロセス情報を更新（要求された場合）
     if (includeForegroundProcess) {
@@ -402,7 +401,7 @@ export class TerminalManager {
     const nextStartLine = endLine;
     this.terminalReadPositions.set(terminalId, nextStartLine);
 
-  const result: TerminalOutputResult = {
+    const result: TerminalOutputResult = {
       output,
       line_count: outputLines.length,
       total_lines: totalLines,
@@ -530,7 +529,7 @@ export class TerminalManager {
 
       // セッションをマップから削除
       this.terminals.delete(terminalId);
-      
+
       // 読み取り位置もクリーンアップ
       this.terminalReadPositions.delete(terminalId);
 

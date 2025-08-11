@@ -10,14 +10,18 @@ describe('Explanation Parameter Validation', () => {
     };
 
     expect(() => ShellExecuteParamsSchema.parse(invalidParams)).toThrow(ZodError);
-    
+
     try {
       ShellExecuteParamsSchema.parse(invalidParams);
     } catch (error) {
       if (error instanceof ZodError) {
         // Check that the error contains information about unrecognized keys
-        const errorMessages = error.errors.map(err => err.message);
-        expect(errorMessages.some(msg => msg.includes('Unrecognized key') || msg.includes('explanation'))).toBe(true);
+        const errorMessages = error.errors.map((err) => err.message);
+        expect(
+          errorMessages.some(
+            (msg) => msg.includes('Unrecognized key') || msg.includes('explanation')
+          )
+        ).toBe(true);
       }
     }
   });
@@ -39,7 +43,7 @@ describe('Explanation Parameter Validation', () => {
     };
 
     expect(() => ShellExecuteParamsSchema.parse(validParams)).not.toThrow();
-    
+
     const parsed = ShellExecuteParamsSchema.parse(validParams);
     expect(parsed.command).toBe('ls -la');
     expect(parsed.execution_mode).toBe('foreground');
@@ -53,7 +57,7 @@ describe('Explanation Parameter Validation', () => {
     const innerSchema = schemaDefinition.schema;
     const commandSchema = innerSchema.shape.command;
     const description = commandSchema.description;
-    
+
     expect(description).toContain('MCP Shell Server');
     expect(description).toContain('explanation');
     expect(description).toContain('run_in_terminal');

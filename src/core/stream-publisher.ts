@@ -6,16 +6,16 @@
 export interface StreamSubscriber {
   /** Subscriber ID */
   id: string;
-  
+
   /** プロセス開始時に呼ばれる */
   onProcessStart?(executionId: string, command: string): void | Promise<void>;
-  
+
   /** 新しい出力データが来た時に呼ばれる */
   onOutputData(executionId: string, data: string, isStderr: boolean): void | Promise<void>;
-  
+
   /** プロセス終了時に呼ばれる */
   onProcessEnd?(executionId: string, exitCode: number | null): void | Promise<void>;
-  
+
   /** エラー発生時に呼ばれる */
   onError?(executionId: string, error: Error): void | Promise<void>;
 }
@@ -23,10 +23,10 @@ export interface StreamSubscriber {
 interface StreamPublisherOptions {
   /** リアルタイム通知を有効にするか */
   enableRealtimeStreaming?: boolean;
-  
+
   /** バッファサイズ（バイト） */
   bufferSize?: number;
-  
+
   /** 通知間隔（ミリ秒） */
   notificationInterval?: number;
 }
@@ -37,23 +37,23 @@ interface StreamPublisherOptions {
 export class StreamPublisher {
   private subscribers: Map<string, StreamSubscriber> = new Map();
   private executionSubscribers: Map<string, Set<string>> = new Map(); // execution -> subscriber IDs
-  
+
   constructor(private options: StreamPublisherOptions = {}) {
     this.options = {
       enableRealtimeStreaming: false,
       bufferSize: 8192,
       notificationInterval: 100,
-      ...options
+      ...options,
     };
   }
-  
+
   /**
    * Subscriberを登録
    */
   subscribe(subscriber: StreamSubscriber): void {
     this.subscribers.set(subscriber.id, subscriber);
   }
-  
+
   /**
    * Subscriberを削除
    */
@@ -67,7 +67,7 @@ export class StreamPublisher {
       }
     }
   }
-  
+
   /**
    * 特定の実行にSubscriberを追加
    */
@@ -75,11 +75,11 @@ export class StreamPublisher {
     if (!this.subscribers.has(subscriberId)) {
       throw new Error(`Subscriber ${subscriberId} not found`);
     }
-    
+
     if (!this.executionSubscribers.has(executionId)) {
       this.executionSubscribers.set(executionId, new Set());
     }
-    
+
     const subscriberSet = this.executionSubscribers.get(executionId);
     if (subscriberSet) {
       subscriberSet.add(subscriberId);
@@ -91,12 +91,16 @@ export class StreamPublisher {
    */
   private async notifySubscribers<T extends unknown[]>(
     executionId: string,
-    callback: (subscriber: StreamSubscriber, subscriberId: string, ...args: T) => Promise<void> | void,
+    callback: (
+      subscriber: StreamSubscriber,
+      subscriberId: string,
+      ...args: T
+    ) => Promise<void> | void,
     ...args: T
   ): Promise<void> {
     const subscriberIds = this.executionSubscribers.get(executionId);
     if (!subscriberIds) return;
-    
+
     const notifications = Array.from(subscriberIds).map(async (subscriberId) => {
       const subscriber = this.subscribers.get(subscriberId);
       if (subscriber) {
@@ -107,10 +111,10 @@ export class StreamPublisher {
         }
       }
     });
-    
+
     await Promise.allSettled(notifications);
   }
-  
+
   /**
    * プロセス開始を通知
    */
@@ -126,21 +130,25 @@ export class StreamPublisher {
       command
     );
   }
-  
+
   /**
    * 出力データを通知
    */
-  async notifyOutputData(executionId: string, data: string, isStderr: boolean = false): Promise<void> {
+  async notifyOutputData(
+    executionId: string,
+    data: string,
+    isStderr: boolean = false
+  ): Promise<void> {
     await this.notifySubscribers(
       executionId,
-      (subscriber, _, executionId, data, isStderr) => 
+      (subscriber, _, executionId, data, isStderr) =>
         subscriber.onOutputData(executionId, data, isStderr),
       executionId,
       data,
       isStderr
     );
   }
-  
+
   /**
    * プロセス終了を通知
    */
@@ -155,11 +163,11 @@ export class StreamPublisher {
       executionId,
       exitCode
     );
-    
+
     // 実行完了後はsubscription情報をクリーンアップ
     this.executionSubscribers.delete(executionId);
   }
-  
+
   /**
    * エラーを通知
    */
@@ -175,14 +183,14 @@ export class StreamPublisher {
       error
     );
   }
-  
+
   /**
    * リアルタイムストリーミングが有効かどうか
    */
   isRealtimeStreamingEnabled(): boolean {
     return this.options.enableRealtimeStreaming === true;
   }
-  
+
   /**
    * 特定の実行にSubscriberが登録されているかチェック
    */

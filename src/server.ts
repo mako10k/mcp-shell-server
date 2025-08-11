@@ -77,11 +77,16 @@ export class MCPShellServer {
     this.processManager = new ProcessManager(50, '/tmp/mcp-shell-outputs', this.fileManager);
     this.terminalManager = new TerminalManager();
     this.monitoringManager = new MonitoringManager();
-    this.securityManager = new SecurityManager();
     
     // Enhanced security configを取得してCommandHistoryManagerを初期化
     const enhancedConfig = this.configManager.getEnhancedSecurityConfig();
     this.commandHistoryManager = new CommandHistoryManager(enhancedConfig);
+    
+    // SecurityManagerを先に作成（後でEnhancedSafetyEvaluatorを初期化）
+    this.securityManager = new SecurityManager();
+    
+    // EnhancedSafetyEvaluatorを初期化
+    this.securityManager.initializeEnhancedEvaluator(this.commandHistoryManager, this.server);
     
     // Load existing command history
     this.commandHistoryManager.loadHistory().catch(error => {
@@ -100,7 +105,7 @@ export class MCPShellServer {
         await this.notifyBackgroundProcessComplete(executionId, executionInfo);
       },
       onError: async (executionId: string, executionInfo, error) => {
-        await this.notifyBackgroundProcessError(executionId, executionInfo, error);
+        await this.notifyBackgroundProcessError(executionId, executionInfo, error instanceof Error ? error : new Error(String(error)));
       },
       onTimeout: async (executionId: string, executionInfo) => {
         await this.notifyBackgroundProcessTimeout(executionId, executionInfo);

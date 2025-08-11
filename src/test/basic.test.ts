@@ -20,11 +20,17 @@ describe('MCP Shell Server Components', () => {
     terminalManager = new TerminalManager();
     fileManager = new FileManager();
     monitoringManager = new MonitoringManager();
-    
+
     // ProcessManagerにFileManagerを設定
     processManager.setFileManager(fileManager);
-    
-    shellTools = new ShellTools(processManager, terminalManager, fileManager, monitoringManager, securityManager);
+
+    shellTools = new ShellTools(
+      processManager,
+      terminalManager,
+      fileManager,
+      monitoringManager,
+      securityManager
+    );
   });
 
   afterEach(() => {
@@ -266,7 +272,7 @@ describe('MCP Shell Server Components', () => {
         expect(fileInfo.output_type).toBe('combined');
         expect(fileInfo.output_id).toBe(result.output_id);
         expect(fileInfo.execution_id).toBe(result.execution_id);
-        
+
         // ファイルの内容を確認
         const fileContent = await fileManager.readFile(result.output_id);
         expect(fileContent.content).toContain('Test output');
@@ -282,9 +288,9 @@ describe('MCP Shell Server Components', () => {
       // 許可されているディレクトリを使用
       const allowedDirs = processManager.getAllowedWorkingDirectories();
       const newWorkdir = allowedDirs[0]; // 最初の許可されたディレクトリを使用
-      
+
       const result = processManager.setDefaultWorkingDirectory(newWorkdir);
-      
+
       expect(result.success).toBe(true);
       expect(result.new_working_directory).toBe(newWorkdir);
       expect(processManager.getDefaultWorkingDirectory()).toBe(newWorkdir);
@@ -489,7 +495,7 @@ describe('MCP Shell Server Components', () => {
         'mount /dev/sdb',
       ];
 
-      dangerousCommands.forEach(cmd => {
+      dangerousCommands.forEach((cmd) => {
         const patterns = securityManager.detectDangerousPatterns(cmd);
         expect(patterns.length).toBeGreaterThan(0);
       });
@@ -502,7 +508,7 @@ describe('MCP Shell Server Components', () => {
         'find . -name "*.txt"',
       ];
 
-      safeCommands.forEach(cmd => {
+      safeCommands.forEach((cmd) => {
         const patterns = securityManager.detectDangerousPatterns(cmd);
         expect(patterns.length).toBe(0);
       });
@@ -521,10 +527,10 @@ describe('MCP Shell Server Components', () => {
       });
 
       expect(result.status).toBe('running');
-      
+
       // backgroundプロセスの完了を待つ
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // 実行情報を再取得
       const updatedResult = processManager.getExecution(result.execution_id);
       expect(updatedResult?.output_id).toBeDefined();
@@ -536,7 +542,7 @@ describe('MCP Shell Server Components', () => {
         });
 
         expect(fileList.files.length).toBeGreaterThan(0);
-        const generatedFile = fileList.files.find(f => f.output_id === updatedResult.output_id);
+        const generatedFile = fileList.files.find((f) => f.output_id === updatedResult.output_id);
         expect(generatedFile).toBeDefined();
         expect(generatedFile?.execution_id).toBe(result.execution_id);
       }
@@ -553,10 +559,10 @@ describe('MCP Shell Server Components', () => {
       });
 
       expect(result.status).toBe('running');
-      
+
       // backgroundプロセスの完了を待つ
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // 実行情報を再取得
       const updatedResult = processManager.getExecution(result.execution_id);
       expect(updatedResult?.output_id).toBeDefined();
@@ -583,15 +589,15 @@ describe('MCP Shell Server Components', () => {
       });
 
       expect(result.status).toBe('running');
-      
+
       // backgroundプロセスの完了を待つ
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // プロセス情報を取得してoutput_idを確認
       const processInfo = await shellTools.getExecution({
         execution_id: result.execution_id,
       });
-      
+
       expect(processInfo.output_id).toBeDefined();
 
       // ShellToolsでファイル一覧を取得
@@ -602,7 +608,7 @@ describe('MCP Shell Server Components', () => {
         });
 
         expect(fileList.files.length).toBeGreaterThan(0);
-        const targetFile = fileList.files.find(f => f.output_id === processInfo.output_id);
+        const targetFile = fileList.files.find((f) => f.output_id === processInfo.output_id);
         expect(targetFile).toBeDefined();
 
         // ShellToolsでファイル内容を読み取り
@@ -623,7 +629,7 @@ describe('MCP Shell Server Components', () => {
     it('should log errors when output file save fails', async () => {
       // コンソールエラーをキャプチャ
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      
+
       try {
         // FileManagerのcreateOutputFileメソッドをモックしてエラーを強制発生
         const originalCreateOutputFile = fileManager.createOutputFile;
@@ -639,10 +645,10 @@ describe('MCP Shell Server Components', () => {
 
         // デバッグ用：実際の結果を確認
         console.log('Test result:', JSON.stringify(result, null, 2));
-        
+
         // エラーメッセージが実行情報に含まれていることを確認
         expect(result.message || '').toContain('Output file save failed');
-        
+
         // コンソールにエラーが出力されていることを確認
         expect(consoleErrorSpy).toHaveBeenCalledWith(
           expect.stringContaining('[CRITICAL] Failed to save output file for execution'),
@@ -653,7 +659,7 @@ describe('MCP Shell Server Components', () => {
         expect(result.status).toBe('completed');
         expect(result.stdout).toContain('test output');
         expect(result.output_id).toBeUndefined(); // ファイル保存に失敗したため
-        
+
         // FileManagerの元のメソッドを復元
         fileManager.createOutputFile = originalCreateOutputFile;
       } finally {
@@ -664,7 +670,7 @@ describe('MCP Shell Server Components', () => {
     it('should not silently fail when data directory is missing', async () => {
       // コンソールエラーをキャプチャ
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      
+
       try {
         // FileManagerのcreateOutputFileメソッドをモックしてエラーを強制発生
         const originalCreateOutputFile = fileManager.createOutputFile;
@@ -680,13 +686,13 @@ describe('MCP Shell Server Components', () => {
 
         // エラーメッセージが実行情報に含まれていることを確認
         expect(result.message || '').toContain('Output file save failed');
-        
+
         // output_idが設定されていないことを確認
         expect(result.output_id).toBeUndefined();
-        
+
         // サイレント失敗でないことを確認（エラーログが出力されている）
         expect(consoleErrorSpy).toHaveBeenCalled();
-        
+
         // FileManagerの元のメソッドを復元
         fileManager.createOutputFile = originalCreateOutputFile;
       } finally {
@@ -696,7 +702,7 @@ describe('MCP Shell Server Components', () => {
 
     it('should preserve user data even when output file save fails', async () => {
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      
+
       try {
         // FileManagerのcreateOutputFileメソッドをモックしてエラーを強制発生
         const originalCreateOutputFile = fileManager.createOutputFile;
@@ -713,10 +719,10 @@ describe('MCP Shell Server Components', () => {
         // ファイル保存は失敗したが、出力データは保持されている
         expect(result.stdout).toContain('important data');
         expect(result.status).toBe('completed');
-        
+
         // エラーメッセージでファイル保存失敗が明示されている
         expect(result.message || '').toContain('Output file save failed');
-        
+
         // FileManagerの元のメソッドを復元
         fileManager.createOutputFile = originalCreateOutputFile;
       } finally {
@@ -744,15 +750,18 @@ describe('MCP Shell Server Components', () => {
 
         // output_idが設定されていることを確認
         expect(result.output_id).toBeDefined();
-        
+
         if (result.output_id) {
           // FileManagerにファイル情報が登録されていることを確認
           const fileInfo = fileManager.getFile(result.output_id);
           expect(fileInfo).toBeDefined();
           expect(fileInfo.output_id).toBe(result.output_id);
           expect(fileInfo.output_type).toBe('combined');
-          
-          console.log('FileManager registration test - File info:', JSON.stringify(fileInfo, null, 2));
+
+          console.log(
+            'FileManager registration test - File info:',
+            JSON.stringify(fileInfo, null, 2)
+          );
         }
       });
 
@@ -766,19 +775,22 @@ describe('MCP Shell Server Components', () => {
         });
 
         expect(result.output_id).toBeDefined();
-        
+
         if (result.output_id) {
           const fileInfo = fileManager.getFile(result.output_id);
-          
+
           // 実際のファイルが存在することを確認
           const fs = await import('fs/promises');
-          const exists = await fs.access(fileInfo.path).then(() => true).catch(() => false);
+          const exists = await fs
+            .access(fileInfo.path)
+            .then(() => true)
+            .catch(() => false);
           expect(exists).toBe(true);
-          
+
           // ファイル内容が期待通りであることを確認
           const content = await fs.readFile(fileInfo.path, 'utf-8');
           expect(content).toContain('filesystem test');
-          
+
           console.log('Filesystem test - File path:', fileInfo.path);
           console.log('Filesystem test - File content:', content);
         }
@@ -797,7 +809,7 @@ describe('MCP Shell Server Components', () => {
         });
 
         expect(result.output_id).toBeDefined();
-        
+
         if (result.output_id) {
           // ShellToolsを使って出力を読み取り
           const readResult = await shellTools.readFile({
@@ -808,7 +820,7 @@ describe('MCP Shell Server Components', () => {
           });
 
           console.log('Read execution output test - Result:', JSON.stringify(readResult, null, 2));
-          
+
           // 内容が正しく取得できることを確認
           expect(readResult.content).toContain(testContent);
           expect(readResult.output_id).toBe(result.output_id);
@@ -827,7 +839,7 @@ describe('MCP Shell Server Components', () => {
         });
 
         expect(result.output_id).toBeDefined();
-        
+
         if (result.output_id) {
           // 即座に読み取り
           const immediateRead = await shellTools.readFile({
@@ -838,7 +850,7 @@ describe('MCP Shell Server Components', () => {
           });
 
           // 少し待ってから再度読み取り
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise((resolve) => setTimeout(resolve, 200));
           const delayedRead = await shellTools.readFile({
             output_id: result.output_id,
             offset: 0,
@@ -848,7 +860,7 @@ describe('MCP Shell Server Components', () => {
 
           console.log('Timing test - Immediate read:', JSON.stringify(immediateRead, null, 2));
           console.log('Timing test - Delayed read:', JSON.stringify(delayedRead, null, 2));
-          
+
           // 両方とも内容が取得できることを確認
           expect(immediateRead.content).toContain('timing test');
           expect(delayedRead.content).toContain('timing test');
@@ -858,13 +870,15 @@ describe('MCP Shell Server Components', () => {
 
       it('should provide clear error messages for invalid output_id', async () => {
         const invalidId = 'invalid-output-id-12345';
-        
-        await expect(shellTools.readFile({
-          output_id: invalidId,
-          offset: 0,
-          size: 8192,
-          encoding: 'utf-8',
-        })).rejects.toThrow();
+
+        await expect(
+          shellTools.readFile({
+            output_id: invalidId,
+            offset: 0,
+            size: 8192,
+            encoding: 'utf-8',
+          })
+        ).rejects.toThrow();
       });
 
       it('should handle empty command output transparently', async () => {
@@ -880,7 +894,7 @@ describe('MCP Shell Server Components', () => {
         expect(result.exit_code).toBe(0);
         expect(result.stdout).toBe(''); // 出力は空
         expect(result.output_id).toBeDefined();
-        
+
         if (result.output_id) {
           const readResult = await shellTools.readFile({
             output_id: result.output_id,
@@ -890,7 +904,7 @@ describe('MCP Shell Server Components', () => {
           });
 
           console.log('Empty output test - Result:', JSON.stringify(readResult, null, 2));
-          
+
           // 空の内容でも正常に処理されることを確認
           expect(readResult.content).toBe('');
           expect(readResult.size).toBe(0);
@@ -921,7 +935,7 @@ describe('MCP Shell Server Components', () => {
           });
 
           console.log('ESLint version test - Read result:', JSON.stringify(readResult, null, 2));
-          
+
           // 出力が取得できることを確認
           expect(readResult.content).toBeTruthy();
           expect(readResult.size).toBeGreaterThan(0);
@@ -953,7 +967,7 @@ describe('MCP Shell Server Components', () => {
           });
 
           console.log('ESLint error test - Read result:', JSON.stringify(readResult, null, 2));
-          
+
           // エラー出力も含めて取得できることを確認
           expect(readResult.content).toBeTruthy();
         }
@@ -980,7 +994,7 @@ describe('MCP Shell Server Components', () => {
           });
 
           console.log('Long lint test - Read result:', JSON.stringify(readResult, null, 2));
-          
+
           // 長い出力も取得できることを確認
           expect(readResult.output_id).toBe(result.output_id);
         }

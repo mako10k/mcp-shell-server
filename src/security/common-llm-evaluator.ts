@@ -7,6 +7,7 @@
 import { EvaluationResult } from '../types/enhanced-security.js';
 import { SecurityResponseParser } from './security-response-parser.js';
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
+import { BaseParseError } from './base-response-parser.js';
 
 // MCP sampling protocol interface
 interface CreateMessageCallback {
@@ -29,10 +30,12 @@ interface CreateMessageCallback {
   }>;
 }
 
+export type { CreateMessageCallback };
+
 // 共通の評価結果インターフェース
 export interface CommonLLMEvaluationResult {
   evaluation_result: EvaluationResult;
-  confidence: number;
+  // Removed confidence property
   llm_reasoning: string;
   model: string;
   evaluation_time_ms: number;
@@ -67,14 +70,19 @@ export class CommonLLMEvaluator {
   protected async callLLMWithStructuredOutput<T>(
     systemPrompt: string,
     userMessage: string,
-  parserMethod: (content: string, requestId: string) => Promise<{ success: boolean; data?: T; errors?: unknown; metadata: unknown }>,
+    parserMethod: (
+      content: string,
+      requestId: string
+    ) => Promise<{ success: boolean; data?: T; errors?: BaseParseError[]; metadata: { parseTime: number } }>,
     maxTokens: number = 200,
     temperature: number = 0.1
   ): Promise<CommonLLMEvaluationResult> {
     try {
       // Check if callback is properly initialized
       if (!this.createMessageCallback || typeof this.createMessageCallback !== 'function') {
-        throw new Error('LLM evaluation attempted before createMessageCallback was properly initialized');
+        throw new Error(
+          'LLM evaluation attempted before createMessageCallback was properly initialized'
+        );
       }
 
       const response = await this.createMessageCallback({
@@ -83,28 +91,35 @@ export class CommonLLMEvaluator {
             role: 'user',
             content: {
               type: 'text',
-              text: userMessage
-            }
-          }
+              text: userMessage,
+            },
+          },
         ],
         maxTokens,
         temperature,
         systemPrompt,
-        includeContext: 'none'
+        includeContext: 'none',
       });
 
       // Structured Output解析を試行
       const requestId = `eval_${Date.now()}`;
-      const parseResult = await parserMethod.call(this.responseParser, response.content.text, requestId);
+      const parseResult = await parserMethod.call(
+        this.responseParser,
+        response.content.text,
+        requestId
+      );
 
       if (parseResult.success && parseResult.data) {
-        return this.extractEvaluationFromStructuredResult(parseResult.data, response.model, parseResult.metadata.parseTime);
+        return this.extractEvaluationFromStructuredResult(
+          parseResult.data,
+          response.model,
+          parseResult.metadata.parseTime
+        );
       } else {
         // フォールバック: 従来のパース方法
         console.warn('Structured Output parsing failed, using fallback:', parseResult.errors);
         return this.createFallbackEvaluation(response.content.text, response.model);
       }
-
     } catch (error) {
       console.error('LLM evaluation failed:', error);
       throw error;
@@ -114,15 +129,22 @@ export class CommonLLMEvaluator {
   /**
    * Structured Outputから評価結果を抽出
    */
-  private extractEvaluationFromStructuredResult(data: unknown, model?: string, parseTime?: number): CommonLLMEvaluationResult {
+  private extractEvaluationFromStructuredResult(
+    data: unknown,
+    model?: string,
+    parseTime?: number
+  ): CommonLLMEvaluationResult {
     let evaluation_result: EvaluationResult = 'CONDITIONAL_DENY';
-    let confidence = 0.5;
     let llm_reasoning = 'No reasoning provided';
     let eval_time = Date.now();
     if (typeof data === 'object' && data !== null) {
-      const d = data as { evaluation_result?: EvaluationResult; final_evaluation?: EvaluationResult; confidence?: number; reasoning?: string };
+      const d = data as {
+        evaluation_result?: EvaluationResult;
+        final_evaluation?: EvaluationResult;
+        confidence?: number;
+        reasoning?: string;
+      };
       evaluation_result = d.evaluation_result || d.final_evaluation || 'CONDITIONAL_DENY';
-      confidence = d.confidence ?? 0.5;
       llm_reasoning = d.reasoning ?? 'No reasoning provided';
     }
     if (typeof parseTime === 'number') {
@@ -130,10 +152,9 @@ export class CommonLLMEvaluator {
     }
     return {
       evaluation_result,
-      confidence,
       llm_reasoning,
       model: model || 'unknown',
-      evaluation_time_ms: eval_time
+      evaluation_time_ms: eval_time,
     };
   }
 
@@ -146,52 +167,48 @@ export class CommonLLMEvaluator {
   ): CommonLLMEvaluationResult {
     const llmResponse = rawResponse.trim().toUpperCase();
     let evaluation_result: EvaluationResult;
-    let confidence = 0.8;
 
     // 共通のパースロジック
     if (llmResponse.includes('ELICIT_USER_INTENT')) {
       evaluation_result = 'ELICIT_USER_INTENT';
-      confidence = 0.6;
     } else if (llmResponse.includes('NEED_MORE_INFO')) {
       evaluation_result = 'NEED_MORE_INFO';
-      confidence = 0.6;
     } else if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
       evaluation_result = 'DENY';
-      confidence = 0.9;
     } else if (llmResponse.includes('CONDITIONAL_DENY')) {
       evaluation_result = 'CONDITIONAL_DENY';
-      confidence = 0.8;
     } else if (llmResponse.includes('ALLOW')) {
       evaluation_result = 'ALLOW';
-      confidence = 0.9;
     } else {
       // Default to safe denial for unclear responses
       evaluation_result = 'CONDITIONAL_DENY';
-      confidence = 0.3;
       console.warn('LLM evaluation response unclear, defaulting to CONDITIONAL_DENY:', llmResponse);
     }
 
     return {
       evaluation_result,
-      confidence,
       llm_reasoning: rawResponse,
       model: model || 'unknown',
-      evaluation_time_ms: Date.now()
+      evaluation_time_ms: Date.now(),
     };
   }
 
   /**
    * 初回セキュリティ評価（共通実装）
    */
-  async evaluateInitialSecurity(context: CommonEvaluationContext, historyContext: string[]): Promise<CommonLLMEvaluationResult> {
+  async evaluateInitialSecurityByLLM(
+    context: CommonEvaluationContext,
+    historyContext: string[]
+  ): Promise<CommonLLMEvaluationResult> {
     const promptContext = {
       command: context.command,
       commandHistory: historyContext,
       workingDirectory: context.workingDirectory,
-      ...(context.comment && { comment: context.comment })
+      ...(context.comment && { comment: context.comment }),
     };
 
-    const { systemPrompt, userMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
+    const { systemPrompt, userMessage } =
+      this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
 
     return this.callLLMWithStructuredOutput(
       systemPrompt,
@@ -205,19 +222,20 @@ export class CommonLLMEvaluator {
   /**
    * ユーザー意図再評価（共通実装）
    */
-  async evaluateWithUserIntent(
+  async evaluateWithUserIntentByLLM(
     context: CommonEvaluationContext,
     userResponse: string,
-  initialEvaluation: unknown
+    initialEvaluation: unknown
   ): Promise<CommonLLMEvaluationResult> {
     const userIntentContext = {
       originalCommand: context.command,
       initialEvaluation,
       userResponse,
-      ...(context.comment && { additionalContext: context.comment })
+      ...(context.comment && { additionalContext: context.comment }),
     };
 
-    const { systemPrompt, userMessage } = this.promptGenerator.generateUserIntentReevaluationPrompt(userIntentContext);
+    const { systemPrompt, userMessage } =
+      this.promptGenerator.generateUserIntentReevaluationPrompt(userIntentContext);
 
     return this.callLLMWithStructuredOutput(
       systemPrompt,
@@ -231,19 +249,20 @@ export class CommonLLMEvaluator {
   /**
    * 追加コンテキスト再評価（共通実装）
    */
-  async evaluateWithAdditionalContext(
+  async evaluateWithAdditionalContextByLLM(
     context: CommonEvaluationContext,
     additionalHistory: string[],
-  initialEvaluation: unknown
+    initialEvaluation: unknown
   ): Promise<CommonLLMEvaluationResult> {
     const additionalContextContext = {
       originalCommand: context.command,
       initialEvaluation,
       additionalHistory,
-      ...(context.comment && { environmentInfo: context.comment })
+      ...(context.comment && { environmentInfo: context.comment }),
     };
 
-    const { systemPrompt, userMessage } = this.promptGenerator.generateAdditionalContextReevaluationPrompt(additionalContextContext);
+    const { systemPrompt, userMessage } =
+      this.promptGenerator.generateAdditionalContextReevaluationPrompt(additionalContextContext);
 
     return this.callLLMWithStructuredOutput(
       systemPrompt,
@@ -260,10 +279,9 @@ export class CommonLLMEvaluator {
   createErrorEvaluation(errorMessage: string, model: string = 'error'): CommonLLMEvaluationResult {
     return {
       evaluation_result: 'CONDITIONAL_DENY',
-      confidence: 0.2,
       llm_reasoning: `Evaluation failed: ${errorMessage}`,
       model,
-      evaluation_time_ms: Date.now()
+      evaluation_time_ms: Date.now(),
     };
   }
 }
