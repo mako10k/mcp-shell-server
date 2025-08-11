@@ -238,9 +238,96 @@ export interface LogEntry {
   component?: string;
 }
 
+// ログ設定
+export interface LogConfig {
+  enableFileLogging: boolean;
+  logFilePath: string;
+  maxFileSize: number; // bytes
+  maxLogFiles: number;
+  enableConsoleLogging: boolean;
+}
+
+// デフォルトログ設定
+const defaultLogConfig: LogConfig = {
+  enableFileLogging: true,
+  logFilePath: './logs/mcp_server.log',
+  maxFileSize: 10 * 1024 * 1024, // 10MB
+  maxLogFiles: 5,
+  enableConsoleLogging: false, // MCP Serverでは標準出力を汚さない
+};
+
+let currentLogConfig: LogConfig = { ...defaultLogConfig };
+
 // 内部ログストレージ
 const logEntries: LogEntry[] = [];
 const MAX_LOG_ENTRIES = 1000;
+
+// ログファイル書き込み関数
+async function writeToLogFile(entry: LogEntry): Promise<void> {
+  if (!currentLogConfig.enableFileLogging) {
+    return;
+  }
+
+  try {
+    // ログディレクトリを作成
+    const logDir = path.dirname(currentLogConfig.logFilePath);
+    await fs.mkdir(logDir, { recursive: true });
+
+    // ログエントリをフォーマット
+    const logLine = `${entry.timestamp} [${LogLevel[entry.level]}] ${entry.component || 'SYSTEM'}: ${entry.message}`;
+    const dataLine = entry.data ? ` | Data: ${JSON.stringify(entry.data)}` : '';
+    const fullLogLine = logLine + dataLine + '\n';
+
+    // ファイルに追記
+    await fs.appendFile(currentLogConfig.logFilePath, fullLogLine);
+
+    // ファイルサイズチェックとローテーション
+    await rotateLogFileIfNeeded();
+  } catch (error) {
+    // ファイルログエラーは内部でのみ記録（無限ループを避ける）
+    console.error('Failed to write to log file:', error);
+  }
+}
+
+// ログファイルローテーション
+async function rotateLogFileIfNeeded(): Promise<void> {
+  try {
+    const stats = await fs.stat(currentLogConfig.logFilePath);
+    if (stats.size > currentLogConfig.maxFileSize) {
+      // 古いログファイルを移動
+      for (let i = currentLogConfig.maxLogFiles - 1; i >= 1; i--) {
+        const oldFile = `${currentLogConfig.logFilePath}.${i}`;
+        const newFile = `${currentLogConfig.logFilePath}.${i + 1}`;
+        
+        try {
+          await fs.access(oldFile);
+          if (i === currentLogConfig.maxLogFiles - 1) {
+            await fs.unlink(oldFile); // 最古のファイルを削除
+          } else {
+            await fs.rename(oldFile, newFile);
+          }
+        } catch {
+          // ファイルが存在しない場合は無視
+        }
+      }
+      
+      // 現在のログファイルを .1 に移動
+      await fs.rename(currentLogConfig.logFilePath, `${currentLogConfig.logFilePath}.1`);
+    }
+  } catch {
+    // ローテーションエラーは無視（ファイルが存在しない場合など）
+  }
+}
+
+// ログ設定更新関数
+export function updateLogConfig(config: Partial<LogConfig>): void {
+  currentLogConfig = { ...currentLogConfig, ...config };
+}
+
+// ログ設定取得関数
+export function getLogConfig(): LogConfig {
+  return { ...currentLogConfig };
+}
 
 // ログ機能（標準出力に書き込まない）
 export function internalLog(
@@ -268,6 +355,33 @@ export function internalLog(
   // 古いログエントリを削除
   if (logEntries.length > MAX_LOG_ENTRIES) {
     logEntries.shift();
+  }
+
+  // ファイルログ書き込み（非同期、エラーは無視）
+  if (currentLogConfig.enableFileLogging) {
+    writeToLogFile(entry).catch(() => {
+      // ファイル書き込みエラーは無視（無限ループを避ける）
+    });
+  }
+
+  // コンソールログ出力
+  if (currentLogConfig.enableConsoleLogging) {
+    const logMessage = `${entry.timestamp} [${LogLevel[entry.level]}] ${entry.component || 'SYSTEM'}: ${entry.message}`;
+    switch (level) {
+      case LogLevel.ERROR:
+        console.error(logMessage, entry.data);
+        break;
+      case LogLevel.WARN:
+        console.warn(logMessage, entry.data);
+        break;
+      case LogLevel.INFO:
+        console.info(logMessage, entry.data);
+        break;
+      case LogLevel.DEBUG:
+      default:
+        console.log(logMessage, entry.data);
+        break;
+    }
   }
 }
 
@@ -300,4 +414,95 @@ export const logger = {
     internalLog(LogLevel.WARN, message, data, component),
   error: (message: string, data?: unknown, component?: string) =>
     internalLog(LogLevel.ERROR, message, data, component),
+  
+  // ログ取得機能
+  getEntries: (level?: LogLevel, component?: string, limit?: number) => 
+    getLogEntries(level, component, limit),
+  
+  // ログ履歴取得（より詳細なフィルタリング）
+  getHistory: (options?: {
+    level?: LogLevel;
+    component?: string;
+    limit?: number;
+    since?: string; // ISO timestamp
+    until?: string; // ISO timestamp
+    search?: string; // メッセージ内検索
+  }) => {
+    let filtered = logEntries;
+
+    if (options?.level !== undefined) {
+      const targetLevel = options.level;
+      filtered = filtered.filter((entry) => entry.level >= targetLevel);
+    }
+
+    if (options?.component) {
+      filtered = filtered.filter((entry) => entry.component === options.component);
+    }
+
+    if (options?.since) {
+      const sinceTime = options.since;
+      filtered = filtered.filter((entry) => entry.timestamp >= sinceTime);
+    }
+
+    if (options?.until) {
+      const untilTime = options.until;
+      filtered = filtered.filter((entry) => entry.timestamp <= untilTime);
+    }
+
+    if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      filtered = filtered.filter((entry) => 
+        entry.message.toLowerCase().includes(searchLower) ||
+        JSON.stringify(entry.data || {}).toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (options?.limit) {
+      filtered = filtered.slice(-options.limit);
+    }
+
+    return filtered;
+  },
+  
+  // ログファイル読み取り機能
+  readLogFile: async (lines?: number): Promise<string[]> => {
+    try {
+      const content = await fs.readFile(currentLogConfig.logFilePath, 'utf-8');
+      const allLines = content.split('\n').filter(line => line.trim() !== '');
+      
+      if (lines && lines > 0) {
+        return allLines.slice(-lines);
+      }
+      
+      return allLines;
+    } catch (error) {
+      logger.error('Failed to read log file', { error: String(error) }, 'logger');
+      return [];
+    }
+  },
+  
+  // ログ統計取得
+  getStats: () => {
+    const stats = {
+      totalEntries: logEntries.length,
+      byLevel: {} as Record<string, number>,
+      byComponent: {} as Record<string, number>,
+      oldestEntry: logEntries.length > 0 ? logEntries[0]?.timestamp : null,
+      newestEntry: logEntries.length > 0 ? logEntries[logEntries.length - 1]?.timestamp : null,
+    };
+
+    logEntries.forEach(entry => {
+      const levelName = LogLevel[entry.level];
+      stats.byLevel[levelName] = (stats.byLevel[levelName] || 0) + 1;
+      
+      const component = entry.component || 'SYSTEM';
+      stats.byComponent[component] = (stats.byComponent[component] || 0) + 1;
+    });
+
+    return stats;
+  },
+  
+  // ログ設定関数
+  configure: updateLogConfig,
+  getConfig: getLogConfig,
 };

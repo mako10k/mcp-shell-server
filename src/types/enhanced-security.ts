@@ -318,17 +318,33 @@ export const DEFAULT_BASIC_SAFETY_RULES: BasicSafetyRule[] = [
 // ========================================
 
 // Function Call Handler Arguments Types
-export type EvaluateCommandSecurityArgs = z.infer<typeof SimplifiedLLMEvaluationResultSchema>;
+export const EvaluateCommandSecurityArgsSchema = z.object({
+  command: z.string(),
+  working_directory: z.string(),
+  additional_context: z.string().optional()
+});
+
+export type EvaluateCommandSecurityArgs = z.infer<typeof EvaluateCommandSecurityArgsSchema>;
 
 export const ReevaluateWithUserIntentArgsSchema = z.object({
-  evaluation_result: z.enum(['ALLOW', 'CONDITIONAL_DENY', 'DENY']),
-  reasoning: z.string(),
-  confidence_level: z.number().min(0.0).max(1.0),
-  suggested_alternatives: z.array(z.string())
+  command: z.string(),
+  working_directory: z.string(),
+  additional_context: z.string().optional(),
+  user_intent: z.string(),
+  previous_evaluation: SimplifiedLLMEvaluationResultSchema
 });
 
 export type ReevaluateWithUserIntentArgs = z.infer<typeof ReevaluateWithUserIntentArgsSchema>;
-export type ReevaluateWithAdditionalContextArgs = z.infer<typeof SimplifiedLLMEvaluationResultSchema>;
+
+export const ReevaluateWithAdditionalContextArgsSchema = z.object({
+  command: z.string(),
+  working_directory: z.string(),
+  additional_context: z.string().optional(),
+  command_history: z.array(z.string()).optional(),
+  execution_results: z.array(z.string()).optional()
+});
+
+export type ReevaluateWithAdditionalContextArgs = z.infer<typeof ReevaluateWithAdditionalContextArgsSchema>;
 
 // Function Call Handler Context
 export interface FunctionCallContext {
@@ -342,8 +358,9 @@ export interface FunctionCallContext {
 // Function Call Handler Results
 export interface FunctionCallResult {
   success: boolean;
-  result?: unknown;
+  result?: SimplifiedLLMEvaluationResult;
   error?: string;
+  context?: FunctionCallContext;
 }
 
 // Function Call Handler Signature

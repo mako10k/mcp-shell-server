@@ -5,13 +5,14 @@ import {
   FunctionCallHandlerRegistry,
   FunctionCallContext,
   FunctionCallResult,
+  FunctionCallHandler,
   EvaluateCommandSecurityArgs,
   ReevaluateWithUserIntentArgs,
   ReevaluateWithAdditionalContextArgs
 } from '../types/enhanced-security.js';
 import { CommandSafetyEvaluationResult, SecurityManager } from './manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
-import { getCurrentTimestamp, generateId } from '../utils/helpers.js';
+import { getCurrentTimestamp, generateId, logger } from '../utils/helpers.js';
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 // Structured Output imports
@@ -181,156 +182,164 @@ export class EnhancedSafetyEvaluator {
 
   /**
    * Handler for evaluate_command_security Function Call
+   * This executes actual security evaluation for the given command
    */
   private async handleEvaluateCommandSecurity(
     args: EvaluateCommandSecurityArgs, 
     context: FunctionCallContext
   ): Promise<FunctionCallResult> {
     try {
-      // Validate the evaluation result
-      if (!this.isValidEvaluationResult(args.evaluation_result)) {
-        return {
-          success: false,
-          error: `Invalid evaluation result: ${args.evaluation_result}`
-        };
-      }
+      // Execute actual security evaluation using the existing method
+      const evaluationResult = await this.evaluateCommandLLMCentric(
+        args.command, 
+        args.working_directory, 
+        [], // Empty history for function call context
+        args.additional_context
+      );
 
-      // Log the evaluation for audit purposes
-      console.log('Function Call Security Evaluation:', {
-        command: context.command,
-        result: args.evaluation_result,
-        reasoning: args.reasoning
-      });
-
-      // Perform actual security evaluation logic
-      const evaluationContext = {
-        command: context.command,
-        comment: context.comment,
-        timestamp: new Date().toISOString(),
-        evaluation_result: args.evaluation_result,
-        reasoning: args.reasoning,
-        requires_additional_context: args.requires_additional_context,
-        suggested_alternatives: args.suggested_alternatives
+      // Convert CommandSafetyEvaluationResult to SimplifiedLLMEvaluationResult
+      const simplifiedResult: SimplifiedLLMEvaluationResult = {
+        evaluation_result: evaluationResult.evaluation_result,
+        reasoning: evaluationResult.reasoning,
+        requires_additional_context: {
+          command_history_depth: 0,
+          execution_results_count: 0,
+          user_intent_search_keywords: null,
+          user_intent_question: null
+        },
+        suggested_alternatives: evaluationResult.suggested_alternatives || []
       };
 
-      // Store evaluation in history if historyManager is available
-      if (context.historyManager && typeof context.historyManager === 'object') {
-        // Add to command history with evaluation metadata
-        // This would be enhanced with proper typing later
-      }
+      logger.info('Function Call Security Evaluation', {
+        command: args.command,
+        working_directory: args.working_directory,
+        result: evaluationResult.evaluation_result,
+        reasoning: evaluationResult.reasoning
+      }, 'function-call');
 
       return {
         success: true,
-        result: evaluationContext
+        result: simplifiedResult,
+        context: context
       };
     } catch (error) {
       return {
         success: false,
-        error: `Security evaluation failed: ${error instanceof Error ? error.message : String(error)}`
+        error: `Security evaluation failed: ${error instanceof Error ? error.message : String(error)}`,
+        context: context
       };
     }
   }
 
   /**
-   * Validate if evaluation result is one of the allowed values
-   */
-  private isValidEvaluationResult(result: string): boolean {
-    const validResults = ['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO'];
-    return validResults.includes(result);
-  }
-
-  /**
    * Handler for reevaluate_with_user_intent Function Call
+   * This performs reevaluation with user intent context
    */
   private async handleReevaluateWithUserIntent(
     args: ReevaluateWithUserIntentArgs, 
     context: FunctionCallContext
   ): Promise<FunctionCallResult> {
     try {
-      // Validate the reevaluation result
-      if (!['ALLOW', 'CONDITIONAL_DENY', 'DENY'].includes(args.evaluation_result)) {
-        return {
-          success: false,
-          error: `Invalid reevaluation result: ${args.evaluation_result}`
-        };
-      }
+      // Enhanced evaluation with user intent consideration
+      const enhancedContext = `${args.additional_context || ''}\nUser Intent: ${args.user_intent}\nPrevious Evaluation: ${args.previous_evaluation.reasoning}`;
+      
+      const reevaluationResult = await this.evaluateCommandLLMCentric(
+        args.command,
+        args.working_directory,
+        [], // Empty history for function call context
+        enhancedContext
+      );
 
-      // Log the user intent reevaluation
-      console.log('Function Call User Intent Reevaluation:', {
-        command: context.command,
-        result: args.evaluation_result,
-        confidence: args.confidence_level,
-        reasoning: args.reasoning
-      });
-
-      // Create reevaluation context
-      const reevaluationContext = {
-        command: context.command,
-        comment: context.comment,
-        timestamp: new Date().toISOString(),
-        evaluation_result: args.evaluation_result,
-        reasoning: args.reasoning,
-        confidence_level: args.confidence_level,
-        suggested_alternatives: args.suggested_alternatives,
-        reevaluation_type: 'user_intent'
+      // Convert result format
+      const simplifiedResult: SimplifiedLLMEvaluationResult = {
+        evaluation_result: reevaluationResult.evaluation_result,
+        reasoning: reevaluationResult.reasoning,
+        requires_additional_context: {
+          command_history_depth: 0,
+          execution_results_count: 0,
+          user_intent_search_keywords: null,
+          user_intent_question: null
+        },
+        suggested_alternatives: reevaluationResult.suggested_alternatives || []
       };
+
+      logger.info('Function Call User Intent Reevaluation', {
+        command: args.command,
+        user_intent: args.user_intent,
+        previous_result: args.previous_evaluation.evaluation_result,
+        new_result: simplifiedResult.evaluation_result
+      }, 'function-call');
 
       return {
         success: true,
-        result: reevaluationContext
+        result: simplifiedResult,
+        context: context
       };
     } catch (error) {
       return {
         success: false,
-        error: `User intent reevaluation failed: ${error instanceof Error ? error.message : String(error)}`
+        error: `User intent reevaluation failed: ${error instanceof Error ? error.message : String(error)}`,
+        context: context
       };
     }
   }
 
   /**
    * Handler for reevaluate_with_additional_context Function Call
+   * This performs reevaluation with additional command history and execution results
    */
   private async handleReevaluateWithAdditionalContext(
     args: ReevaluateWithAdditionalContextArgs, 
     context: FunctionCallContext
   ): Promise<FunctionCallResult> {
     try {
-      // Validate the reevaluation result
-      if (!this.isValidEvaluationResult(args.evaluation_result)) {
-        return {
-          success: false,
-          error: `Invalid reevaluation result: ${args.evaluation_result}`
-        };
+      // Build enhanced context from history and execution results
+      let enhancedContext = args.additional_context || '';
+      
+      if (args.command_history && args.command_history.length > 0) {
+        enhancedContext += `\nCommand History: ${args.command_history.join(', ')}`;
+      }
+      
+      if (args.execution_results && args.execution_results.length > 0) {
+        enhancedContext += `\nExecution Results: ${args.execution_results.join('; ')}`;
       }
 
-      // Log the additional context reevaluation
-      console.log('Function Call Additional Context Reevaluation:', {
-        command: context.command,
-        result: args.evaluation_result,
-        reasoning: args.reasoning,
-        additional_context: args.requires_additional_context
-      });
+      const reevaluationResult = await this.evaluateCommandLLMCentric(
+        args.command,
+        args.working_directory,
+        [], // Empty history for function call context
+        enhancedContext
+      );
 
-      // Create reevaluation context
-      const reevaluationContext = {
-        command: context.command,
-        comment: context.comment,
-        timestamp: new Date().toISOString(),
-        evaluation_result: args.evaluation_result,
-        reasoning: args.reasoning,
-        requires_additional_context: args.requires_additional_context,
-        suggested_alternatives: args.suggested_alternatives,
-        reevaluation_type: 'additional_context'
+      // Convert result format
+      const simplifiedResult: SimplifiedLLMEvaluationResult = {
+        evaluation_result: reevaluationResult.evaluation_result,
+        reasoning: reevaluationResult.reasoning,
+        requires_additional_context: {
+          command_history_depth: 0,
+          execution_results_count: 0,
+          user_intent_search_keywords: null,
+          user_intent_question: null
+        },
+        suggested_alternatives: reevaluationResult.suggested_alternatives || []
       };
+
+      logger.info('Function Call Additional Context Reevaluation', {
+        command: args.command,
+        context_length: enhancedContext.length,
+        result: simplifiedResult.evaluation_result
+      }, 'function-call');
 
       return {
         success: true,
-        result: reevaluationContext
+        result: simplifiedResult,
+        context: context
       };
     } catch (error) {
       return {
         success: false,
-        error: `Additional context reevaluation failed: ${error instanceof Error ? error.message : String(error)}`
+        error: `Additional context reevaluation failed: ${error instanceof Error ? error.message : String(error)}`,
+        context: context
       };
     }
   }
@@ -361,6 +370,32 @@ export class EnhancedSafetyEvaluator {
         error: `Handler execution failed: ${error instanceof Error ? error.message : String(error)}`
       };
     }
+  }
+
+  /**
+   * Public method for testing Function Call execution
+   * Execute a Function Call with OpenAI-style function call object
+   */
+  async executeTestFunctionCall(
+    functionCall: { name: string; arguments: string },
+    context: FunctionCallContext
+  ): Promise<FunctionCallResult> {
+    try {
+      const args = JSON.parse(functionCall.arguments);
+      return await this.executeFunctionCall(functionCall.name, args, context);
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to parse function call arguments: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  /**
+   * Get the function call registry for testing
+   */
+  getFunctionCallRegistry(): Map<string, FunctionCallHandler> {
+    return new Map(Object.entries(this.functionCallHandlers));
   }
 
   setCreateMessageCallback(callback: CreateMessageCallback | undefined): void {
