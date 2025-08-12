@@ -639,11 +639,23 @@ export class EnhancedSafetyEvaluator {
         if (toolCall && toolCall.function.name === 'evaluate_command_security') {
           try {
             // Parse and validate the function arguments
-            const result = JSON.parse(toolCall.function.arguments);
+            const rawArgs = toolCall.function.arguments;
+            let result;
             
-            // Validate required fields
-            if (!result.evaluation_result || !result.reasoning) {
-              throw new Error('Missing required fields in Function Call response');
+            try {
+              result = JSON.parse(rawArgs);
+            } catch (parseError) {
+              throw new Error(`JSON parse failed: ${parseError}. Raw: ${rawArgs.substring(0, 100)}...`);
+            }
+            
+            // Validate required fields (now only evaluation_result and reasoning)
+            const missingFields = [];
+            if (!result.evaluation_result) missingFields.push('evaluation_result');
+            if (!result.reasoning) missingFields.push('reasoning');
+            
+            // If basic fields are missing, this is a critical Function Call failure
+            if (missingFields.length > 0) {
+              throw new Error(`Function Call missing required fields: ${missingFields.join(', ')}. Received: ${Object.keys(result).join(', ')}`);
             }
             
             // LLM directly provides the evaluation - no need to execute anything

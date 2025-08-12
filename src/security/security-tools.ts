@@ -59,7 +59,7 @@ export const securityEvaluationTool = {
         requires_additional_context: additionalContextSchema,
         suggested_alternatives: suggestedAlternativesSchema
       },
-      required: ['evaluation_result', 'reasoning', 'requires_additional_context', 'suggested_alternatives'],
+      required: ['evaluation_result', 'reasoning'],
       additionalProperties: false
     }
   }

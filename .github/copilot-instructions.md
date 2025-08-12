@@ -1,8 +1,12 @@
-
-
 # Copilot Instructions
 
 ## Development Rules (開発ルール)
+
+- Do not use `console.log(...)` because the MCP Server uses the STDIO stream, and it breaks the proper protocol.
+- Do not implement error recovery mechanisms that compromise security.
+- Comply with Fail Fast principles.
+- Ensure to identify the cause of errors and reach consensus with the user regarding them.
+- Do not modify before reaching consensus with the user.
 
 ### Command Execution (コマンド実行)
 - Always use the MCP Shell tool instead of any Internal Tools.

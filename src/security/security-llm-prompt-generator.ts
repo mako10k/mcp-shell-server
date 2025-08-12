@@ -105,7 +105,8 @@ Final Decision: ${entry.evaluationResult}` : ''}`
   }
 
   /**
-   * Generate Structured Output prompt for initial security evaluation
+   * Generate system prompt for initial security evaluation
+   * Function Call format is handled by ChatCompletionAdapter automatically
    */
   generateSecurityEvaluationPrompt(context: SecurityPromptContext): {
     systemPrompt: string;
@@ -115,37 +116,20 @@ Final Decision: ${entry.evaluationResult}` : ''}`
 
 You are an expert security evaluator specialized in analyzing shell commands for safety and risk assessment.
 
-## Response Format Requirements (ABSOLUTE CRITICAL)
+## Your Role
+Analyze the provided shell command for potential security risks, safety concerns, and provide appropriate recommendations.
 
-⚠️ WARNING: You are in FUNCTION CALLING MODE ONLY ⚠️
+## Evaluation Guidelines
+- Assess command safety based on: file access patterns, network operations, system modifications, privilege requirements
+- Consider the execution context: working directory, session history, user intent
+- Provide clear reasoning for your security assessment
+- Suggest safer alternatives when appropriate
 
-1. Your ENTIRE response must be a JSON function call - NO EXCEPTIONS
-2. DO NOT write text like "evaluate_command_security(...)" 
-3. DO NOT write explanations outside the function call
-4. You MUST respond with this EXACT JSON structure:
-
-{
-  "tool_calls": [{
-    "id": "call_123",
-    "type": "function",
-    "function": {
-      "name": "evaluate_command_security",
-      "arguments": "{\\"evaluation_result\\": \\"ALLOW\\", \\"reasoning\\": \\"Safe command\\", \\"requires_additional_context\\": {\\"command_history_depth\\": 0, \\"execution_results_count\\": 0, \\"user_intent_search_keywords\\": null, \\"user_intent_question\\": null}, \\"suggested_alternatives\\": []}"
-    }
-  }]
-}
-
-5. Replace the arguments with your actual evaluation
-6. All required fields MUST be included: evaluation_result, reasoning, requires_additional_context, suggested_alternatives
-
-## Security Evaluation Guidelines
-When creating your function call:
-- evaluation_result: ALLOW, CONDITIONAL_DENY, DENY, or NEED_MORE_INFO
-- reasoning: Detailed security analysis
-- requires_additional_context: Use the specified object structure
-- suggested_alternatives: Array of alternative commands (can be empty)
-
-🚨 CRITICAL: Function call JSON format is MANDATORY. Any text response will be REJECTED. 🚨`;
+## Safety Levels
+- ALLOW: Safe to execute without restrictions
+- CONDITIONAL_DENY: Requires user confirmation or additional context
+- DENY: Too dangerous to execute
+- NEED_MORE_INFO: Requires additional context for proper evaluation`;
 
     const userMessage = `# Security Evaluation Request
 
@@ -207,38 +191,23 @@ ${elicitationHistory.map(entry =>
 
   /**
    * Generate re-evaluation prompt after user intent confirmation
+   * Function Call format is handled by ChatCompletionAdapter automatically
    */
   generateUserIntentReevaluationPrompt(context: UserIntentContext): {
     systemPrompt: string;
     userMessage: string;
   } {
-    const systemPrompt = `You are a security re-evaluator. Based on user clarification of their intent, provide a final security decision. Respond ONLY with valid JSON - NO additional text.
+    const systemPrompt = `# Security Re-evaluator
 
-REQUIRED JSON SCHEMA:
-{
-  "final_evaluation": "ALLOW" | "CONDITIONAL_ALLOW" | "CONDITIONAL_DENY" | "DENY",
-  "confidence": number (0.0 to 1.0),
-  "reasoning": "string explaining the final decision",
-  "intent_analysis": {
-    "understood_intent": "string",
-    "intent_matches_command": boolean,
-    "risk_level_changed": boolean
-  },
-  "updated_risk_factors": [
-    {
-      "category": "destructive_action" | "data_access" | "network_access" | "system_modification" | "unclear_intent" | "suspicious_pattern",
-      "description": "string",
-      "severity": "low" | "medium" | "high" | "critical"
-    }
-  ],
-  "metadata": {
-    "safety_level": 1 | 2 | 3 | 4 | 5,
-    "monitoring_required": boolean,
-    "suggested_safeguards": ["string"]
-  }
-}
+You are a security re-evaluator. Based on user clarification of their intent, provide a final security decision.
 
-Respond with ONLY the JSON object.`;
+## Your Role
+Re-assess the command security based on the new user context and intent clarification provided.
+
+## Guidelines
+- Consider both the original evaluation and the new user context
+- Make a final security decision based on the clarified intent
+- Provide clear reasoning for the updated assessment`;
 
     const { result: initialEvalResult, reasoning: initialReasoning } =
       this.extractInitialEvaluation(context.initialEvaluation);
@@ -260,40 +229,23 @@ Provide final security evaluation as JSON only.`;
 
   /**
    * Generate re-evaluation prompt after additional context collection
+   * Function Call format is handled by ChatCompletionAdapter automatically
    */
   generateAdditionalContextReevaluationPrompt(context: AdditionalContextContext): {
     systemPrompt: string;
     userMessage: string;
   } {
-    const systemPrompt = `You are a security re-evaluator with additional context. Provide a comprehensive final security decision. Respond ONLY with valid JSON - NO additional text.
+    const systemPrompt = `# Security Re-evaluator with Additional Context
 
-REQUIRED JSON SCHEMA:
-{
-  "final_evaluation": "ALLOW" | "CONDITIONAL_ALLOW" | "CONDITIONAL_DENY" | "DENY",
-  "confidence": number (0.0 to 1.0),
-  "reasoning": "string explaining the final decision with context analysis",
-  "context_analysis": {
-    "additional_context_helpful": boolean,
-    "context_changes_risk": boolean,
-    "pattern_identified": string | null
-  },
-  "comprehensive_risk_factors": [
-    {
-      "category": "destructive_action" | "data_access" | "network_access" | "system_modification" | "unclear_intent" | "suspicious_pattern",
-      "description": "string",
-      "severity": "low" | "medium" | "high" | "critical",
-      "context_informed": boolean
-    }
-  ],
-  "metadata": {
-    "safety_level": 1 | 2 | 3 | 4 | 5,
-    "monitoring_required": boolean,
-    "context_quality": "low" | "medium" | "high",
-    "final_recommendations": ["string"]
-  }
-}
+You are a security re-evaluator with additional context. Provide a comprehensive final security decision.
 
-Respond with ONLY the JSON object.`;
+## Your Role
+Re-assess the command security with the benefit of additional command history and environmental context.
+
+## Guidelines
+- Analyze patterns in the additional command history
+- Consider how the new context affects the risk assessment
+- Provide a comprehensive final evaluation with detailed reasoning`;
 
     const { result: initialEvalResult, reasoning: initialReasoning } =
       this.extractInitialEvaluation(context.initialEvaluation);
@@ -309,7 +261,7 @@ ${context.additionalHistory.map((cmd, i) => `${i + 1}. ${cmd}`).join('\n')}
 
 ${context.environmentInfo ? `Environment Information: ${context.environmentInfo}` : ''}
 
-Provide comprehensive final security evaluation as JSON only.`;
+Provide comprehensive final security evaluation.`;
 
     return { systemPrompt, userMessage };
   }
