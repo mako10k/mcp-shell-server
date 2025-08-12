@@ -12,26 +12,25 @@ export const SafetyLevelSchema = z
   .describe('Safety level from 1 (safest) to 5 (most dangerous)');
 export type SafetyLevel = z.infer<typeof SafetyLevelSchema>;
 
-// 評価結果 (LLM中心設計) - 後方互換性のためELICIT_USER_INTENTを維持
+// 評価結果 (Updated with clear category distinctions)
 export const EvaluationResultSchema = z
-  .enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO', 'ELICIT_USER_INTENT'])
-  .describe('Command evaluation result from LLM-centric evaluation');
-
-// 新しい明確な評価結果スキーマ
-export const NewEvaluationResultSchema = z
   .enum(['ALLOW', 'DENY', 'NEED_MORE_HISTORY', 'NEED_USER_CONFIRM', 'NEED_ASSISTANT_CONFIRM'])
-  .describe('New clear command evaluation result');
+  .describe('Command evaluation result with clear category distinctions');
+
+// 新しい明確な評価結果スキーマ (統一されました)
+// NOTE: EvaluationResultSchemaと同じ定義なので、そちらを使用することを推奨
+export const NewEvaluationResultSchema = EvaluationResultSchema;
 
 export const FinalEvaluationResultSchema = z
-  .enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY'])
-  .describe('Final command evaluation result');
+  .enum(['ALLOW', 'DENY'])
+  .describe('Final command evaluation result after all processing');
 export type EvaluationResult = z.infer<typeof EvaluationResultSchema>;
 export type NewEvaluationResult = z.infer<typeof NewEvaluationResultSchema>;
 export type FinalEvaluationResult = z.infer<typeof FinalEvaluationResultSchema>;
 
 // 新しいLLM評価結果スキーマ (improved clarity)
 export const NewLLMEvaluationResultSchema = z.object({
-  evaluation_result: NewEvaluationResultSchema,
+  evaluation_result: EvaluationResultSchema,
   reasoning: z.string(),
   requires_additional_context: z.object({
     command_history_depth: z.number().int().min(0).describe('How many more commands back in history to examine (0 = no more needed)'),
@@ -45,9 +44,9 @@ export const NewLLMEvaluationResultSchema = z.object({
 
 export type NewLLMEvaluationResult = z.infer<typeof NewLLMEvaluationResultSchema>;
 
-// 従来のLLM評価結果スキーマ (backward compatibility)
+// 従来のLLM評価結果スキーマ (backward compatibility - 統一されました)
 export const SimplifiedLLMEvaluationResultSchema = z.object({
-  evaluation_result: z.enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO']),
+  evaluation_result: EvaluationResultSchema,
   reasoning: z.string(),
   requires_additional_context: z.object({
     command_history_depth: z.number().int().min(0),
@@ -98,7 +97,7 @@ export const EnhancedSecurityConfigSchema = z
       .min(5)
       .max(50)
       .default(20)
-      .describe('Maximum additional history entries when LLM requests NEED_MORE_INFO'),
+      .describe('Maximum additional history entries when LLM requests NEED_MORE_HISTORY'),
     enable_command_output_context: z
       .boolean()
       .default(true)

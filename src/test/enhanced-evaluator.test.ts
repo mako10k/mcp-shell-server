@@ -31,7 +31,7 @@ describe('EnhancedSafetyEvaluator', () => {
     test('should flag potentially dangerous commands', async () => {
       const result = await evaluator.evaluateCommand('rm -rf /', '/');
 
-      expect(['CONDITIONAL_DENY', 'DENY']).toContain(result.evaluation_result);
+      expect(['NEED_ASSISTANT_CONFIRM', 'NEED_USER_CONFIRM', 'DENY']).toContain(result.evaluation_result);
       expect(result.safety_level).toBeGreaterThan(3);
       expect(result.requires_confirmation).toBe(true);
     });
@@ -129,7 +129,7 @@ describe('EnhancedSafetyEvaluator', () => {
       const result = await evaluator.evaluateCommand('', '/tmp');
 
       expect(result).toBeDefined();
-      expect(['ALLOW', 'CONDITIONAL_DENY', 'DENY']).toContain(result.evaluation_result);
+      expect(['ALLOW', 'NEED_ASSISTANT_CONFIRM', 'NEED_USER_CONFIRM', 'DENY']).toContain(result.evaluation_result);
     });
 
     test('should handle malformed commands', async () => {

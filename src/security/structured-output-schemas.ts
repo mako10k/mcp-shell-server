@@ -38,15 +38,14 @@ import { SimplifiedLLMEvaluationResultSchema } from '../types/enhanced-security.
 // Simplified additional context schema (new schema) - use from enhanced-security.ts
 const SimplifiedAdditionalContextSchema = SimplifiedLLMEvaluationResultSchema.shape.requires_additional_context;
 
-// Main security evaluation result schema (original - keep for backward compatibility)
+// Main security evaluation result schema (updated with clear categories)
 export const SecurityEvaluationResultSchema = z.object({
   evaluation_result: z.enum([
     'ALLOW',
-    'CONDITIONAL_ALLOW',
-    'CONDITIONAL_DENY',
     'DENY',
-    'ELICIT_USER_INTENT',
-    'NEED_MORE_INFO',
+    'NEED_MORE_HISTORY',
+    'NEED_USER_CONFIRM',
+    'NEED_ASSISTANT_CONFIRM',
   ]),
   // Removed confidence schema
   reasoning: z.string(),
@@ -54,14 +53,14 @@ export const SecurityEvaluationResultSchema = z.object({
   metadata: SecurityMetadataSchema,
 });
 
-// Simplified security evaluation result schema (new)
+// Simplified security evaluation result schema (updated)
 export const SimplifiedSecurityEvaluationResultSchema = z.object({
   evaluation_result: z.enum([
     'ALLOW',
-    'CONDITIONAL_ALLOW', 
-    'CONDITIONAL_DENY',
     'DENY',
-    'NEED_MORE_INFO',
+    'NEED_MORE_HISTORY',
+    'NEED_USER_CONFIRM',
+    'NEED_ASSISTANT_CONFIRM',
   ]),
   reasoning: z.string(),
   requires_additional_context: SimplifiedAdditionalContextSchema,
@@ -77,7 +76,7 @@ const UserIntentImpactSchema = z.object({
 
 // User intent reevaluation schema
 export const UserIntentReevaluationSchema = z.object({
-  evaluation_result: z.enum(['ALLOW', 'CONDITIONAL_DENY', 'DENY']),
+  evaluation_result: z.enum(['ALLOW', 'DENY']),
   // Removed confidence schema
   reasoning: z.string(),
   user_intent_impact: UserIntentImpactSchema,
@@ -105,7 +104,7 @@ const AdditionalContextMetadataSchema = z.object({
 
 // Additional context reevaluation schema
 export const AdditionalContextReevaluationSchema = z.object({
-  evaluation_result: z.enum(['ALLOW', 'CONDITIONAL_DENY', 'DENY']),
+  evaluation_result: z.enum(['ALLOW', 'DENY']),
   // Removed confidence schema
   reasoning: z.string(),
   context_analysis: ContextAnalysisSchema,

@@ -68,7 +68,7 @@ describe('Function Call Integration Tests', () => {
       
       if (result.success && result.result) {
         const evaluation = result.result as SimplifiedLLMEvaluationResult;
-        expect(evaluation.evaluation_result).toMatch(/^(ALLOW|CONDITIONAL_ALLOW|CONDITIONAL_DENY|DENY|NEED_MORE_INFO)$/);
+        expect(evaluation.evaluation_result).toMatch(/^(ALLOW|DENY|NEED_MORE_HISTORY|NEED_USER_CONFIRM|NEED_ASSISTANT_CONFIRM)$/);
         expect(typeof evaluation.reasoning).toBe('string');
         expect(Array.isArray(evaluation.suggested_alternatives)).toBe(true);
       }
@@ -116,7 +116,7 @@ describe('Function Call Integration Tests', () => {
           additional_context: 'Removing temporary test file',
           user_intent: 'cleanup',
           previous_evaluation: {
-            evaluation_result: 'CONDITIONAL_DENY',
+            evaluation_result: 'NEED_USER_CONFIRM',
             reasoning: 'File deletion requires confirmation',
             requires_additional_context: {
               command_history_depth: 0,
@@ -141,7 +141,7 @@ describe('Function Call Integration Tests', () => {
       
       if (result.success && result.result) {
         const evaluation = result.result as SimplifiedLLMEvaluationResult;
-        expect(evaluation.evaluation_result).toMatch(/^(ALLOW|CONDITIONAL_ALLOW|CONDITIONAL_DENY|DENY|NEED_MORE_INFO)$/);
+        expect(evaluation.evaluation_result).toMatch(/^(ALLOW|DENY|NEED_MORE_HISTORY|NEED_USER_CONFIRM|NEED_ASSISTANT_CONFIRM)$/);
         expect(typeof evaluation.reasoning).toBe('string');
       }
     });
@@ -250,7 +250,7 @@ describe('Function Call Integration Tests', () => {
         
         if (result.success && result.result) {
           const evaluation = result.result as SimplifiedLLMEvaluationResult;
-          expect(evaluation.evaluation_result).toMatch(/^(ALLOW|CONDITIONAL_ALLOW|CONDITIONAL_DENY|DENY|NEED_MORE_INFO)$/);
+          expect(evaluation.evaluation_result).toMatch(/^(ALLOW|DENY|NEED_MORE_HISTORY|NEED_USER_CONFIRM|NEED_ASSISTANT_CONFIRM)$/);
         }
       }
     });

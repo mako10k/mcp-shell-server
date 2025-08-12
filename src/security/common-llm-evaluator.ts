@@ -134,7 +134,7 @@ export class CommonLLMEvaluator {
     model?: string,
     parseTime?: number
   ): CommonLLMEvaluationResult {
-    let evaluation_result: EvaluationResult = 'CONDITIONAL_DENY';
+    let evaluation_result: EvaluationResult = 'NEED_ASSISTANT_CONFIRM'; // Updated default
     let llm_reasoning = 'No reasoning provided';
     let eval_time = Date.now();
     if (typeof data === 'object' && data !== null) {
@@ -144,7 +144,7 @@ export class CommonLLMEvaluator {
         confidence?: number;
         reasoning?: string;
       };
-      evaluation_result = d.evaluation_result || d.final_evaluation || 'CONDITIONAL_DENY';
+      evaluation_result = d.evaluation_result || d.final_evaluation || 'NEED_ASSISTANT_CONFIRM'; // Updated default
       llm_reasoning = d.reasoning ?? 'No reasoning provided';
     }
     if (typeof parseTime === 'number') {
@@ -168,21 +168,23 @@ export class CommonLLMEvaluator {
     const llmResponse = rawResponse.trim().toUpperCase();
     let evaluation_result: EvaluationResult;
 
-    // 共通のパースロジック
-    if (llmResponse.includes('ELICIT_USER_INTENT') || llmResponse.includes('user_intent_question')) {
-      evaluation_result = 'NEED_MORE_INFO';
-    } else if (llmResponse.includes('NEED_MORE_INFO')) {
-      evaluation_result = 'NEED_MORE_INFO';
-    } else if (llmResponse.includes('DENY') && !llmResponse.includes('CONDITIONAL_DENY')) {
+    // 共通のパースロジック - 新しい評価システム対応
+    if (llmResponse.includes('NEED_MORE_HISTORY')) {
+      evaluation_result = 'NEED_MORE_HISTORY'; // Updated mapping
+    } else if (llmResponse.includes('NEED_USER_CONFIRM')) {
+      evaluation_result = 'NEED_USER_CONFIRM'; // Updated mapping
+    } else if (llmResponse.includes('NEED_ASSISTANT_CONFIRM')) {
+      evaluation_result = 'NEED_ASSISTANT_CONFIRM'; // Updated mapping
+    } else if (llmResponse.includes('ELICIT_USER_INTENT') || llmResponse.includes('user_intent_question')) {
+      evaluation_result = 'NEED_USER_CONFIRM'; // Map legacy to user confirm
+    } else if (llmResponse.includes('DENY')) {
       evaluation_result = 'DENY';
-    } else if (llmResponse.includes('CONDITIONAL_DENY')) {
-      evaluation_result = 'CONDITIONAL_DENY';
     } else if (llmResponse.includes('ALLOW')) {
       evaluation_result = 'ALLOW';
     } else {
       // Default to safe denial for unclear responses
-      evaluation_result = 'CONDITIONAL_DENY';
-      console.warn('LLM evaluation response unclear, defaulting to CONDITIONAL_DENY:', llmResponse);
+      evaluation_result = 'NEED_ASSISTANT_CONFIRM';
+      console.warn('LLM evaluation response unclear, defaulting to NEED_ASSISTANT_CONFIRM:', llmResponse);
     }
 
     return {
@@ -304,7 +306,7 @@ export class CommonLLMEvaluator {
    */
   createErrorEvaluation(errorMessage: string, model: string = 'error'): CommonLLMEvaluationResult {
     return {
-      evaluation_result: 'CONDITIONAL_DENY',
+      evaluation_result: 'NEED_ASSISTANT_CONFIRM', // Updated - maps to assistant confirmation
       llm_reasoning: `Evaluation failed: ${errorMessage}`,
       model,
       evaluation_time_ms: Date.now(),

@@ -1,6 +1,6 @@
 import { 
   CommandHistoryEntry, 
-  EvaluationResult, 
+  EvaluationResult,
   SimplifiedLLMEvaluationResult,
   FunctionCallHandlerRegistry,
   FunctionCallContext,
@@ -94,7 +94,19 @@ interface MCPServerInterface {
 }
 
 // LLM evaluation result (using simplified structure)
-interface LLMEvaluationResult extends SimplifiedLLMEvaluationResult { }
+// Enhanced LLM evaluation result interface that supports both old and new evaluation results
+interface LLMEvaluationResult {
+  evaluation_result: 'ALLOW' | 'DENY' | 'NEED_MORE_HISTORY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM'; // Updated categories
+  reasoning: string;
+  requires_additional_context?: {
+    command_history_depth: number;
+    execution_results_count: number;
+    user_intent_search_keywords: string[] | null;
+    user_intent_question: string | null;
+    assistant_request_message?: string | null; // New field for assistant requests
+  };
+  suggested_alternatives: string[];
+}
 
 // User intent data from elicitation
 interface UserIntentData {
@@ -107,7 +119,7 @@ interface UserIntentData {
 
 // Safety evaluation result
 interface SafetyEvaluation {
-  evaluation_result: EvaluationResult;
+  evaluation_result: EvaluationResult; // Use unified evaluation result
   // Removed safety_level property as requested
   basic_classification: string;
   reasoning: string;
@@ -191,7 +203,7 @@ export class EnhancedSafetyEvaluator {
       const basicAnalysis = this.securityManager.analyzeCommandSafety(args.command.trim());
 
       const simplifiedResult: SimplifiedLLMEvaluationResult = {
-        evaluation_result: basicAnalysis.classification === 'basic_safe' ? 'ALLOW' : 'CONDITIONAL_DENY',
+        evaluation_result: basicAnalysis.classification === 'basic_safe' ? 'ALLOW' : 'NEED_USER_CONFIRM',
         reasoning: basicAnalysis.reasoning,
         requires_additional_context: {
           command_history_depth: 0,
@@ -507,10 +519,10 @@ export class EnhancedSafetyEvaluator {
         
         if (maxIteration <= 0) {
           return {
-            evaluation_result: 'CONDITIONAL_DENY',
+            evaluation_result: 'NEED_USER_CONFIRM',
             basic_classification: 'timeout_fallback',
             reasoning: 'Maximum iterations reached - fallback to safe denial',
-            requires_confirmation: false,
+            requires_confirmation: true,
             suggested_alternatives: [],
             llm_evaluation_used: true,
           };
@@ -521,8 +533,91 @@ export class EnhancedSafetyEvaluator {
 
         switch (llmResult.evaluation_result) {
           case 'ALLOW':
-          case 'CONDITIONAL_DENY':
           case 'DENY':
+            // Add LLM's response to message chain before processing
+            messages.push({
+              role: 'assistant',
+              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
+              timestamp: getCurrentTimestamp()
+            });
+            
+            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
+
+          case 'NEED_MORE_HISTORY':
+            // Add LLM's response to message chain before handling additional context
+            messages.push({
+              role: 'assistant',
+              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
+              timestamp: getCurrentTimestamp()
+            });
+            
+            // Handle additional context requests by modifying messages
+            if (llmResult.requires_additional_context) {
+              await this.handleAdditionalContextRequest(llmResult.requires_additional_context, messages);
+            } else {
+              // If no specific context is requested but we got NEED_MORE_HISTORY, 
+              // add a note that we're proceeding with current information
+              messages.push({
+                role: 'user',
+                content: 'No additional context available. Please proceed with evaluation based on current information or provide a definitive decision.',
+                timestamp: getCurrentTimestamp(),
+                type: 'history'
+              });
+            }
+            continue; // Continue loop with additional context
+
+          case 'NEED_USER_CONFIRM':
+            // Add LLM's response to message chain before processing
+            messages.push({
+              role: 'assistant',
+              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
+              timestamp: getCurrentTimestamp()
+            });
+            
+            // CRITICAL: Check ELICITATION limit
+            if (hasElicitationBeenAttempted) {
+              logger.warn('NEED_USER_CONFIRM ELICITATION blocked - already attempted', {
+                command,
+                messagesCount: messages.length
+              });
+              return {
+                evaluation_result: 'NEED_USER_CONFIRM',
+                basic_classification: 'elicitation_limit_exceeded',
+                reasoning: 'ELICITATION already attempted for user confirmation - defaulting to safe denial',
+                requires_confirmation: true,
+                suggested_alternatives: [],
+                llm_evaluation_used: true,
+              };
+            }
+            
+            hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
+            const userQuestion = llmResult.requires_additional_context?.user_intent_question || 
+                               "Do you want to proceed with this operation?";
+            await this.handleElicitationInLoop(command, userQuestion, messages);
+            continue; // Continue loop with elicitation result
+
+          case 'NEED_ASSISTANT_CONFIRM':
+            // Add LLM's response to message chain before processing
+            messages.push({
+              role: 'assistant',
+              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
+              timestamp: getCurrentTimestamp()
+            });
+            
+            // Return with assistant request message for the calling system to handle
+            const assistantMessage = llmResult.requires_additional_context?.assistant_request_message || 
+                                   llmResult.reasoning;
+            return {
+              evaluation_result: 'NEED_ASSISTANT_CONFIRM',
+              basic_classification: 'assistant_info_required',
+              reasoning: assistantMessage,
+              requires_confirmation: true,
+              suggested_alternatives: llmResult.suggested_alternatives || [],
+              llm_evaluation_used: true,
+            };
+
+          // Handle requests for assistant confirmation
+          case 'NEED_ASSISTANT_CONFIRM':
             // Add LLM's response to message chain before processing
             messages.push({
               role: 'assistant',
@@ -539,10 +634,10 @@ export class EnhancedSafetyEvaluator {
                   messagesCount: messages.length
                 });
                 return {
-                  evaluation_result: 'CONDITIONAL_DENY',
+                  evaluation_result: 'NEED_USER_CONFIRM',
                   basic_classification: 'elicitation_limit_exceeded',
                   reasoning: 'ELICITATION already attempted in forceUserConfirm - defaulting to safe denial',
-                  requires_confirmation: false,
+                  requires_confirmation: true,
                   suggested_alternatives: [],
                   llm_evaluation_used: true,
                 };
@@ -567,10 +662,10 @@ export class EnhancedSafetyEvaluator {
                   user_intent_question: llmResult.requires_additional_context.user_intent_question
                 });
                 return {
-                  evaluation_result: 'CONDITIONAL_DENY',
+                  evaluation_result: 'NEED_USER_CONFIRM',
                   basic_classification: 'elicitation_limit_exceeded',
                   reasoning: 'ELICITATION already attempted for user intent - defaulting to safe denial',
-                  requires_confirmation: false,
+                  requires_confirmation: true,
                   suggested_alternatives: [],
                   llm_evaluation_used: true,
                 };
@@ -587,46 +682,19 @@ export class EnhancedSafetyEvaluator {
             
             return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
 
-          case 'NEED_MORE_INFO':
-            // Add LLM's response to message chain before handling additional context
+          case 'NEED_MORE_HISTORY':
+            // Handle requests for additional command history
             messages.push({
               role: 'assistant',
               content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
               timestamp: getCurrentTimestamp()
             });
             
-            // If force user confirm is enabled, add elicitation to messages and continue
-            if (forceUserConfirm) {
-              // CRITICAL: Check ELICITATION limit
-              if (hasElicitationBeenAttempted) {
-                logger.warn('NEED_MORE_INFO forceUserConfirm ELICITATION blocked - already attempted', {
-                  command,
-                  messagesCount: messages.length
-                });
-                return {
-                  evaluation_result: 'CONDITIONAL_DENY',
-                  basic_classification: 'elicitation_limit_exceeded',
-                  reasoning: 'ELICITATION already attempted in NEED_MORE_INFO - defaulting to safe denial',
-                  requires_confirmation: false,
-                  suggested_alternatives: [],
-                  llm_evaluation_used: true,
-                };
-              }
-              
-              hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
-              await this.handleElicitationInLoop(
-                command,
-                "AI Assistant forced user confirmation: Do you want to proceed with this operation?",
-                messages
-              );
-              continue; // Continue loop with elicitation result
-            }
-            
             // Handle additional context requests by modifying messages
             if (llmResult.requires_additional_context) {
               await this.handleAdditionalContextRequest(llmResult.requires_additional_context, messages);
             } else {
-              // If no specific context is requested but we got NEED_MORE_INFO, 
+              // If no specific context is requested but we got NEED_MORE_HISTORY, 
               // add a note that we're proceeding with current information
               messages.push({
                 role: 'user',
@@ -639,11 +707,16 @@ export class EnhancedSafetyEvaluator {
 
           default:
             // Fallback for unknown results
+            logger.warn('Unknown LLM evaluation result', {
+              evaluation_result: llmResult.evaluation_result,
+              command,
+              reasoning: llmResult.reasoning
+            });
             return {
-              evaluation_result: 'CONDITIONAL_DENY',
+              evaluation_result: 'NEED_USER_CONFIRM',
               basic_classification: 'unknown_response',
-              reasoning: 'Unknown LLM response - defaulting to safe denial',
-              requires_confirmation: false,
+              reasoning: `Unknown LLM response: ${llmResult.evaluation_result} - defaulting to safe denial`,
+              requires_confirmation: true,
               suggested_alternatives: [],
               llm_evaluation_used: true,
             };
@@ -1060,7 +1133,7 @@ This command has been flagged for review. Please provide your intent:
    */
   private convertToCommandSafetyResult(safetyEval: SafetyEvaluation): CommandSafetyEvaluationResult {
     // Filter out unsupported evaluation results
-    let evaluation_result: 'ALLOW' | 'CONDITIONAL_DENY' | 'DENY';
+    let evaluation_result: 'ALLOW' | 'DENY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM' | 'NEED_MORE_HISTORY';
     
     switch (safetyEval.evaluation_result) {
       case 'ALLOW':
@@ -1069,10 +1142,17 @@ This command has been flagged for review. Please provide your intent:
       case 'DENY':
         evaluation_result = 'DENY';
         break;
-      case 'NEED_MORE_INFO':
-      case 'CONDITIONAL_DENY':
+      case 'NEED_MORE_HISTORY':
+        evaluation_result = 'NEED_MORE_HISTORY';
+        break;
+      case 'NEED_USER_CONFIRM':
+        evaluation_result = 'NEED_USER_CONFIRM';
+        break;
+      case 'NEED_ASSISTANT_CONFIRM':
+        evaluation_result = 'NEED_ASSISTANT_CONFIRM';
+        break;
       default:
-        evaluation_result = 'CONDITIONAL_DENY';
+        evaluation_result = 'NEED_USER_CONFIRM';
         break;
     }
 
@@ -1105,12 +1185,40 @@ This command has been flagged for review. Please provide your intent:
     llmResult: LLMEvaluationResult,
     classification: string
   ): SafetyEvaluation {
+    // Map new evaluation results to legacy format for compatibility
+    let legacyResult: 'ALLOW' | 'DENY' | 'NEED_MORE_HISTORY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM';
+    let requiresConfirmation = false;
+    
+    switch (llmResult.evaluation_result) {
+      case 'ALLOW':
+        legacyResult = 'ALLOW';
+        break;
+      case 'DENY':
+        legacyResult = 'DENY';
+        break;
+      case 'NEED_MORE_HISTORY':
+        legacyResult = 'NEED_MORE_HISTORY';
+        break;
+      case 'NEED_USER_CONFIRM':
+        legacyResult = 'NEED_USER_CONFIRM';
+        requiresConfirmation = true;
+        break;
+      case 'NEED_ASSISTANT_CONFIRM':
+        legacyResult = 'NEED_ASSISTANT_CONFIRM';
+        requiresConfirmation = false; // AI assistant needs to provide info, not user confirmation
+        break;
+      default:
+        legacyResult = 'NEED_ASSISTANT_CONFIRM';
+        requiresConfirmation = false;
+        break;
+    }
+    
     return {
-      evaluation_result: llmResult.evaluation_result,
+      evaluation_result: legacyResult,
       basic_classification: classification,
       reasoning: llmResult.reasoning,
-      requires_confirmation: llmResult.evaluation_result === 'CONDITIONAL_DENY',
-      suggested_alternatives: [],
+      requires_confirmation: requiresConfirmation,
+      suggested_alternatives: llmResult.suggested_alternatives || [],
       llm_evaluation_used: true,
     };
   }

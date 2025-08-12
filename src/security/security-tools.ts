@@ -105,13 +105,13 @@ export const securityEvaluationTool = {
   type: 'function' as const,
   function: {
     name: 'evaluate_command_security',
-    description: 'Evaluates the security implications of a shell command',
+    description: 'Evaluates the security implications of a shell command (LEGACY - use enhancedSecurityEvaluationTool)',
     parameters: {
       type: "object" as const,
       properties: {
         evaluation_result: {
           type: "string" as const,
-          enum: ['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO'],
+          enum: ['ALLOW', 'DENY', 'NEED_MORE_HISTORY', 'NEED_USER_CONFIRM', 'NEED_ASSISTANT_CONFIRM'],
           description: 'Final evaluation result for the command'
         },
         reasoning: {
@@ -137,7 +137,7 @@ export const userIntentReevaluationTool = {
       properties: {
         evaluation_result: {
           type: "string" as const,
-          enum: ['ALLOW', 'CONDITIONAL_DENY', 'DENY'],
+          enum: ['ALLOW', 'DENY'],
           description: 'The final security evaluation result after considering user intent'
         },
         reasoning: {
@@ -168,7 +168,7 @@ export const additionalContextReevaluationTool = {
       properties: {
         evaluation_result: {
           type: "string" as const,
-          enum: ['ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO'],
+          enum: ['ALLOW', 'DENY', 'NEED_MORE_HISTORY', 'NEED_USER_CONFIRM', 'NEED_ASSISTANT_CONFIRM'],
           description: 'The security evaluation result with additional context'
         },
         reasoning: {

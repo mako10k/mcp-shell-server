@@ -210,8 +210,8 @@ export class SecurityResponseParser extends BaseResponseParser {
    */
   createFallbackEvaluation(error: string): SecurityEvaluationResult {
     return {
-      evaluation_result: 'CONDITIONAL_DENY',
-      reasoning: `LLM response parsing failed: ${error}. Defaulting to safe evaluation requiring user confirmation.`,
+      evaluation_result: 'NEED_ASSISTANT_CONFIRM',
+      reasoning: `LLM response parsing failed: ${error}. Defaulting to safe evaluation requiring assistant confirmation.`,
       risk_factors: [
         {
           category: 'unclear_intent',

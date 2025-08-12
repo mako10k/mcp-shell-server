@@ -47,7 +47,7 @@ import { MCPShellError } from '../utils/errors.js';
 
 // Safety evaluation result interface
 interface SafetyEvaluationResult {
-  evaluation_result: 'ALLOW' | 'DENY' | 'CONDITIONAL_DENY';
+  evaluation_result: 'ALLOW' | 'DENY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM' | 'NEED_MORE_HISTORY';
   basic_classification?: string;
   reasoning: string;
   requires_confirmation: boolean;
@@ -86,15 +86,15 @@ export class ShellTools {
         );
 
         // Handle evaluation results with strict safety guards
-        if (safetyEvaluation.evaluation_result === 'DENY') {
+        if (safetyEvaluation?.evaluation_result === 'DENY') {
           throw new Error(`Command denied: ${safetyEvaluation.reasoning}`);
         }
 
-        // For CONDITIONAL_DENY, return evaluation info without executing
+        // For NEED_USER_CONFIRM, return evaluation info without executing
         // User can review suggested alternatives and re-run if appropriate
-        if (safetyEvaluation.evaluation_result === 'CONDITIONAL_DENY') {
+        if (safetyEvaluation?.evaluation_result === 'NEED_USER_CONFIRM') {
           return {
-            status: 'conditional_deny',
+            status: 'need_user_confirm',
             command: params.command,
             working_directory: workingDir,
             safety_evaluation: {
@@ -107,14 +107,56 @@ export class ShellTools {
               context_analysis: safetyEvaluation.context_analysis,
             },
             message:
-              'Command requires confirmation before execution. Please review the suggested alternatives and re-run if appropriate.',
+              'Command requires user confirmation before execution. Please review the suggested alternatives and re-run if appropriate.',
+          };
+        }
+
+        // For NEED_ASSISTANT_CONFIRM, return evaluation info without executing
+        // Assistant should review and provide more context
+        if (safetyEvaluation?.evaluation_result === 'NEED_ASSISTANT_CONFIRM') {
+          return {
+            status: 'need_assistant_confirm',
+            command: params.command,
+            working_directory: workingDir,
+            safety_evaluation: {
+              evaluation_result: safetyEvaluation.evaluation_result,
+              reasoning: safetyEvaluation.reasoning,
+              basic_classification: safetyEvaluation.basic_classification,
+              requires_confirmation: safetyEvaluation.requires_confirmation,
+              suggested_alternatives: safetyEvaluation.suggested_alternatives,
+              llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
+              context_analysis: safetyEvaluation.context_analysis,
+            },
+            message:
+              'Command requires assistant confirmation before execution. Assistant should provide more context.',
+          };
+        }
+
+        // For NEED_MORE_HISTORY, return evaluation info without executing
+        // System needs more context to make a decision
+        if (safetyEvaluation?.evaluation_result === 'NEED_MORE_HISTORY') {
+          return {
+            status: 'need_more_history',
+            command: params.command,
+            working_directory: workingDir,
+            safety_evaluation: {
+              evaluation_result: safetyEvaluation.evaluation_result,
+              reasoning: safetyEvaluation.reasoning,
+              basic_classification: safetyEvaluation.basic_classification,
+              requires_confirmation: safetyEvaluation.requires_confirmation,
+              suggested_alternatives: safetyEvaluation.suggested_alternatives,
+              llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
+              context_analysis: safetyEvaluation.context_analysis,
+            },
+            message:
+              'Command evaluation requires more historical context. Please provide additional context.',
           };
         }
 
         // CRITICAL SAFETY GUARD: Only execute if explicitly ALLOWED
-        if (safetyEvaluation.evaluation_result !== 'ALLOW') {
+        if (safetyEvaluation?.evaluation_result !== 'ALLOW') {
           throw new Error(
-            `Command execution blocked: evaluation result '${safetyEvaluation.evaluation_result}' is not ALLOW. Reasoning: ${safetyEvaluation.reasoning}`
+            `Command execution blocked: evaluation result '${safetyEvaluation?.evaluation_result}' is not ALLOW. Reasoning: ${safetyEvaluation?.reasoning}`
           );
         }
       }

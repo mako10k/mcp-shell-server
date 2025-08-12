@@ -163,28 +163,33 @@ No complex escaping needed when using the \\$COMMAND variable.
 - File deletion → **DENY** (if clearly dangerous) or **NEED_USER_CONFIRM** (if context-dependent)
 - Simple read operation → **ALLOW** (if clearly safe)
 
-## CRITICAL: NEED_MORE_INFO vs CONDITIONAL_DENY Usage
-**NEED_MORE_INFO**: Use ONLY when you need additional SYSTEM data that can be automatically retrieved:
+## CRITICAL: New Evaluation System Usage
+**NEED_MORE_HISTORY**: Use ONLY when you need additional SYSTEM data that can be automatically retrieved:
 - ✅ More command history entries (command_history_depth > 0)
 - ✅ Execution results from recent commands (execution_results_count > 0) 
 - ✅ Previous user intent responses (user_intent_search_keywords)
 - ✅ Specific user intent clarification (user_intent_question)
 
-**CONDITIONAL_DENY**: Use when you need NEW information from the AI Assistant or human user:
-- ✅ "What does this npm script do?" → CONDITIONAL_DENY with suggested_alternatives
-- ✅ "Please provide package.json contents" → CONDITIONAL_DENY with suggested_alternatives
-- ✅ "Confirm if this is intended behavior" → CONDITIONAL_DENY with suggested_alternatives
-- ✅ Any information NOT available in system history → CONDITIONAL_DENY
+**NEED_ASSISTANT_CONFIRM**: Use when you need NEW information from the AI Assistant:
+- ✅ "What does this npm script do?" → NEED_ASSISTANT_CONFIRM with suggested_alternatives
+- ✅ "Please provide package.json contents" → NEED_ASSISTANT_CONFIRM with suggested_alternatives
+- ✅ "Confirm if this is intended behavior" → NEED_ASSISTANT_CONFIRM with suggested_alternatives
+- ✅ Any information NOT available in system history → NEED_ASSISTANT_CONFIRM
+
+**NEED_USER_CONFIRM**: Use when you need explicit human user confirmation:
+- ✅ Potentially destructive operations that require user consent
+- ✅ Operations that could affect system security
+- ✅ Commands that modify important system files
 
 **WRONG USAGE**: 
-- ❌ Using NEED_MORE_INFO to ask for package.json contents (not in system history)
-- ❌ Using NEED_MORE_INFO to ask about script definitions (use CONDITIONAL_DENY)
-- ❌ Using CONDITIONAL_DENY for available system history (use NEED_MORE_INFO)
+- ❌ Using NEED_MORE_HISTORY to ask for package.json contents (not in system history)
+- ❌ Using NEED_MORE_HISTORY to ask about script definitions (use NEED_ASSISTANT_CONFIRM)
+- ❌ Using NEED_ASSISTANT_CONFIRM for available system history (use NEED_MORE_HISTORY)
 
 ## ELICITATION Usage Rules
 - **CRITICAL**: ELICITATION should be used ONLY ONCE per security evaluation chain
 - If user confirmation is needed, use ELICITATION for the first attempt
-- If ELICITATION fails or subsequent evaluation is needed, default to CONDITIONAL_DENY
+- If ELICITATION fails or subsequent evaluation is needed, default to NEED_ASSISTANT_CONFIRM
 - **DO NOT** trigger multiple ELICITATION attempts in a single evaluation sequence
 - ELICITATION results are reference information - do not re-evaluate them repeatedly`;
 
