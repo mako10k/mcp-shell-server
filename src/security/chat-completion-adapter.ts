@@ -109,7 +109,7 @@ export class CCCToMCPCMAdapter {
       const responseText = mcpResponse.content.text;
       
       // Use flexible parsing
-      const parseResult = this.parseFlexibleResponse(responseText, request);
+      const parseResult = await this.parseFlexibleResponse(responseText, request);
       
       if (parseResult.toolCalls) {
         toolCalls = parseResult.toolCalls;
@@ -152,10 +152,10 @@ export class CCCToMCPCMAdapter {
    * Flexible response parsing inspired by content-parser.ts
    * Handles various LLM response formats including content-based and tool_calls-based responses
    */
-  private parseFlexibleResponse(responseText: string, request: CCCRequest): {
+  private async parseFlexibleResponse(responseText: string, request: CCCRequest): Promise<{
     toolCalls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
     content?: string;
-  } {
+  }> {
     // Try to extract JSON objects from the response
     const jsonObjects = this.extractJsonObjects(responseText);
     
@@ -200,6 +200,62 @@ export class CCCToMCPCMAdapter {
             }]
           };
         }
+      }
+    }
+    
+    // Special case: Check if the entire response text is a JSON string containing tool_calls
+    try {
+      const parsed = JSON.parse(responseText);
+      if (parsed && typeof parsed === 'object' && parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
+        return {
+          toolCalls: parsed.tool_calls.map((call: unknown) => {
+            const callObj = call as Record<string, unknown>;
+            const functionObj = callObj['function'] as Record<string, unknown> | undefined;
+            return {
+              id: (callObj['id'] as string) || `call_${Math.random().toString(36).substr(2, 15)}`,
+              type: 'function' as const,
+              function: {
+                name: (functionObj?.['name'] as string) || 'unknown_function',
+                arguments: typeof functionObj?.['arguments'] === 'string' 
+                  ? functionObj['arguments'] 
+                  : JSON.stringify(functionObj?.['arguments'] || {})
+              }
+            };
+          })
+        };
+      }
+    } catch (parseError) {
+      // Try with JSON repair if standard parsing fails
+      try {
+        // Import JSON repair function dynamically
+        const { repairAndParseJson } = await import('../utils/json-repair.js');
+        const repairResult = repairAndParseJson(responseText);
+        
+        if (repairResult.success && repairResult.value && 
+            typeof repairResult.value === 'object') {
+          const valueObj = repairResult.value as Record<string, unknown>;
+          
+          if (valueObj['tool_calls'] && Array.isArray(valueObj['tool_calls'])) {
+            return {
+              toolCalls: (valueObj['tool_calls'] as unknown[]).map((call: unknown) => {
+                const callObj = call as Record<string, unknown>;
+                const functionObj = callObj['function'] as Record<string, unknown> | undefined;
+                return {
+                  id: (callObj['id'] as string) || `call_${Math.random().toString(36).substr(2, 15)}`,
+                  type: 'function' as const,
+                  function: {
+                    name: (functionObj?.['name'] as string) || 'unknown_function',
+                    arguments: typeof functionObj?.['arguments'] === 'string' 
+                      ? functionObj['arguments'] 
+                      : JSON.stringify(functionObj?.['arguments'] || {})
+                  }
+                };
+              })
+            };
+          }
+        }
+      } catch (repairError) {
+        // JSON repair also failed, continue with other methods
       }
     }
     

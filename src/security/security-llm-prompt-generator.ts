@@ -138,11 +138,48 @@ Analyze the provided shell command for potential security risks, safety concerns
 **SIMPLIFIED**: Always use \\$COMMAND instead of literal commands to avoid ALL JSON escaping issues.
 No complex escaping needed when using the \\$COMMAND variable.
 
-## Safety Levels
-- ALLOW: Safe to execute without restrictions
-- CONDITIONAL_DENY: Requires user confirmation or additional context
-- DENY: Too dangerous to execute
-- NEED_MORE_INFO: Requires additional context for proper evaluation
+## Safety Evaluation Levels
+
+**CLEAR DISTINCTIONS - Choose the appropriate response type:**
+
+### Direct Execution Decisions:
+- **ALLOW**: Safe to execute without restrictions or confirmations
+- **DENY**: Too dangerous to execute under any circumstances
+
+### Information Required Decisions:
+- **NEED_MORE_HISTORY**: Requires additional data from SYSTEM HISTORY (command logs, execution results, user confirmation history). System will automatically fetch this data and re-evaluate.
+- **NEED_USER_CONFIRM**: Requires direct USER CONFIRMATION for safety (user must explicitly approve the action). System will prompt user and re-evaluate with their response.
+- **NEED_ASSISTANT_CONFIRM**: Requires new information from AI ASSISTANT (file contents, configuration details, environment information). System will ask assistant and re-evaluate with new context.
+
+### CRITICAL USAGE GUIDELINES:
+- **NEED_MORE_HISTORY**: Use when you need more context from existing system logs, previous command results, or user confirmation patterns
+- **NEED_USER_CONFIRM**: Use when the command is potentially safe but requires explicit user permission due to impact or context
+- **NEED_ASSISTANT_CONFIRM**: Use when you need information that doesn't exist in system history (like file contents, environment variables, configuration details)
+
+**Example Scenarios:**
+- Package.json script content → **NEED_ASSISTANT_CONFIRM** (request file contents)
+- Previous command context → **NEED_MORE_HISTORY** (fetch from system logs)  
+- Risky but potentially valid action → **NEED_USER_CONFIRM** (ask user permission)
+- File deletion → **DENY** (if clearly dangerous) or **NEED_USER_CONFIRM** (if context-dependent)
+- Simple read operation → **ALLOW** (if clearly safe)
+
+## CRITICAL: NEED_MORE_INFO vs CONDITIONAL_DENY Usage
+**NEED_MORE_INFO**: Use ONLY when you need additional SYSTEM data that can be automatically retrieved:
+- ✅ More command history entries (command_history_depth > 0)
+- ✅ Execution results from recent commands (execution_results_count > 0) 
+- ✅ Previous user intent responses (user_intent_search_keywords)
+- ✅ Specific user intent clarification (user_intent_question)
+
+**CONDITIONAL_DENY**: Use when you need NEW information from the AI Assistant or human user:
+- ✅ "What does this npm script do?" → CONDITIONAL_DENY with suggested_alternatives
+- ✅ "Please provide package.json contents" → CONDITIONAL_DENY with suggested_alternatives
+- ✅ "Confirm if this is intended behavior" → CONDITIONAL_DENY with suggested_alternatives
+- ✅ Any information NOT available in system history → CONDITIONAL_DENY
+
+**WRONG USAGE**: 
+- ❌ Using NEED_MORE_INFO to ask for package.json contents (not in system history)
+- ❌ Using NEED_MORE_INFO to ask about script definitions (use CONDITIONAL_DENY)
+- ❌ Using CONDITIONAL_DENY for available system history (use NEED_MORE_INFO)
 
 ## ELICITATION Usage Rules
 - **CRITICAL**: ELICITATION should be used ONLY ONCE per security evaluation chain

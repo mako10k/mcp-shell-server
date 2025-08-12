@@ -523,6 +523,13 @@ export class EnhancedSafetyEvaluator {
           case 'ALLOW':
           case 'CONDITIONAL_DENY':
           case 'DENY':
+            // Add LLM's response to message chain before processing
+            messages.push({
+              role: 'assistant',
+              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
+              timestamp: getCurrentTimestamp()
+            });
+            
             // If force user confirm is enabled, add elicitation to messages and continue
             if (forceUserConfirm) {
               // CRITICAL: Check ELICITATION limit
@@ -581,6 +588,13 @@ export class EnhancedSafetyEvaluator {
             return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
 
           case 'NEED_MORE_INFO':
+            // Add LLM's response to message chain before handling additional context
+            messages.push({
+              role: 'assistant',
+              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
+              timestamp: getCurrentTimestamp()
+            });
+            
             // If force user confirm is enabled, add elicitation to messages and continue
             if (forceUserConfirm) {
               // CRITICAL: Check ELICITATION limit
@@ -611,6 +625,15 @@ export class EnhancedSafetyEvaluator {
             // Handle additional context requests by modifying messages
             if (llmResult.requires_additional_context) {
               await this.handleAdditionalContextRequest(llmResult.requires_additional_context, messages);
+            } else {
+              // If no specific context is requested but we got NEED_MORE_INFO, 
+              // add a note that we're proceeding with current information
+              messages.push({
+                role: 'user',
+                content: 'No additional context available. Please proceed with evaluation based on current information or provide a definitive decision.',
+                timestamp: getCurrentTimestamp(),
+                type: 'history'
+              });
             }
             continue; // Continue loop with additional context
 
@@ -665,7 +688,7 @@ export class EnhancedSafetyEvaluator {
       }
 
       // Import the security evaluation tool here to avoid circular imports
-      const { securityEvaluationTool } = await import('./security-tools.js');
+      const { enhancedSecurityEvaluationTool } = await import('./security-tools.js');
       logger.debug('Security tool imported successfully');
 
       // Convert our message format to OpenAI format
@@ -676,7 +699,7 @@ export class EnhancedSafetyEvaluator {
 
       logger.debug('About to call LLM with Function Calling (Messages)', {
         messagesCount: openAIMessages.length,
-        securityTool: JSON.stringify(securityEvaluationTool, null, 2),
+        securityTool: JSON.stringify(enhancedSecurityEvaluationTool, null, 2),
         toolChoice: JSON.stringify({ type: 'function', function: { name: 'evaluate_command_security' } }, null, 2)
       });
 
@@ -686,7 +709,7 @@ export class EnhancedSafetyEvaluator {
         messages: openAIMessages,
         max_tokens: 500,
         temperature: 0.1,
-        tools: [securityEvaluationTool],
+        tools: [enhancedSecurityEvaluationTool],
         tool_choice: { type: 'function', function: { name: 'evaluate_command_security' } }
       });
       logger.debug('LLM call completed successfully');
@@ -761,13 +784,67 @@ export class EnhancedSafetyEvaluator {
           }
         }
       }
+      
+      // Handle edge case: LLM returns tool_calls in content field as JSON string
+      if (message?.content && typeof message.content === 'string' && message.content.includes('tool_calls')) {
+        try {
+          const contentParsed = JSON.parse(message.content);
+          if (contentParsed.tool_calls && Array.isArray(contentParsed.tool_calls) && contentParsed.tool_calls.length > 0) {
+            const toolCall = contentParsed.tool_calls[0];
+            if (toolCall && toolCall.function && toolCall.function.name === 'evaluate_command_security') {
+              logger.warn('Found tool_calls in content field - parsing as Function Call');
+              const rawArgs = toolCall.function.arguments;
+              let result;
+              
+              try {
+                result = JSON.parse(rawArgs);
+              } catch (parseError) {
+                // Try JSON repair as fallback
+                logger.warn(`JSON parse failed for content tool_calls, attempting repair. Error: ${parseError}. Raw: ${rawArgs.substring(0, 200)}...`);
+                
+                const repairResult = repairAndParseJson(rawArgs);
+                if (repairResult.success) {
+                  result = repairResult.value;
+                  logger.info(`JSON repair successful for content tool_calls after ${repairResult.repairAttempts?.length || 0} attempts`);
+                } else {
+                  throw new Error(`JSON parse and repair failed for content tool_calls. Original error: ${parseError}. Repair attempts: ${repairResult.repairAttempts?.length || 0}. Final error: ${repairResult.finalError}`);
+                }
+              }
+              
+              // Validate required fields
+              const missingFields = [];
+              if (!result.evaluation_result) missingFields.push('evaluation_result');
+              if (!result.reasoning) missingFields.push('reasoning');
+              
+              if (missingFields.length === 0) {
+                // Expand $COMMAND variable in reasoning before returning
+                const expandedReasoning = this.expandCommandVariable(result.reasoning, command);
+                
+                return {
+                  evaluation_result: result.evaluation_result,
+                  reasoning: expandedReasoning,
+                  requires_additional_context: result.requires_additional_context || {
+                    command_history_depth: 0,
+                    execution_results_count: 0,
+                    user_intent_search_keywords: null,
+                    user_intent_question: null
+                  },
+                  suggested_alternatives: result.suggested_alternatives || []
+                };
+              }
+            }
+          }
+        } catch (contentParseError) {
+          logger.warn(`Failed to parse content as JSON: ${contentParseError}`);
+        }
+      }
 
       // If no tool calls, this is a critical failure - log detailed information
       logger.error('CRITICAL: LLM did not return Function Call (Messages)', {
         responseContent: message?.content || '',
         responseStopReason: firstChoice?.finish_reason,
         messagesUsed: JSON.stringify(openAIMessages, null, 2),
-        toolsProvided: JSON.stringify([securityEvaluationTool], null, 2)
+        toolsProvided: JSON.stringify([enhancedSecurityEvaluationTool], null, 2)
       });
 
       throw new Error('No valid tool call in response - Function Calling is required');

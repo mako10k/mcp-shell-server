@@ -16,13 +16,36 @@ export type SafetyLevel = z.infer<typeof SafetyLevelSchema>;
 export const EvaluationResultSchema = z
   .enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO', 'ELICIT_USER_INTENT'])
   .describe('Command evaluation result from LLM-centric evaluation');
+
+// 新しい明確な評価結果スキーマ
+export const NewEvaluationResultSchema = z
+  .enum(['ALLOW', 'DENY', 'NEED_MORE_HISTORY', 'NEED_USER_CONFIRM', 'NEED_ASSISTANT_CONFIRM'])
+  .describe('New clear command evaluation result');
+
 export const FinalEvaluationResultSchema = z
   .enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY'])
   .describe('Final command evaluation result');
 export type EvaluationResult = z.infer<typeof EvaluationResultSchema>;
+export type NewEvaluationResult = z.infer<typeof NewEvaluationResultSchema>;
 export type FinalEvaluationResult = z.infer<typeof FinalEvaluationResultSchema>;
 
-// 新しいLLM評価結果スキーマ (simplified)
+// 新しいLLM評価結果スキーマ (improved clarity)
+export const NewLLMEvaluationResultSchema = z.object({
+  evaluation_result: NewEvaluationResultSchema,
+  reasoning: z.string(),
+  requires_additional_context: z.object({
+    command_history_depth: z.number().int().min(0).describe('How many more commands back in history to examine (0 = no more needed)'),
+    execution_results_count: z.number().int().min(0).describe('How many recent commands need their execution details'), 
+    user_intent_search_keywords: z.array(z.string()).nullable().describe('Keywords to search for in previous user intent responses'),
+    user_intent_question: z.string().nullable().describe('Specific question to ask user for intent clarification'),
+    assistant_request_message: z.string().nullable().describe('Message to show to AI assistant for additional information or re-execution')
+  }),
+  suggested_alternatives: z.array(z.string())
+});
+
+export type NewLLMEvaluationResult = z.infer<typeof NewLLMEvaluationResultSchema>;
+
+// 従来のLLM評価結果スキーマ (backward compatibility)
 export const SimplifiedLLMEvaluationResultSchema = z.object({
   evaluation_result: z.enum(['ALLOW', 'CONDITIONAL_ALLOW', 'CONDITIONAL_DENY', 'DENY', 'NEED_MORE_INFO']),
   reasoning: z.string(),
