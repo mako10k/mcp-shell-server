@@ -1,6 +1,5 @@
 import { 
   CommandHistoryEntry, 
-  EvaluationResult,
   SimplifiedLLMEvaluationResult,
   FunctionCallHandlerRegistry,
   FunctionCallContext,
@@ -94,10 +93,26 @@ interface MCPServerInterface {
 }
 
 // LLM evaluation result (using simplified structure)
-// Enhanced LLM evaluation result interface that supports both old and new evaluation results
+// Enhanced LLM evaluation result interface that supports new function-based tools
 interface LLMEvaluationResult {
-  evaluation_result: 'ALLOW' | 'DENY' | 'NEED_MORE_HISTORY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM'; // Updated categories
+  evaluation_result: 'allow' | 'deny' | 'add_more_history' | 'user_confirm' | 'ai_assistant_confirm'; // Tool-based categories
   reasoning: string;
+  
+  // For add_more_history tool
+  command_history_depth?: number;
+  execution_results_count?: number;
+  user_intent_search_keywords?: string[];
+  
+  // For user_confirm tool
+  confirmation_question?: string;
+  
+  // For ai_assistant_confirm tool
+  assistant_request_message?: string;
+  
+  // For deny tool
+  suggested_alternatives?: string[];
+  
+  // Legacy compatibility
   requires_additional_context?: {
     command_history_depth: number;
     execution_results_count: number;
@@ -105,7 +120,6 @@ interface LLMEvaluationResult {
     user_intent_question: string | null;
     assistant_request_message?: string | null; // New field for assistant requests
   };
-  suggested_alternatives: string[];
 }
 
 // User intent data from elicitation
@@ -119,7 +133,7 @@ interface UserIntentData {
 
 // Safety evaluation result
 interface SafetyEvaluation {
-  evaluation_result: EvaluationResult; // Use unified evaluation result
+  evaluation_result: 'ALLOW' | 'DENY' | 'NEED_MORE_HISTORY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM'; // Legacy format for external compatibility
   // Removed safety_level property as requested
   basic_classification: string;
   reasoning: string;
@@ -143,6 +157,23 @@ export class EnhancedSafetyEvaluator {
   private historyManager: CommandHistoryManager;
   private mcpServer: MCPServerInterface | undefined;
   private functionCallHandlers: FunctionCallHandlerRegistry;
+
+  // Helper function to convert legacy result to tool-based result
+  private convertLegacyToToolResult(legacyResult: string): 'allow' | 'deny' | 'user_confirm' | 'add_more_history' | 'ai_assistant_confirm' {
+    const conversionMap: { [key: string]: 'allow' | 'deny' | 'user_confirm' | 'add_more_history' | 'ai_assistant_confirm' } = {
+      'ALLOW': 'allow',
+      'DENY': 'deny',
+      'NEED_USER_CONFIRM': 'user_confirm',
+      'NEED_MORE_HISTORY': 'add_more_history',
+      'NEED_ASSISTANT_CONFIRM': 'ai_assistant_confirm'
+    };
+    
+    const converted = conversionMap[legacyResult];
+    if (!converted) {
+      throw new Error(`Unknown legacy result: ${legacyResult}`);
+    }
+    return converted;
+  }
 
   constructor(
     securityManager: SecurityManager,
@@ -203,7 +234,7 @@ export class EnhancedSafetyEvaluator {
       const basicAnalysis = this.securityManager.analyzeCommandSafety(args.command.trim());
 
       const simplifiedResult: SimplifiedLLMEvaluationResult = {
-        evaluation_result: basicAnalysis.classification === 'basic_safe' ? 'ALLOW' : 'NEED_USER_CONFIRM',
+        evaluation_result: basicAnalysis.classification === 'basic_safe' ? 'allow' : 'user_confirm',
         reasoning: basicAnalysis.reasoning,
         requires_additional_context: {
           command_history_depth: 0,
@@ -532,8 +563,8 @@ export class EnhancedSafetyEvaluator {
         const llmResult = await this.callLLMForEvaluationWithMessages(messages, promptContext.command);
 
         switch (llmResult.evaluation_result) {
-          case 'ALLOW':
-          case 'DENY':
+          case 'allow':
+          case 'deny':
             // Add LLM's response to message chain before processing
             messages.push({
               role: 'assistant',
@@ -543,7 +574,7 @@ export class EnhancedSafetyEvaluator {
             
             return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
 
-          case 'NEED_MORE_HISTORY':
+          case 'add_more_history':
             // Add LLM's response to message chain before handling additional context
             messages.push({
               role: 'assistant',
@@ -552,10 +583,16 @@ export class EnhancedSafetyEvaluator {
             });
             
             // Handle additional context requests by modifying messages
-            if (llmResult.requires_additional_context) {
-              await this.handleAdditionalContextRequest(llmResult.requires_additional_context, messages);
+            if (llmResult.command_history_depth || llmResult.execution_results_count || llmResult.user_intent_search_keywords) {
+              const additionalContext = {
+                command_history_depth: llmResult.command_history_depth || 0,
+                execution_results_count: llmResult.execution_results_count || 0,
+                user_intent_search_keywords: llmResult.user_intent_search_keywords || [],
+                user_intent_question: null
+              };
+              await this.handleAdditionalContextRequest(additionalContext, messages);
             } else {
-              // If no specific context is requested but we got NEED_MORE_HISTORY, 
+              // If no specific context is requested but we got add_more_history, 
               // add a note that we're proceeding with current information
               messages.push({
                 role: 'user',
@@ -566,7 +603,7 @@ export class EnhancedSafetyEvaluator {
             }
             continue; // Continue loop with additional context
 
-          case 'NEED_USER_CONFIRM':
+          case 'user_confirm':
             // Add LLM's response to message chain before processing
             messages.push({
               role: 'assistant',
@@ -576,7 +613,7 @@ export class EnhancedSafetyEvaluator {
             
             // CRITICAL: Check ELICITATION limit
             if (hasElicitationBeenAttempted) {
-              logger.warn('NEED_USER_CONFIRM ELICITATION blocked - already attempted', {
+              logger.warn('user_confirm ELICITATION blocked - already attempted', {
                 command,
                 messagesCount: messages.length
               });
@@ -591,12 +628,12 @@ export class EnhancedSafetyEvaluator {
             }
             
             hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
-            const userQuestion = llmResult.requires_additional_context?.user_intent_question || 
+            const userQuestion = llmResult.confirmation_question || 
                                "Do you want to proceed with this operation?";
             await this.handleElicitationInLoop(command, userQuestion, messages);
             continue; // Continue loop with elicitation result
 
-          case 'NEED_ASSISTANT_CONFIRM':
+          case 'ai_assistant_confirm':
             // Add LLM's response to message chain before processing
             messages.push({
               role: 'assistant',
@@ -605,7 +642,7 @@ export class EnhancedSafetyEvaluator {
             });
             
             // Return with assistant request message for the calling system to handle
-            const assistantMessage = llmResult.requires_additional_context?.assistant_request_message || 
+            const assistantMessage = llmResult.assistant_request_message || 
                                    llmResult.reasoning;
             return {
               evaluation_result: 'NEED_ASSISTANT_CONFIRM',
@@ -760,9 +797,9 @@ export class EnhancedSafetyEvaluator {
         throw new Error('chatAdapter is not set');
       }
 
-      // Import the security evaluation tool here to avoid circular imports
-      const { enhancedSecurityEvaluationTool } = await import('./security-tools.js');
-      logger.debug('Security tool imported successfully');
+      // Import the new individual security evaluation tools
+      const { newSecurityEvaluationTools } = await import('./security-tools.js');
+      logger.debug('Security tools imported successfully');
 
       // Convert our message format to OpenAI format
       const openAIMessages = messages.map(msg => ({
@@ -772,8 +809,8 @@ export class EnhancedSafetyEvaluator {
 
       logger.debug('About to call LLM with Function Calling (Messages)', {
         messagesCount: openAIMessages.length,
-        securityTool: JSON.stringify(enhancedSecurityEvaluationTool, null, 2),
-        toolChoice: JSON.stringify({ type: 'function', function: { name: 'evaluate_command_security' } }, null, 2)
+        securityTools: JSON.stringify(newSecurityEvaluationTools, null, 2),
+        toolChoice: 'auto' // Let LLM choose which evaluation tool to use
       });
 
       // Use ChatCompletionAdapter with OpenAI API compatible format
@@ -782,8 +819,8 @@ export class EnhancedSafetyEvaluator {
         messages: openAIMessages,
         max_tokens: 500,
         temperature: 0.1,
-        tools: [enhancedSecurityEvaluationTool],
-        tool_choice: { type: 'function', function: { name: 'evaluate_command_security' } }
+        tools: newSecurityEvaluationTools,
+        tool_choice: 'auto' // Let LLM choose appropriate evaluation tool
       });
       logger.debug('LLM call completed successfully');
 
@@ -804,7 +841,10 @@ export class EnhancedSafetyEvaluator {
       // Process Function Call response - LLM provides the evaluation directly
       if (message?.tool_calls && message.tool_calls.length > 0) {
         const toolCall = message.tool_calls[0];
-        if (toolCall && toolCall.function.name === 'evaluate_command_security') {
+        const toolName = toolCall?.function?.name;
+        
+        // Handle new individual evaluation tools
+        if (toolName && ['allow', 'deny', 'user_confirm', 'add_more_history', 'ai_assistant_confirm'].includes(toolName)) {
           try {
             // Parse and validate the function arguments with JSON repair fallback
             const rawArgs = toolCall.function.arguments;
@@ -825,31 +865,37 @@ export class EnhancedSafetyEvaluator {
               }
             }
             
-            // Validate required fields (now only evaluation_result and reasoning)
-            const missingFields = [];
-            if (!result.evaluation_result) missingFields.push('evaluation_result');
-            if (!result.reasoning) missingFields.push('reasoning');
-            
-            // If basic fields are missing, this is a critical Function Call failure
-            if (missingFields.length > 0) {
-              throw new Error(`Function Call missing required fields: ${missingFields.join(', ')}. Received: ${Object.keys(result).join(', ')}`);
-            }
+            // Tool name already matches internal evaluation result format
+            const evaluationResult = toolName as 'allow' | 'deny' | 'user_confirm' | 'add_more_history' | 'ai_assistant_confirm';
             
             // Expand $COMMAND variable in reasoning before returning
             const expandedReasoning = this.expandCommandVariable(result.reasoning, command);
             
-            // LLM directly provides the evaluation - no need to execute anything
-            return {
-              evaluation_result: result.evaluation_result,
+            // Prepare the result object with evaluation_result from tool name
+            const evaluationResponse: LLMEvaluationResult = {
+              evaluation_result: evaluationResult,
               reasoning: expandedReasoning,
-              requires_additional_context: result.requires_additional_context || {
-                command_history_depth: 0,
-                execution_results_count: 0,
-                user_intent_search_keywords: null,
-                user_intent_question: null
-              },
+              // Copy specific fields based on tool type
+              command_history_depth: result.command_history_depth,
+              execution_results_count: result.execution_results_count,
+              user_intent_search_keywords: result.user_intent_search_keywords,
+              confirmation_question: result.confirmation_question,
+              assistant_request_message: result.assistant_request_message,
               suggested_alternatives: result.suggested_alternatives || []
             };
+            
+            // Validate required fields
+            const missingFields = [];
+            if (!evaluationResponse.evaluation_result) missingFields.push('evaluation_result');
+            if (!evaluationResponse.reasoning) missingFields.push('reasoning');
+            
+            // If basic fields are missing, this is a critical Function Call failure
+            if (missingFields.length > 0) {
+              throw new Error(`Function Call missing required fields: ${missingFields.join(', ')}. Received: ${Object.keys(evaluationResponse).join(', ')}`);
+            }
+            
+            // Return the properly typed result
+            return evaluationResponse;
           } catch (parseError) {
             console.error('Function Call argument parsing error:', parseError);
             console.error('Raw arguments:', toolCall.function.arguments);
@@ -917,7 +963,7 @@ export class EnhancedSafetyEvaluator {
         responseContent: message?.content || '',
         responseStopReason: firstChoice?.finish_reason,
         messagesUsed: JSON.stringify(openAIMessages, null, 2),
-        toolsProvided: JSON.stringify([enhancedSecurityEvaluationTool], null, 2)
+        toolsProvided: JSON.stringify(newSecurityEvaluationTools, null, 2)
       });
 
       throw new Error('No valid tool call in response - Function Calling is required');
@@ -1132,27 +1178,27 @@ This command has been flagged for review. Please provide your intent:
    * Convert SafetyEvaluation to CommandSafetyEvaluationResult
    */
   private convertToCommandSafetyResult(safetyEval: SafetyEvaluation): CommandSafetyEvaluationResult {
-    // Filter out unsupported evaluation results
-    let evaluation_result: 'ALLOW' | 'DENY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM' | 'NEED_MORE_HISTORY';
+    // Use tool-based evaluation results directly
+    let evaluation_result: 'allow' | 'deny' | 'user_confirm' | 'ai_assistant_confirm' | 'add_more_history';
     
     switch (safetyEval.evaluation_result) {
-      case 'ALLOW':
-        evaluation_result = 'ALLOW';
+      case 'allow':
+        evaluation_result = 'allow';
         break;
-      case 'DENY':
-        evaluation_result = 'DENY';
+      case 'deny':
+        evaluation_result = 'deny';
         break;
-      case 'NEED_MORE_HISTORY':
-        evaluation_result = 'NEED_MORE_HISTORY';
+      case 'add_more_history':
+        evaluation_result = 'add_more_history';
         break;
-      case 'NEED_USER_CONFIRM':
-        evaluation_result = 'NEED_USER_CONFIRM';
+      case 'user_confirm':
+        evaluation_result = 'user_confirm';
         break;
-      case 'NEED_ASSISTANT_CONFIRM':
-        evaluation_result = 'NEED_ASSISTANT_CONFIRM';
+      case 'ai_assistant_confirm':
+        evaluation_result = 'ai_assistant_confirm';
         break;
       default:
-        evaluation_result = 'NEED_USER_CONFIRM';
+        evaluation_result = 'user_confirm';
         break;
     }
 
@@ -1190,20 +1236,20 @@ This command has been flagged for review. Please provide your intent:
     let requiresConfirmation = false;
     
     switch (llmResult.evaluation_result) {
-      case 'ALLOW':
+      case 'allow':
         legacyResult = 'ALLOW';
         break;
-      case 'DENY':
+      case 'deny':
         legacyResult = 'DENY';
         break;
-      case 'NEED_MORE_HISTORY':
+      case 'add_more_history':
         legacyResult = 'NEED_MORE_HISTORY';
         break;
-      case 'NEED_USER_CONFIRM':
+      case 'user_confirm':
         legacyResult = 'NEED_USER_CONFIRM';
         requiresConfirmation = true;
         break;
-      case 'NEED_ASSISTANT_CONFIRM':
+      case 'ai_assistant_confirm':
         legacyResult = 'NEED_ASSISTANT_CONFIRM';
         requiresConfirmation = false; // AI assistant needs to provide info, not user confirmation
         break;

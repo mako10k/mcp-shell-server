@@ -47,7 +47,7 @@ import { MCPShellError } from '../utils/errors.js';
 
 // Safety evaluation result interface
 interface SafetyEvaluationResult {
-  evaluation_result: 'ALLOW' | 'DENY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM' | 'NEED_MORE_HISTORY';
+  evaluation_result: 'allow' | 'deny' | 'user_confirm' | 'ai_assistant_confirm' | 'add_more_history';
   basic_classification?: string;
   reasoning: string;
   requires_confirmation: boolean;
@@ -86,13 +86,13 @@ export class ShellTools {
         );
 
         // Handle evaluation results with strict safety guards
-        if (safetyEvaluation?.evaluation_result === 'DENY') {
+        if (safetyEvaluation?.evaluation_result === 'deny') {
           throw new Error(`Command denied: ${safetyEvaluation.reasoning}`);
         }
 
         // For NEED_USER_CONFIRM, return evaluation info without executing
         // User can review suggested alternatives and re-run if appropriate
-        if (safetyEvaluation?.evaluation_result === 'NEED_USER_CONFIRM') {
+        if (safetyEvaluation?.evaluation_result === 'user_confirm') {
           return {
             status: 'need_user_confirm',
             command: params.command,
@@ -113,7 +113,7 @@ export class ShellTools {
 
         // For NEED_ASSISTANT_CONFIRM, return evaluation info without executing
         // Assistant should review and provide more context
-        if (safetyEvaluation?.evaluation_result === 'NEED_ASSISTANT_CONFIRM') {
+        if (safetyEvaluation?.evaluation_result === 'ai_assistant_confirm') {
           return {
             status: 'need_assistant_confirm',
             command: params.command,
@@ -134,7 +134,7 @@ export class ShellTools {
 
         // For NEED_MORE_HISTORY, return evaluation info without executing
         // System needs more context to make a decision
-        if (safetyEvaluation?.evaluation_result === 'NEED_MORE_HISTORY') {
+        if (safetyEvaluation?.evaluation_result === 'add_more_history') {
           return {
             status: 'need_more_history',
             command: params.command,
@@ -154,7 +154,7 @@ export class ShellTools {
         }
 
         // CRITICAL SAFETY GUARD: Only execute if explicitly ALLOWED
-        if (safetyEvaluation?.evaluation_result !== 'ALLOW') {
+        if (safetyEvaluation?.evaluation_result !== 'allow') {
           throw new Error(
             `Command execution blocked: evaluation result '${safetyEvaluation?.evaluation_result}' is not ALLOW. Reasoning: ${safetyEvaluation?.reasoning}`
           );

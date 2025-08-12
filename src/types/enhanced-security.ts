@@ -12,10 +12,10 @@ export const SafetyLevelSchema = z
   .describe('Safety level from 1 (safest) to 5 (most dangerous)');
 export type SafetyLevel = z.infer<typeof SafetyLevelSchema>;
 
-// 評価結果 (Updated with clear category distinctions)
+// 評価結果 (Tool-based evaluation system)
 export const EvaluationResultSchema = z
-  .enum(['ALLOW', 'DENY', 'NEED_MORE_HISTORY', 'NEED_USER_CONFIRM', 'NEED_ASSISTANT_CONFIRM'])
-  .describe('Command evaluation result with clear category distinctions');
+  .enum(['allow', 'deny', 'add_more_history', 'user_confirm', 'ai_assistant_confirm'])
+  .describe('Tool-based evaluation result for security assessment');
 
 // 新しい明確な評価結果スキーマ (統一されました)
 // NOTE: EvaluationResultSchemaと同じ定義なので、そちらを使用することを推奨

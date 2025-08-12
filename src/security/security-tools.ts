@@ -1,185 +1,140 @@
 /**
  * Security Evaluation Tools for Function Calling
- * Structured approach using OpenAI-compatible API tools functionality
+ * New individual tool approach - each evaluation result has its own tool
  */
 
-const suggestedAlternativesSchema = {
-  type: "array" as const,
-  items: { type: "string" as const },
-  description: 'List of suggested alternative commands if applicable'
-};
+// Individual Security Evaluation Tools
 
-// Enhanced schema for new evaluation system
-const enhancedAdditionalContextSchema = {
-  type: "object" as const,
-  properties: {
-    command_history_depth: {
-      type: "number" as const,
-      minimum: 0,
-      description: 'How many more commands back in history to examine (0 = no more needed)'
-    },
-    execution_results_count: {
-      type: "number" as const,
-      minimum: 0,
-      description: 'How many recent commands need their execution details'
-    },
-    user_intent_search_keywords: {
-      type: "array" as const,
-      items: { type: "string" as const },
-      nullable: true,
-      description: 'Keywords to search for in previous user intent responses'
-    },
-    user_intent_question: {
-      type: "string" as const,
-      nullable: true,
-      description: 'Specific question to ask user for intent clarification'
-    },
-    assistant_request_message: {
-      type: "string" as const,
-      nullable: true,
-      description: 'Message to show to AI assistant for additional information or re-execution'
-    }
-  },
-  required: ['command_history_depth', 'execution_results_count', 'user_intent_search_keywords', 'user_intent_question', 'assistant_request_message'],
-  additionalProperties: false
-};
-
-// New enhanced security evaluation tool
-export const enhancedSecurityEvaluationTool = {
+export const allowTool = {
   type: 'function' as const,
   function: {
-    name: 'evaluate_command_security',
-    description: 'Evaluates the security implications of a shell command with clear response categories',
+    name: 'allow',
+    description: 'Allow command execution - the command is safe to execute',
     parameters: {
       type: "object" as const,
       properties: {
-        evaluation_result: {
-          type: "string" as const,
-          enum: ['ALLOW', 'DENY', 'NEED_MORE_HISTORY', 'NEED_USER_CONFIRM', 'NEED_ASSISTANT_CONFIRM'],
-          description: 'Clear evaluation result: ALLOW (safe to execute), DENY (too dangerous), NEED_MORE_HISTORY (requires system history data), NEED_USER_CONFIRM (requires user permission), NEED_ASSISTANT_CONFIRM (requires assistant information)'
-        },
         reasoning: {
           type: "string" as const,
-          description: 'Detailed reasoning for the evaluation decision'
-        },
-        requires_additional_context: enhancedAdditionalContextSchema,
-        suggested_alternatives: suggestedAlternativesSchema
+          description: 'Detailed reasoning for why the command is safe'
+        }
       },
-      required: ['evaluation_result', 'reasoning'],
+      required: ['reasoning'],
       additionalProperties: false
     }
   }
 };
 
-// Common schema definitions for reuse (OpenAI API compatible) - backward compatibility
-const additionalContextSchema = {
-  type: "object" as const,
-  properties: {
-    command_history_depth: {
-      type: "number" as const,
-      minimum: 0,
-      description: 'How many more commands back in history to examine (0 = no more needed)'
-    },
-    execution_results_count: {
-      type: "number" as const,
-      minimum: 0,
-      description: 'How many recent commands need their execution details'
-    },
-    user_intent_search_keywords: {
-      type: "array" as const,
-      items: { type: "string" as const },
-      nullable: true,
-      description: 'Keywords to search for in previous user intent responses'
-    },
-    user_intent_question: {
-      type: "string" as const,
-      nullable: true,
-      description: 'Specific question to ask user for intent clarification'
-    }
-  },
-  required: ['command_history_depth', 'execution_results_count', 'user_intent_search_keywords', 'user_intent_question'],
-  additionalProperties: false
-};
-
-export const securityEvaluationTool = {
+export const denyTool = {
   type: 'function' as const,
   function: {
-    name: 'evaluate_command_security',
-    description: 'Evaluates the security implications of a shell command (LEGACY - use enhancedSecurityEvaluationTool)',
+    name: 'deny',
+    description: 'Deny command execution - the command is too dangerous to execute',
     parameters: {
       type: "object" as const,
       properties: {
-        evaluation_result: {
-          type: "string" as const,
-          enum: ['ALLOW', 'DENY', 'NEED_MORE_HISTORY', 'NEED_USER_CONFIRM', 'NEED_ASSISTANT_CONFIRM'],
-          description: 'Final evaluation result for the command'
-        },
         reasoning: {
           type: "string" as const,
-          description: 'Detailed reasoning for the evaluation decision'
+          description: 'Detailed reasoning for why the command is dangerous'
         },
-        requires_additional_context: additionalContextSchema,
-        suggested_alternatives: suggestedAlternativesSchema
+        suggested_alternatives: {
+          type: "array" as const,
+          items: { type: "string" as const },
+          description: 'List of safer alternative commands'
+        }
       },
-      required: ['evaluation_result', 'reasoning'],
+      required: ['reasoning', 'suggested_alternatives'],
       additionalProperties: false
     }
   }
 };
 
-export const userIntentReevaluationTool = {
+export const userConfirmTool = {
   type: 'function' as const,
   function: {
-    name: 'reevaluate_with_user_intent',
-    description: 'Re-evaluate command security with user intent information',
+    name: 'user_confirm',
+    description: 'Request user confirmation - the command requires explicit user permission before execution',
     parameters: {
       type: "object" as const,
       properties: {
-        evaluation_result: {
-          type: "string" as const,
-          enum: ['ALLOW', 'DENY'],
-          description: 'The final security evaluation result after considering user intent'
-        },
         reasoning: {
           type: "string" as const,
-          description: 'Updated reasoning considering the user intent'
+          description: 'Detailed reasoning for why user confirmation is needed'
         },
-        confidence_level: {
+        confirmation_question: {
+          type: "string" as const,
+          description: 'Specific question to ask the user for confirmation (include alternatives if applicable)'
+        }
+      },
+      required: ['reasoning', 'confirmation_question'],
+      additionalProperties: false
+    }
+  }
+};
+
+export const addMoreHistoryTool = {
+  type: 'function' as const,
+  function: {
+    name: 'add_more_history',
+    description: 'Request additional command history - need more system context to make a decision',
+    parameters: {
+      type: "object" as const,
+      properties: {
+        reasoning: {
+          type: "string" as const,
+          description: 'Detailed reasoning for why more history is needed'
+        },
+        command_history_depth: {
           type: "number" as const,
-          minimum: 0.0,
-          maximum: 1.0,
-          description: 'Confidence level in the evaluation (0.0 to 1.0)'
+          minimum: 1,
+          maximum: 50,
+          description: 'How many more commands back in history to examine'
         },
-        suggested_alternatives: suggestedAlternativesSchema
+        execution_results_count: {
+          type: "number" as const,
+          minimum: 0,
+          maximum: 10,
+          description: 'How many recent commands need their execution details'
+        },
+        user_intent_search_keywords: {
+          type: "array" as const,
+          items: { type: "string" as const },
+          description: 'Keywords to search for in previous user intent responses'
+        }
       },
-      required: ['evaluation_result', 'reasoning', 'confidence_level', 'suggested_alternatives'],
+      required: ['reasoning', 'command_history_depth'],
       additionalProperties: false
     }
   }
 };
 
-export const additionalContextReevaluationTool = {
+export const aiAssistantConfirmTool = {
   type: 'function' as const,
   function: {
-    name: 'reevaluate_with_additional_context',
-    description: 'Re-evaluate command security with additional context information',
+    name: 'ai_assistant_confirm',
+    description: 'Request information from AI assistant - need additional context that assistant can provide',
     parameters: {
       type: "object" as const,
       properties: {
-        evaluation_result: {
-          type: "string" as const,
-          enum: ['ALLOW', 'DENY', 'NEED_MORE_HISTORY', 'NEED_USER_CONFIRM', 'NEED_ASSISTANT_CONFIRM'],
-          description: 'The security evaluation result with additional context'
-        },
         reasoning: {
           type: "string" as const,
-          description: 'Updated reasoning considering the additional context'
+          description: 'Detailed reasoning for why assistant information is needed'
         },
-        requires_additional_context: additionalContextSchema,
-        suggested_alternatives: suggestedAlternativesSchema
+        assistant_request_message: {
+          type: "string" as const,
+          description: 'Specific message/question to show to the AI assistant'
+        }
       },
-      required: ['evaluation_result', 'reasoning', 'requires_additional_context', 'suggested_alternatives'],
+      required: ['reasoning', 'assistant_request_message'],
       additionalProperties: false
     }
   }
 };
+
+// Combined tools array for easy import
+export const newSecurityEvaluationTools = [
+  allowTool,
+  denyTool,
+  userConfirmTool,
+  addMoreHistoryTool,
+  aiAssistantConfirmTool
+];

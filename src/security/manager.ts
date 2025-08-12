@@ -41,7 +41,7 @@ interface CreateMessageCallback {
 
 // Command safety evaluation result interface
 export interface CommandSafetyEvaluationResult {
-  evaluation_result: 'ALLOW' | 'DENY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM' | 'NEED_MORE_HISTORY';
+  evaluation_result: 'allow' | 'deny' | 'user_confirm' | 'ai_assistant_confirm' | 'add_more_history';
   basic_classification?: CommandClassification;
   reasoning: string;
   requires_confirmation: boolean;
