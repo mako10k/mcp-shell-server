@@ -485,11 +485,22 @@ export class EnhancedSafetyEvaluator {
   }> {
     const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, question);
     
-    // Add elicitation result to userMessage and continue loop
-    const elicitationResult = `\n\nELICITATION RESULT:\nUser Action: ${elicitationResponse?.action || 'no_response'}\nUser Intent: ${userIntent?.justification || 'Not provided'}\nTimestamp: ${getCurrentTimestamp()}`;
+    // Add detailed elicitation result to message chain with clear user decision
+    let elicitationResultMessage = `\n\nELICITATION RESULT:\nUser Action: ${elicitationResponse?.action || 'no_response'}\nTimestamp: ${getCurrentTimestamp()}`;
+    
+    if (elicitationResponse?.action === 'accept') {
+      elicitationResultMessage += `\nUser Decision: APPROVED - User explicitly approved the command execution\nUser Intent: ${userIntent?.justification || 'Not provided'}`;
+    } else if (elicitationResponse?.action === 'decline') {
+      elicitationResultMessage += `\nUser Decision: DECLINED - User explicitly declined the command execution\nReason: ${userIntent?.justification || 'The user has refused to allow this command to run'}`;
+    } else if (elicitationResponse?.action === 'cancel') {
+      elicitationResultMessage += `\nUser Decision: CANCELLED - User cancelled the confirmation request\nReason: The user has cancelled the operation`;
+    } else {
+      elicitationResultMessage += `\nUser Decision: NO_RESPONSE - No valid response received from user`;
+    }
+    
     messages.push({
       role: 'user',
-      content: elicitationResult,
+      content: elicitationResultMessage,
       timestamp: getCurrentTimestamp(),
       type: 'elicitation'
     });
@@ -534,6 +545,7 @@ export class EnhancedSafetyEvaluator {
     
     let maxIteration = 5;
     let hasElicitationBeenAttempted = false; // Track ELICITATION attempts
+    let _lastElicitationResponse: ElicitationResponse | null = null; // Persist elicitation response across iterations
     
     try {
       while (true) {
@@ -593,28 +605,11 @@ export class EnhancedSafetyEvaluator {
                                "Do you want to proceed with this operation?";
             const { userIntent: _userIntent, elicitationResponse } = await this.handleElicitationInLoop(command, userConfirmQuestion, messages);
             
-            // Check elicitation result and add user response to message chain for LLM re-evaluation
-            if (elicitationResponse?.action === 'accept') {
-              // Add user's acceptance to message chain
-              const userResponseMessage = `User approved the command execution. They accepted the confirmation request.`;
-              messages.push({
-                role: 'user',
-                content: userResponseMessage,
-                timestamp: getCurrentTimestamp(),
-                type: 'user_response'
-              });
-            } else {
-              // Add user's decline/cancel to message chain
-              const userResponseMessage = `User declined the command execution. They ${elicitationResponse?.action || 'declined'} the confirmation request. The user has explicitly refused to allow this command to run.`;
-              messages.push({
-                role: 'user',
-                content: userResponseMessage,
-                timestamp: getCurrentTimestamp(),
-                type: 'user_response'
-              });
-            }
+            // Store elicitation response for persistence across iterations
+            _lastElicitationResponse = elicitationResponse;
             
             // Continue with LLM evaluation loop to get final decision based on user response
+            // Note: User response is already added to messages in handleElicitationInLoop
             continue;
 
           case 'ai_assistant_confirm':
@@ -1058,7 +1053,10 @@ This command has been flagged for review. Please provide your intent:
 
           return {
             userIntent,
-            elicitationResponse: { action: 'accept', content: result.content },
+            elicitationResponse: { 
+              action: confirmed ? 'accept' : 'decline',  // confirmed値に基づいて決定
+              content: result.content 
+            },
           };
         } else {
           return {
