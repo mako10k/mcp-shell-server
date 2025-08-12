@@ -1,7 +1,7 @@
 /**
  * Security LLM Prompt Generator
- * mcp-llm-generator のFunctionCall emulation patternを使用
- * Structured Output形式のプロンプトを生成してLLMに型安全な出力を要求
+ * Use mcp-llm-generator FunctionCall emulation pattern
+ * Generate Structured Output format prompts to request type-safe output from LLM
  */
 
 import { SafetyLevel } from '../types/enhanced-security.js';
@@ -63,7 +63,7 @@ export class SecurityLLMPromptGenerator {
       content: string;
     }> = [];
 
-    // コマンド履歴を追加
+    // Add command history
     commandHistory.forEach(entry => {
       merged.push({
         type: 'command',
@@ -72,7 +72,7 @@ export class SecurityLLMPromptGenerator {
       });
     });
 
-    // ELICITATION履歴を追加
+    // Add ELICITATION history
     elicitationHistory.forEach(entry => {
       merged.push({
         type: 'elicitation',
@@ -88,7 +88,7 @@ Final Decision: ${entry.evaluationResult}` : ''}`
   }
 
   /**
-   * 初期評価の結果と推論を抽出する共通ヘルパー
+   * Common helper to extract initial evaluation results and reasoning
    */
   private extractInitialEvaluation(initialEvaluation: unknown): {
     result: string;
@@ -105,71 +105,66 @@ Final Decision: ${entry.evaluationResult}` : ''}`
   }
 
   /**
-   * 初回セキュリティ評価用のStructured OutputプロンプトTO生成
+   * Generate Structured Output prompt for initial security evaluation
    */
   generateSecurityEvaluationPrompt(context: SecurityPromptContext): {
     systemPrompt: string;
     userMessage: string;
   } {
-    const systemPrompt = `PURPOSE:
-Evaluate the safety of shell commands that an AI assistant is attempting to execute. For unsafe commands, strictly evaluate their alignment with the AI assistant's user intent to determine whether execution should proceed.
+    const systemPrompt = `# Security Command Evaluator
 
-ARCHITECTURE:
-- User messages in this chat represent the AI assistant's messages
-- The AI assistant conducts conversations with its user and requests command evaluations from you
-- You evaluate these requests and make execution decisions
-- You can directly confirm the AI assistant's user intent through "user_intent_question"
-- Your past confirmation history with the AI assistant's user can be included as context in evaluations
+You are an expert security evaluator specialized in analyzing shell commands for safety and risk assessment.
 
-You are an expert security evaluator for shell commands. Use the evaluate_command_security function to provide structured security evaluation.
+## Response Format Requirements (ABSOLUTE CRITICAL)
 
-EVALUATION GUIDELINES:
-- ALLOW: Safe commands with no significant risks
-- CONDITIONAL_ALLOW: Generally safe but may need monitoring
-- CONDITIONAL_DENY: MUST be used only when "user_intent_question" is provided. Use when AI assistant's user intent is unclear and requires direct confirmation.
-- DENY: Dangerous commands that should be blocked
-- NEED_MORE_INFO: Need additional context/history to make decision
+⚠️ WARNING: You are in FUNCTION CALLING MODE ONLY ⚠️
 
-DECISION PRIORITY: Prefer ALLOW/DENY conclusions. Use CONDITIONAL_DENY ONLY when you include a specific "user_intent_question" for direct AI assistant's user clarification.
+1. Your ENTIRE response must be a JSON function call - NO EXCEPTIONS
+2. DO NOT write text like "evaluate_command_security(...)" 
+3. DO NOT write explanations outside the function call
+4. You MUST respond with this EXACT JSON structure:
 
-CRITICAL RULE: If evaluation_result is "CONDITIONAL_DENY", then "user_intent_question" MUST NOT be null. This triggers the ELICITATION process.
+{
+  "tool_calls": [{
+    "id": "call_123",
+    "type": "function",
+    "function": {
+      "name": "evaluate_command_security",
+      "arguments": "{\\"evaluation_result\\": \\"ALLOW\\", \\"reasoning\\": \\"Safe command\\", \\"requires_additional_context\\": {\\"command_history_depth\\": 0, \\"execution_results_count\\": 0, \\"user_intent_search_keywords\\": null, \\"user_intent_question\\": null}, \\"suggested_alternatives\\": []}"
+    }
+  }]
+}
 
-REASONING FORMAT:
-Include risk factors analysis in the reasoning text when applicable. Mention specific categories like:
-- destructive_action, data_access, network_access, system_modification, unclear_intent, suspicious_pattern
-- severity levels: low, medium, high, critical
+5. Replace the arguments with your actual evaluation
+6. All required fields MUST be included: evaluation_result, reasoning, requires_additional_context, suggested_alternatives
 
-ADDITIONAL CONTEXT SPECIFICATION:
-- command_history_depth: How many more commands back in history to examine (0 = no more needed)
-- execution_results_count: How many recent commands need their execution details (runtime, exit codes, first 10 lines of output)
-- user_intent_search_keywords: Keywords to search for in previous AI assistant's user intent responses (null if not needed)
-- user_intent_question: Specific question to ask AI assistant's user for intent clarification (null if not needed)
+## Security Evaluation Guidelines
+When creating your function call:
+- evaluation_result: ALLOW, CONDITIONAL_DENY, DENY, or NEED_MORE_INFO
+- reasoning: Detailed security analysis
+- requires_additional_context: Use the specified object structure
+- suggested_alternatives: Array of alternative commands (can be empty)
 
-Examples:
-- {"command_history_depth": 5, "execution_results_count": 0, "user_intent_search_keywords": null, "user_intent_question": null} = Need 5 more commands back
-- {"command_history_depth": 0, "execution_results_count": 3, "user_intent_search_keywords": null, "user_intent_question": null} = Need execution results for last 3 commands
-- {"command_history_depth": 0, "execution_results_count": 0, "user_intent_search_keywords": ["git", "repository"], "user_intent_question": null} = Search for AI assistant's user intent about git/repository
-- {"command_history_depth": 0, "execution_results_count": 0, "user_intent_search_keywords": null, "user_intent_question": "What specific files are you trying to delete?"} = Ask AI assistant's user for clarification
+🚨 CRITICAL: Function call JSON format is MANDATORY. Any text response will be REJECTED. 🚨`;
 
-Use the evaluate_command_security function to provide your evaluation.`;
+    const userMessage = `# Security Evaluation Request
 
-    const userMessage = `AI assistant is requesting evaluation for this shell command:
-
-Command: \`${context.command}\`
-Working Directory: ${context.workingDirectory}
-${context.comment ? `AI Assistant Comment: ${context.comment}` : ''}
+## Command Analysis Required
+**Command**: \`${context.command}\`
+**Working Directory**: ${context.workingDirectory}
+${context.comment ? `**AI Assistant Context**: ${context.comment}` : ''}
 
 ${this.generateHistorySection(context)}
 
-${context.detectedPatterns ? `Detected Patterns: ${context.detectedPatterns.join(', ')}` : ''}
+${context.detectedPatterns ? `**Detected Patterns**: ${context.detectedPatterns.join(', ')}` : ''}
 
-Please evaluate this command using the evaluate_command_security function.`;
+**INSTRUCTION**: Use the evaluate_command_security function to provide your security evaluation.`;
 
     return { systemPrompt, userMessage };
   }
 
   /**
-   * 履歴セクションを生成（時系列マージまたは個別表示）
+   * Generate history section (chronological merge or individual display)
    */
   private generateHistorySection(context: SecurityPromptContext): string {
     const commandHistory = context.commandHistoryWithTimestamp;
@@ -188,7 +183,7 @@ ${mergedHistory.slice(0, 10).map((entry, i) =>
 ).join('\n')}`;
     }
 
-    // 個別履歴の表示
+    // Display individual history
     const sections: string[] = [];
 
     if (hasCommandHistory) {
@@ -211,7 +206,7 @@ ${elicitationHistory.map(entry =>
   }
 
   /**
-   * ユーザ意図確認後の再評価プロンプト生成
+   * Generate re-evaluation prompt after user intent confirmation
    */
   generateUserIntentReevaluationPrompt(context: UserIntentContext): {
     systemPrompt: string;
@@ -264,7 +259,7 @@ Provide final security evaluation as JSON only.`;
   }
 
   /**
-   * 追加コンテキスト収集後の再評価プロンプト生成
+   * Generate re-evaluation prompt after additional context collection
    */
   generateAdditionalContextReevaluationPrompt(context: AdditionalContextContext): {
     systemPrompt: string;
@@ -320,8 +315,8 @@ Provide comprehensive final security evaluation as JSON only.`;
   }
 
   /**
-   * Function Call emulation用のシステムプロンプト生成
-   * mcp-llm-generator のパターンを参考
+   * Generate system prompt for Function Call emulation
+   * Refer to mcp-llm-generator patterns
    */
   generateFunctionCallEmulationPrompt(
     functionName: 'security_evaluate' | 'user_intent_reevaluate' | 'context_reevaluate',
@@ -351,7 +346,7 @@ Return function execution result as JSON only.`;
   }
 
   /**
-   * デバッグ用のプロンプト生成（開発時のみ使用）
+   * Generate debug prompt (for development use only)
    */
   generateDebugPrompt(context: SecurityPromptContext): {
     systemPrompt: string;

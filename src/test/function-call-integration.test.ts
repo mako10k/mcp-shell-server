@@ -4,7 +4,6 @@ import { SecurityManager } from '../security/manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { 
   DEFAULT_ENHANCED_SECURITY_CONFIG,
-  FunctionCallResult,
   FunctionCallContext,
   EvaluateCommandSecurityArgs,
   ReevaluateWithUserIntentArgs,

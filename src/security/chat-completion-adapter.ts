@@ -38,10 +38,11 @@ const CCCRequestSchema = z.object({
   tool_choice: z
     .union([
       z.literal('none'),
+      z.literal('auto'),
       z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
+      z.object({ type: z.literal('tool'), name: z.string() }),
     ])
     .optional(),
-  function_call: z.string().optional(),
 });
 
 type CCCRequest = z.infer<typeof CCCRequestSchema>;
@@ -52,17 +53,21 @@ const CCCResponseSchema = z.object({
       message: z.object({
         role: z.literal('assistant'),
         content: z.string(),
-        function_call: z
-          .object({
-            name: z.string(),
-            arguments: z.string(),
+        tool_calls: z.array(
+          z.object({
+            id: z.string(),
+            type: z.literal('function'),
+            function: z.object({
+              name: z.string(),
+              arguments: z.string(),
+            }),
           })
-          .optional(),
+        ).optional(),
       }),
       finish_reason: z.union([
         z.literal('stop'),
         z.literal('length'),
-        z.literal('function_call'),
+        z.literal('tool_calls'),
       ]),
       index: z.number().optional(),
     })
@@ -93,27 +98,28 @@ export class CCCToMCPCMAdapter {
     // Use adaptOpenAIRequestToMCP to convert the request
     const mcpRequest = adaptOpenAIRequestToMCP(request);
 
-    // Validate the converted MCP request
-    MCPCreateMessageRequestSchema.parse(mcpRequest);
+    const mcpResponse = await this.createMessage(mcpRequest);
 
-    const response = await this.createMessage(mcpRequest);
-
-    CCCResponseSchema.parse(response);
-
+    // Convert MCP response to OpenAI API format (do NOT parse with CCCResponseSchema yet)
     // Fix the type error by casting response.stopReason to the expected type
-    const stopReason: 'stop' | 'length' | 'function_call' = (response.stopReason as 'stop' | 'length' | 'function_call') || 'stop';
+    const stopReason: 'stop' | 'length' | 'tool_calls' = (mcpResponse.stopReason as 'stop' | 'length' | 'tool_calls') || 'stop';
 
-    return {
+    const cccResponse: CCCResponse = {
       choices: [
         {
           message: {
             role: 'assistant',
-            content: response.content.text,
+            content: mcpResponse.content.type === 'text' ? mcpResponse.content.text : 'Non-text response',
           },
           finish_reason: stopReason,
         },
       ],
     };
+
+    // Now validate the converted response
+    CCCResponseSchema.parse(cccResponse);
+
+    return cccResponse;
   }
 }
 
@@ -122,7 +128,7 @@ type MCPCreateMessageRequest = Parameters<CreateMessageCallback>[0];
 
 // Adapt OpenAI Request to MCP Request
 export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRequest {
-  // (1) messages のフィルターと SystemMessage 抽出
+  // (1) Filter messages and extract SystemMessage
   const systemMessages = request.messages.filter(msg => msg.role === 'system');
   const filteredMessages: Array<{ role: 'user' | 'assistant', content: { type: 'text', text: string } }> = request.messages
     .filter(msg => msg.role !== 'system') // 'system' を除外
@@ -138,32 +144,27 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
     ? request.tool_choice 
     : request.tool_choice?.type === 'function' 
       ? request.tool_choice.function.name 
+    : request.tool_choice?.type === 'tool'
+      ? request.tool_choice.name
       : 'none';
 
   const systemPrompt = [
-    ...systemMessages,
+    ...systemMessages.map(msg => msg.content),
     createSystemPromptFromTools(toolNames, toolChoiceString),
   ].join('\n');
 
-  // (3) metadata は不要 - 直接nullを使用
-
-  // (4) user は捨てる
-  // 処理不要（無視）
-
-  // (5) functions, function_call のシミュレーション
-  const modelPreferences = {
-    function_call: request.function_call || 'auto'
-  };
-
-  // MCPRequest の生成
+  // Generate MCPRequest (construct to fully satisfy the type)
   const mcpRequest: MCPCreateMessageRequest = {
     messages: filteredMessages,
     systemPrompt,
     includeContext: 'none',
-    modelPreferences,
+    // Add tools if available (convert OpenAI format to MCP format)
+    ...(request.tools && request.tools.length > 0 && { tools: request.tools }),
+    // Add tool_choice if specified
+    ...(request.tool_choice && request.tool_choice !== 'auto' && { tool_choice: request.tool_choice }),
   };
 
-  // 条件付きでオプショナルプロパティを追加
+  // Conditionally add optional properties
   if (request.max_tokens !== undefined) {
     mcpRequest.maxTokens = request.max_tokens;
   }
@@ -177,203 +178,69 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
   return mcpRequest;
 }
 
-// Zod schema for MCPCreateMessageRequest (validation only)
-const MCPCreateMessageRequestSchema = z.object({
-  messages: z.array(
-    z.object({
-      role: z.union([z.literal('user'), z.literal('assistant')]),
-      content: z.object({
-        type: z.literal('text'),
-        text: z.string(),
-      }),
-    })
-  ),
-  maxTokens: z.number().optional(),
-  temperature: z.number().optional(),
-  systemPrompt: z.string().optional(),
-  stopSequences: z.array(z.string()).optional(),
-  includeContext: z.union([
-    z.literal('none'),
-    z.literal('thisServer'),
-    z.literal('allServers'),
-  ]).optional(),
-  metadata: z.record(z.unknown()).nullable().optional(),
-  modelPreferences: z.record(z.unknown()).optional(),
-});
+
 
 // Generates a system prompt string based on the provided tools and tool choices.
 /**
  * Creates a comprehensive system prompt from available tools and tool choice
- * Based on the implementation pattern from mcp-llm-generator
+ * Based on mcp-llm-generator implementation - OpenAI Function Calling standard
  */
 export function createSystemPromptFromTools(tools: string[], toolChoice: string): string {
   // Handle case with no tools
   if (!tools || tools.length === 0) {
-    return buildBasePrompt() + '\n\nNo tools are currently available for this request.';
+    return 'You are a helpful assistant. No tools are currently available for this request.';
   }
 
-  // Build tool descriptions
-  const toolDescriptions = generateToolDescriptions(tools);
-  
-  // Build tool choice information
-  const toolChoiceInfo = generateToolChoiceInfo(toolChoice);
-  
-  // Build constraints and guidelines
-  const constraints = generateToolUsageConstraints();
-  
-  // Assemble the complete system prompt
-  return assembleSystemPrompt({
-    basePrompt: buildBasePrompt(),
-    toolDescriptions,
-    toolChoiceInfo,
-    constraints
-  });
+  // Build the system prompt with explicit Function Calling instructions
+  // Based on Berkeley Function Calling Leaderboard best practices
+  return `# System Instructions
+
+You are a security evaluation assistant specialized in analyzing shell commands for safety.
+
+## Critical Requirements
+- You MUST respond using function calls ONLY
+- NEVER provide text responses outside of function calls
+- Always call exactly one function per response
+- Your response MUST be a valid function call
+
+## Available Functions
+${tools.map(tool => `- ${tool}: Use this function to provide your evaluation`).join('\n')}
+
+## Function Call Rules
+${toolChoice && toolChoice !== 'none' && toolChoice !== 'auto' 
+  ? `MANDATORY: You MUST call the "${toolChoice}" function for this request.` 
+  : 'MANDATORY: Call the appropriate function to respond.'}
+
+## Response Format Requirements (ABSOLUTE CRITICAL)
+
+⚠️ WARNING: You are in FUNCTION CALLING MODE ONLY ⚠️
+
+1. Your ENTIRE response must be a JSON function call - NO EXCEPTIONS
+2. DO NOT write text like "evaluate_command_security(...)" 
+3. DO NOT write explanations outside the function call
+4. You MUST respond with this EXACT JSON structure:
+
+{
+  "tool_calls": [{
+    "id": "call_123",
+    "type": "function",
+    "function": {
+      "name": "evaluate_command_security",
+      "arguments": "{\\"evaluation_result\\": \\"ALLOW\\", \\"reasoning\\": \\"Safe command\\", \\"requires_additional_context\\": {\\"command_history_depth\\": 0, \\"execution_results_count\\": 0, \\"user_intent_search_keywords\\": null, \\"user_intent_question\\": null}, \\"suggested_alternatives\\": []}"
+    }
+  }]
 }
 
-/**
- * Builds the base system prompt with core responsibilities
- */
-function buildBasePrompt(): string {
-  return `You are a precision tool call analyzer designed to determine when and how to use available tools.
+5. Replace the arguments with your actual evaluation
+6. All required fields MUST be included: evaluation_result, reasoning, requires_additional_context, suggested_alternatives
 
-Your core responsibilities:
-1. Analyze user requests to determine if tool usage is required
-2. Select the most appropriate tool based on the request context
-3. Generate proper tool calls with correct parameters
-4. Provide clear reasoning for tool selection decisions
-5. Handle tool execution results and provide meaningful responses`;
-}
+## Security Evaluation Guidelines
+When creating your function call:
+- evaluation_result: ALLOW, CONDITIONAL_DENY, DENY, or NEED_MORE_INFO
+- reasoning: Detailed security analysis
+- requires_additional_context: Use the specified object structure
+- suggested_alternatives: Array of alternative commands (can be empty)
 
-/**
- * Generates detailed descriptions for available tools
- */
-function generateToolDescriptions(tools: string[]): string {
-  const descriptions = tools.map(tool => {
-    // Enhanced tool description based on tool name patterns
-    const description = getToolDescription(tool);
-    const usageHint = getToolUsageHint(tool);
-    
-    return `## ${tool}
-**Description**: ${description}
-**Usage**: ${usageHint}`;
-  }).join('\n\n');
-
-  return `## Available Tools\n\n${descriptions}`;
-}
-
-/**
- * Gets enhanced description for a tool based on its name
- */
-function getToolDescription(toolName: string): string {
-  // Pattern-based tool description generation
-  if (toolName.includes('shell') || toolName.includes('execute')) {
-    return 'Execute shell commands securely with intelligent output handling and safety validation.';
-  }
-  if (toolName.includes('file') || toolName.includes('read') || toolName.includes('write')) {
-    return 'Perform file operations including reading, writing, and manipulation with proper error handling.';
-  }
-  if (toolName.includes('search') || toolName.includes('grep') || toolName.includes('find')) {
-    return 'Search and locate information within files, directories, or content with various search patterns.';
-  }
-  if (toolName.includes('terminal')) {
-    return 'Manage terminal sessions and interactive command execution with persistent state.';
-  }
-  if (toolName.includes('process') || toolName.includes('monitor')) {
-    return 'Monitor and manage system processes with detailed execution tracking and control.';
-  }
-  
-  // Generic description for unknown tools
-  return `A specialized tool for ${toolName} functionality with comprehensive error handling and validation.`;
-}
-
-/**
- * Gets usage hint for a tool based on its name patterns
- */
-function getToolUsageHint(toolName: string): string {
-  if (toolName.includes('shell') || toolName.includes('execute')) {
-    return 'Call this tool when you need to execute system commands, run scripts, or perform system-level operations.';
-  }
-  if (toolName.includes('file')) {
-    return 'Call this tool when you need to read, write, create, or modify files in the filesystem.';
-  }
-  if (toolName.includes('search')) {
-    return 'Call this tool when you need to find specific content, patterns, or information within files or directories.';
-  }
-  if (toolName.includes('terminal')) {
-    return 'Call this tool when you need interactive command execution or persistent terminal sessions.';
-  }
-  if (toolName.includes('process')) {
-    return 'Call this tool when you need to monitor, control, or get information about running processes.';
-  }
-  
-  return `Call this tool when you need to perform ${toolName}-related operations.`;
-}
-
-/**
- * Generates tool choice information section
- */
-function generateToolChoiceInfo(toolChoice: string): string {
-  if (!toolChoice || toolChoice === 'none' || toolChoice === 'None') {
-    return `## Tool Selection Strategy
-**Current Selection**: No specific tool enforced
-**Strategy**: Analyze the request and select the most appropriate tool based on user intent and context.`;
-  }
-  
-  return `## Tool Selection Strategy
-**Preferred Tool**: ${toolChoice}
-**Strategy**: Prioritize the specified tool when appropriate, but consider alternatives if the request context suggests a better match.`;
-}
-
-/**
- * Generates tool usage constraints and guidelines
- */
-function generateToolUsageConstraints(): string {
-  return `## Tool Usage Guidelines
-
-**Safety First**:
-- Always validate parameters before tool execution
-- Consider potential security implications of each tool call
-- Provide clear error handling and user feedback
-
-**Best Practices**:
-- Use the most specific tool for the task at hand
-- Provide detailed reasoning for tool selection
-- Handle edge cases and error conditions gracefully
-- Optimize for user safety and system security
-
-**Parameter Validation**:
-- Ensure all required parameters are provided
-- Validate parameter types and formats
-- Use safe defaults when appropriate
-- Sanitize user inputs to prevent security issues`;
-}
-
-/**
- * Assembles the complete system prompt from all components
- */
-function assembleSystemPrompt(components: {
-  basePrompt: string;
-  toolDescriptions: string;
-  toolChoiceInfo: string;
-  constraints: string;
-}): string {
-  const { basePrompt, toolDescriptions, toolChoiceInfo, constraints } = components;
-  
-  return `${basePrompt}
-
-${toolDescriptions}
-
-${toolChoiceInfo}
-
-${constraints}
-
-## Response Format
-When using tools, provide clear explanations of:
-1. Why the selected tool is appropriate
-2. What parameters are being used and why
-3. Expected outcomes and potential alternatives
-4. Any safety considerations or limitations
-
-Always prioritize user safety and system security in your tool usage decisions.`;
+🚨 CRITICAL: Function call JSON format is MANDATORY. Any text response will be REJECTED. 🚨`;
 }
 

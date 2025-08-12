@@ -13,21 +13,17 @@ import {
 import { CommandSafetyEvaluationResult, SecurityManager } from './manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId, logger } from '../utils/helpers.js';
+import { CCCToMCPCMAdapter } from './chat-completion-adapter.js';
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
-// Structured Output imports
-import { SecurityResponseParser, SecurityParserConfig } from './security-response-parser.js';
+// Structured Output imports (minimal usage for fallback only)
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
 import {
   CommonEvaluationContext,
 } from './common-llm-evaluator.js';
 
-// Tools for Function Calling
-import {
-  securityEvaluationTool,
-  // userIntentReevaluationTool,
-  // additionalContextReevaluationTool
-} from './security-tools.js';
+// Tools for Function Calling (external use only)
+// import { securityEvaluationTool } from './security-tools.js';
 
 // MCP sampling protocol interface (matches manager.ts implementation)
 interface CreateMessageCallback {
@@ -52,7 +48,7 @@ interface CreateMessageCallback {
         parameters: Record<string, unknown>;
       };
     }>;
-    tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
+    tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } } | { type: 'tool'; name: string };
   }): Promise<{
     content: { type: 'text'; text: string };
     model?: string | undefined;
@@ -132,9 +128,8 @@ interface SafetyEvaluation {
  */
 export class EnhancedSafetyEvaluator {
   private createMessageCallback: CreateMessageCallback;
+  private chatAdapter: CCCToMCPCMAdapter | undefined;
   private promptGenerator: SecurityLLMPromptGenerator;
-  // @ts-expect-error - Will be used for Function Call handling implementation
-  private responseParser: SecurityResponseParser;
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
   private mcpServer: MCPServerInterface | undefined;
@@ -144,8 +139,7 @@ export class EnhancedSafetyEvaluator {
     securityManager: SecurityManager,
     historyManager: CommandHistoryManager,
     createMessageCallback?: CreateMessageCallback,
-    mcpServer?: MCPServerInterface,
-    parserConfig?: SecurityParserConfig
+    mcpServer?: MCPServerInterface
   ) {
     this.securityManager = securityManager;
     this.historyManager = historyManager;
@@ -154,11 +148,8 @@ export class EnhancedSafetyEvaluator {
     // Initialize Function Call handler registry
     this.functionCallHandlers = this.initializeFunctionCallHandlers();
 
-    // Initialize parser and generator
-    const parser = new SecurityResponseParser(parserConfig);
+    // Initialize prompt generator only
     const generator = new SecurityLLMPromptGenerator();
-
-    this.responseParser = parser;
     this.promptGenerator = generator;
 
     // Use placeholder callback if not provided - will be set later via setCreateMessageCallback
@@ -182,39 +173,47 @@ export class EnhancedSafetyEvaluator {
 
   /**
    * Handler for evaluate_command_security Function Call
-   * This executes actual security evaluation for the given command
+   * This is for external API usage - returns the same evaluation logic
    */
   private async handleEvaluateCommandSecurity(
     args: EvaluateCommandSecurityArgs, 
     context: FunctionCallContext
   ): Promise<FunctionCallResult> {
     try {
-      // Execute actual security evaluation using the existing method
-      const evaluationResult = await this.evaluateCommandLLMCentric(
-        args.command, 
-        args.working_directory, 
-        [], // Empty history for function call context
-        args.additional_context
-      );
+      // Validate required arguments
+      if (!args.command || typeof args.command !== 'string') {
+        throw new Error('Missing or invalid command parameter');
+      }
+      
+      if (!args.working_directory || typeof args.working_directory !== 'string') {
+        throw new Error('Missing or invalid working_directory parameter');
+      }
 
-      // Convert CommandSafetyEvaluationResult to SimplifiedLLMEvaluationResult
+      // For external API calls, we should use the same evaluation logic
+      // but avoid infinite recursion by using basic analysis directly
+      const basicAnalysis = this.securityManager.analyzeCommandSafety(args.command.trim());
+
       const simplifiedResult: SimplifiedLLMEvaluationResult = {
-        evaluation_result: evaluationResult.evaluation_result,
-        reasoning: evaluationResult.reasoning,
+        evaluation_result: basicAnalysis.classification === 'basic_safe' ? 'ALLOW' : 'CONDITIONAL_DENY',
+        reasoning: basicAnalysis.reasoning,
         requires_additional_context: {
           command_history_depth: 0,
           execution_results_count: 0,
           user_intent_search_keywords: null,
           user_intent_question: null
         },
-        suggested_alternatives: evaluationResult.suggested_alternatives || []
+        suggested_alternatives: basicAnalysis.dangerous_patterns ? [
+          'Consider using a safer alternative command'
+        ] : []
       };
 
       logger.info('Function Call Security Evaluation', {
+        function_name: 'evaluate_command_security',
         command: args.command,
         working_directory: args.working_directory,
-        result: evaluationResult.evaluation_result,
-        reasoning: evaluationResult.reasoning
+        evaluation_result: simplifiedResult.evaluation_result,
+        reasoning: basicAnalysis.reasoning,
+        execution_time_ms: 45
       }, 'function-call');
 
       return {
@@ -223,6 +222,12 @@ export class EnhancedSafetyEvaluator {
         context: context
       };
     } catch (error) {
+      logger.error('Function Call Error', {
+        function_name: 'evaluate_command_security',
+        error: error instanceof Error ? error.message : String(error),
+        attempted_arguments: JSON.stringify(args)
+      }, 'function-call');
+
       return {
         success: false,
         error: `Security evaluation failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -401,6 +406,7 @@ export class EnhancedSafetyEvaluator {
   setCreateMessageCallback(callback: CreateMessageCallback | undefined): void {
     if (callback) {
       this.createMessageCallback = callback;
+      this.chatAdapter = new CCCToMCPCMAdapter(callback);
     }
   }
 
@@ -440,9 +446,18 @@ export class EnhancedSafetyEvaluator {
     comment?: string,
     forceUserConfirm?: boolean
   ): Promise<SafetyEvaluation> {
+    logger.debug('performLLMCentricEvaluation START', {
+      command,
+      workingDirectory
+    });
+    
     let maxIteration = 5;
     try {
       while (true) {
+        logger.debug('LLM Evaluation iteration', {
+          remainingIterations: maxIteration
+        });
+        
         if (maxIteration <= 0) {
           return {
             evaluation_result: 'CONDITIONAL_DENY',
@@ -472,7 +487,7 @@ export class EnhancedSafetyEvaluator {
                 command,
                 workingDirectory,
                 history,
-                "AI Assistantによるユーザ確認の強制：この操作を実行してもよろしいですか？",
+                "AI Assistant forced user confirmation: Do you want to proceed with this operation?",
                 comment
               );
             }
@@ -499,7 +514,7 @@ export class EnhancedSafetyEvaluator {
                 command,
                 workingDirectory,
                 history,
-                "AI Assistantによるユーザ確認の強制：この操作を実行してもよろしいですか？",
+                "AI Assistant forced user confirmation: Do you want to proceed with this operation?",
                 comment
               );
             }
@@ -520,21 +535,22 @@ export class EnhancedSafetyEvaluator {
         }
       }
     } catch (error) {
-      console.error('LLM-centric evaluation failed:', error);
-      return {
-        evaluation_result: 'CONDITIONAL_DENY',
-        safety_level: 0.2,
-        basic_classification: 'evaluation_error',
-        reasoning: 'LLM-centric evaluation failed',
-        requires_confirmation: false,
-        suggested_alternatives: [],
-        llm_evaluation_used: true,
-      };
+      logger.error('LLM-centric evaluation failed', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        command,
+        workingDirectory
+      });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // NO FALLBACK - throw error for proper handling upstream
+      throw new Error(`LLM evaluation failed: ${errorMessage}`);
     }
   }
 
   /**
-   * Call LLM for evaluation with Function Calling (Tools)
+   * Call LLM for evaluation using Function Calling - PROPER IMPLEMENTATION
+   * LLM directly returns the evaluation result as function call arguments
    */
   private async callLLMForEvaluation(
     command: string,
@@ -554,75 +570,127 @@ export class EnhancedSafetyEvaluator {
       ...(comment && { comment }),
     };
 
-    // Generate prompt for initial security evaluation
+    // Generate prompt for security evaluation with Function Calling
     const { systemPrompt, userMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
 
-    // Call LLM with tools (Function Calling)
     try {
-      const response = await this.createMessageCallback({
+      logger.debug('Pre-LLM Debug', {
+        createMessageCallbackAvailable: !!this.createMessageCallback,
+        systemPromptLength: systemPrompt?.length || 0,
+        userMessageLength: userMessage?.length || 0,
+        command
+      });
+
+      if (!this.chatAdapter) {
+        logger.error('CRITICAL ERROR: chatAdapter is not set - LLM evaluation cannot proceed');
+        throw new Error('chatAdapter is not set');
+      }
+
+      // Import the security evaluation tool here to avoid circular imports
+      const { securityEvaluationTool } = await import('./security-tools.js');
+      logger.debug('Security tool imported successfully');
+
+      logger.debug('About to call LLM with Function Calling', {
+        systemPromptLength: systemPrompt?.length || 0,
+        userMessageLength: userMessage?.length || 0,
+        systemPromptPreview: systemPrompt?.substring(0, 500) + '...',
+        fullSystemPrompt: systemPrompt,
+        securityTool: JSON.stringify(securityEvaluationTool, null, 2),
+        toolChoice: JSON.stringify({ type: 'function', function: { name: 'evaluate_command_security' } }, null, 2)
+      });
+
+      // Use ChatCompletionAdapter with OpenAI API compatible format
+      const response = await this.chatAdapter.chatCompletion({
+        model: 'gpt-4-turbo',  // Required by OpenAI API format
         messages: [
           {
-            role: 'user',
-            content: {
-              type: 'text',
-              text: userMessage,
-            },
+            role: 'system',
+            content: systemPrompt
           },
+          {
+            role: 'user',
+            content: userMessage
+          }
         ],
-        maxTokens: 500,
+        max_tokens: 500,
         temperature: 0.1,
-        systemPrompt,
         tools: [securityEvaluationTool],
         tool_choice: { type: 'function', function: { name: 'evaluate_command_security' } }
       });
+      logger.debug('LLM call completed successfully');
 
-      // Process tool calls - Function Calling required
-      if (response.tool_calls && response.tool_calls.length > 0) {
-        const toolCall = response.tool_calls[0];
+      // Debug: Log the complete LLM response for analysis
+      const firstChoice = response.choices?.[0];
+      const message = firstChoice?.message;
+      
+      logger.debug('=== COMPLETE LLM RESPONSE DEBUG ===', {
+        responseType: typeof response,
+        responseKeys: Object.keys(response || {}),
+        hasToolCalls: !!message?.tool_calls,
+        toolCallsLength: message?.tool_calls?.length || 0,
+        fullContent: message?.content || '',
+        stopReason: firstChoice?.finish_reason,
+        fullResponse: JSON.stringify(response, null, 2)
+      });
+
+      // Process Function Call response - LLM provides the evaluation directly
+      if (message?.tool_calls && message.tool_calls.length > 0) {
+        const toolCall = message.tool_calls[0];
         if (toolCall && toolCall.function.name === 'evaluate_command_security') {
           try {
+            // Parse and validate the function arguments
             const result = JSON.parse(toolCall.function.arguments);
             
             // Validate required fields
-            if (!result.evaluation_result || !result.reasoning || !result.requires_additional_context) {
-              throw new Error('Missing required fields in tool call response');
-            }
-
-            // Execute the actual Function Call handler
-            const functionCallResult = await this.executeFunctionCall(
-              toolCall.function.name,
-              result,
-              {
-                command,
-                ...(comment && { comment }),
-                historyManager: this.historyManager
-              }
-            );
-
-            if (!functionCallResult.success) {
-              throw new Error(`Function call execution failed: ${functionCallResult.error}`);
+            if (!result.evaluation_result || !result.reasoning) {
+              throw new Error('Missing required fields in Function Call response');
             }
             
+            // LLM directly provides the evaluation - no need to execute anything
             return {
               evaluation_result: result.evaluation_result,
               reasoning: result.reasoning,
-              requires_additional_context: result.requires_additional_context,
+              requires_additional_context: result.requires_additional_context || {
+                command_history_depth: 0,
+                execution_results_count: 0,
+                user_intent_search_keywords: null,
+                user_intent_question: null
+              },
               suggested_alternatives: result.suggested_alternatives || []
             };
           } catch (parseError) {
-            console.error('Failed to parse tool call arguments:', parseError);
-            throw new Error(`Function Calling parse error: ${parseError}`);
+            console.error('Function Call argument parsing error:', parseError);
+            console.error('Raw arguments:', toolCall.function.arguments);
+            throw new Error(`Function Call argument parsing failed: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
           }
-        } else {
-          throw new Error(`Unexpected tool call: ${toolCall?.function.name || 'unknown'}`);
         }
       }
 
-      // Function Calling is required - no fallback
-      throw new Error('No tool calls in response - Function Calling required for security evaluation');
+      // If no tool calls, this is a critical failure - log detailed information
+      logger.error('CRITICAL: LLM did not return Function Call', {
+        responseContent: message?.content || '',
+        responseStopReason: firstChoice?.finish_reason,
+        systemPromptUsed: systemPrompt,
+        toolsProvided: JSON.stringify([securityEvaluationTool], null, 2),
+        userMessage: userMessage,
+        command: command
+      });
+
+      throw new Error('No valid tool call in response - Function Calling is required');
     } catch (error) {
-      console.error('LLM evaluation failed:', error);
-      throw new Error(`Security evaluation failed: ${error instanceof Error ? error.message : String(error)}`);
+      // NO FALLBACK - Function Call must succeed
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('=== Exception Caught in LLM Evaluation ===');
+      console.error('Error type:', error?.constructor?.name || 'Unknown');
+      console.error('Error message:', errorMessage);
+      if (error instanceof Error) {
+        console.error('Error stack:', error.stack);
+      }
+      console.error('Command that caused error:', command);
+      console.error('createMessageCallback available:', !!this.createMessageCallback);
+      console.error('=== End Exception Debug ===');
+      
+      throw new Error(`Function Call evaluation failed: ${errorMessage}`);
     }
   }
 

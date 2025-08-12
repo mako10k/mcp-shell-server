@@ -11,7 +11,6 @@ import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.j
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { adaptOpenAIRequestToMCP } from './chat-completion-adapter.js';
 
 // MCP Protocol interfaces for type safety
 interface MCPRequest {
@@ -657,53 +656,10 @@ export class SecurityManager {
         );
       }
 
-      // Set up LLM sampling callback if server is provided
-      this.enhancedEvaluator.setCreateMessageCallback(async (params) => {
-        try {
-          // Create CCCRequest format for adaptOpenAIRequestToMCP
-          const cccRequest = {
-            model: 'gpt-4', // Default model
-            messages: [
-              ...(params.systemPrompt ? [{ role: 'system' as const, content: params.systemPrompt }] : []),
-              ...params.messages
-                .filter(msg => msg.role !== 'tool') // Filter out tool messages for compatibility
-                .map(msg => ({
-                  role: msg.role as 'user' | 'assistant', // Type assertion since we filtered out 'tool'
-                  content: msg.content.text
-                }))
-            ],
-            max_tokens: params.maxTokens,
-            temperature: params.temperature,
-            stop: params.stopSequences,
-          };
-
-          // Use adaptOpenAIRequestToMCP to convert the request
-          const mcpParams = adaptOpenAIRequestToMCP(cccRequest);
-
-          // Type cast to match server.createMessage signature
-          const response = await server.createMessage(mcpParams as Parameters<typeof server.createMessage>[0]);
-
-          // Transform MCP response to our expected format
-          return {
-            content: {
-              type: 'text' as const,
-              text: response.content.type === 'text' ? response.content.text : 'Non-text response',
-            },
-            model: response.model,
-            stopReason: response.stopReason,
-          };
-        } catch (error) {
-          // Fallback response on error
-          return {
-            content: {
-              type: 'text' as const,
-              text: 'LLM_EVALUATION_ERROR',
-            },
-            model: undefined,
-            stopReason: undefined,
-          };
-        }
-      });
+      // Note: Enhanced evaluator uses ChatCompletionAdapter internally
+      // Type casting needed due to interface mismatch - enhanced evaluator handles the conversion
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.enhancedEvaluator.setCreateMessageCallback(server.createMessage.bind(server) as any);
 
       // Set up MCP server reference for elicitation (proper MCP protocol)
       this.enhancedEvaluator.setMCPServer({

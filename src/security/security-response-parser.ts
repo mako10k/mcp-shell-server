@@ -1,8 +1,8 @@
 /**
  * Security Response Parser
- * mcp-llm-generator のResponseParserパターンを参考にした
- * 安全性評価専用の型安全なStructured Output解析システム
- * BaseResponseParserを継承して重複コードを削減
+ * Based on ResponseParser pattern from mcp-llm-generator
+ * Type-safe structured output parsing system dedicated to security evaluation
+ * Inherits from BaseResponseParser to reduce code duplication
  */
 
 import { BaseResponseParser, BaseParseResult, BaseParseError } from './base-response-parser.js';
@@ -42,7 +42,7 @@ export class SecurityResponseParser extends BaseResponseParser {
   }
 
   /**
-   * 初回セキュリティ評価のレスポンスを解析
+   * Parse initial security evaluation response
    */
   async parseSecurityEvaluation(
     rawContent: string,
@@ -57,7 +57,7 @@ export class SecurityResponseParser extends BaseResponseParser {
   }
 
   /**
-   * 簡略化されたセキュリティ評価のレスポンスを解析 (新しいスキーマ)
+   * Parse simplified security evaluation response (new schema)
    */
   async parseSimplifiedSecurityEvaluation(
     rawContent: string,
@@ -72,7 +72,7 @@ export class SecurityResponseParser extends BaseResponseParser {
   }
 
   /**
-   * ユーザ意図確認後の再評価レスポンスを解析
+   * Parse re-evaluation response after user intent confirmation
    */
   async parseUserIntentReevaluation(
     rawContent: string,
@@ -82,7 +82,7 @@ export class SecurityResponseParser extends BaseResponseParser {
   }
 
   /**
-   * 追加コンテキスト収集後の再評価レスポンスを解析
+   * Parse re-evaluation response after additional context collection
    */
   async parseAdditionalContextReevaluation(
     rawContent: string,
@@ -92,7 +92,7 @@ export class SecurityResponseParser extends BaseResponseParser {
   }
 
   /**
-   * 簡略化されたセキュリティ評価の追加バリデーション
+   * Additional validation for simplified security evaluation
    */
   private validateSimplifiedSecurityEvaluation(data: unknown): {
     isValid: boolean;
@@ -143,7 +143,7 @@ export class SecurityResponseParser extends BaseResponseParser {
   }
 
   /**
-   * セキュリティ評価の追加バリデーション
+   * Additional validation for security evaluation
    */
   private validateSecurityEvaluation(data: unknown): {
     isValid: boolean;
@@ -165,7 +165,7 @@ export class SecurityResponseParser extends BaseResponseParser {
         });
       }
 
-      // 評価結果とリスク要因の整合性チェック
+      // Consistency check between evaluation result and risk factors
       const evaluation_result = (data as { evaluation_result?: string }).evaluation_result;
       const risk_factors = (data as { risk_factors?: unknown[] }).risk_factors;
       if (evaluation_result === 'ALLOW' && Array.isArray(risk_factors) && risk_factors.length > 0) {
@@ -185,7 +185,7 @@ export class SecurityResponseParser extends BaseResponseParser {
         }
       }
 
-      // DENY評価の信頼度チェック
+      // DENY evaluation confidence check
       if (
         evaluation_result === 'DENY' &&
         typeof (data as { confidence?: number }).confidence === 'number' &&
@@ -206,7 +206,7 @@ export class SecurityResponseParser extends BaseResponseParser {
   }
 
   /**
-   * フォールバック評価を生成
+   * Generate fallback evaluation
    */
   createFallbackEvaluation(error: string): SecurityEvaluationResult {
     return {
