@@ -1,5 +1,41 @@
-import { CreateMessageCallback } from './common-llm-evaluator.js';
 import { z } from 'zod';
+
+// Import CreateMessageCallback from enhanced-evaluator.ts since it supports tools
+interface CreateMessageCallback {
+  (request: {
+    messages: Array<{
+      role: 'user' | 'assistant' | 'tool';
+      content: { type: 'text'; text: string };
+      tool_call_id?: string;
+    }>;
+    maxTokens?: number;
+    temperature?: number;
+    systemPrompt?: string;
+    includeContext?: 'none' | 'thisServer' | 'allServers';
+    stopSequences?: string[];
+    metadata?: Record<string, unknown>;
+    modelPreferences?: Record<string, unknown>;
+    tools?: Array<{
+      type: 'function';
+      function: {
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+      };
+    }>;
+  }): Promise<{
+    content: { type: 'text'; text: string };
+    model?: string | undefined;
+    stopReason?: string | undefined;
+    tool_calls?: Array<{
+      type: 'function';
+      function: {
+        name: string;
+        arguments: string;
+      };
+    }>;
+  }>;
+}
 
 const CCCMessageSchema = z.array(
   z.object({

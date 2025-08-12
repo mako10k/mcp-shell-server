@@ -17,32 +17,7 @@ export const EvaluationResultSchema = z
   .enum(['allow', 'deny', 'add_more_history', 'user_confirm', 'ai_assistant_confirm'])
   .describe('Tool-based evaluation result for security assessment');
 
-// 新しい明確な評価結果スキーマ (統一されました)
-// NOTE: EvaluationResultSchemaと同じ定義なので、そちらを使用することを推奨
-export const NewEvaluationResultSchema = EvaluationResultSchema;
-
-export const FinalEvaluationResultSchema = z
-  .enum(['ALLOW', 'DENY'])
-  .describe('Final command evaluation result after all processing');
 export type EvaluationResult = z.infer<typeof EvaluationResultSchema>;
-export type NewEvaluationResult = z.infer<typeof NewEvaluationResultSchema>;
-export type FinalEvaluationResult = z.infer<typeof FinalEvaluationResultSchema>;
-
-// 新しいLLM評価結果スキーマ (improved clarity)
-export const NewLLMEvaluationResultSchema = z.object({
-  evaluation_result: EvaluationResultSchema,
-  reasoning: z.string(),
-  requires_additional_context: z.object({
-    command_history_depth: z.number().int().min(0).describe('How many more commands back in history to examine (0 = no more needed)'),
-    execution_results_count: z.number().int().min(0).describe('How many recent commands need their execution details'), 
-    user_intent_search_keywords: z.array(z.string()).nullable().describe('Keywords to search for in previous user intent responses'),
-    user_intent_question: z.string().nullable().describe('Specific question to ask user for intent clarification'),
-    assistant_request_message: z.string().nullable().describe('Message to show to AI assistant for additional information or re-execution')
-  }),
-  suggested_alternatives: z.array(z.string())
-});
-
-export type NewLLMEvaluationResult = z.infer<typeof NewLLMEvaluationResultSchema>;
 
 // 従来のLLM評価結果スキーマ (backward compatibility - 統一されました)
 export const SimplifiedLLMEvaluationResultSchema = z.object({
