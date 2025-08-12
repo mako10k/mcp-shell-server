@@ -208,23 +208,4 @@ export class SecurityResponseParser extends BaseResponseParser {
   /**
    * Generate fallback evaluation
    */
-  createFallbackEvaluation(error: string): SecurityEvaluationResult {
-    return {
-      evaluation_result: 'NEED_ASSISTANT_CONFIRM',
-      reasoning: `LLM response parsing failed: ${error}. Defaulting to safe evaluation requiring assistant confirmation.`,
-      risk_factors: [
-        {
-          category: 'unclear_intent',
-          description: 'Unable to properly evaluate command due to parsing failure',
-          severity: 'medium',
-        },
-      ],
-      metadata: {
-        requires_additional_context: false,
-        requires_user_intent: false,
-        suggested_alternatives: [],
-        safety_level: 3,
-      },
-    };
-  }
 }

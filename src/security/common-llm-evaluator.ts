@@ -116,9 +116,9 @@ export class CommonLLMEvaluator {
           parseResult.metadata.parseTime
         );
       } else {
-        // フォールバック: 従来のパース方法
-        console.warn('Structured Output parsing failed, using fallback:', parseResult.errors);
-        return this.createFallbackEvaluation(response.content.text, response.model);
+        // Structured Output解析が失敗した場合はエラーとして扱う
+        const errorMessage = parseResult.errors?.map(e => e.message).join(', ') || 'Unknown parsing error';
+        throw new Error(`Structured Output parsing failed: ${errorMessage}`);
       }
     } catch (error) {
       console.error('LLM evaluation failed:', error);
@@ -155,43 +155,6 @@ export class CommonLLMEvaluator {
       llm_reasoning,
       model: model || 'unknown',
       evaluation_time_ms: eval_time,
-    };
-  }
-
-  /**
-   * フォールバック評価（従来のパース方法）
-   */
-  protected createFallbackEvaluation(
-    rawResponse: string,
-    model?: string
-  ): CommonLLMEvaluationResult {
-    const llmResponse = rawResponse.trim().toUpperCase();
-    let evaluation_result: EvaluationResult;
-
-    // 共通のパースロジック - 新しい評価システム対応
-    if (llmResponse.includes('NEED_MORE_HISTORY')) {
-      evaluation_result = 'add_more_history'; // Updated mapping
-    } else if (llmResponse.includes('NEED_USER_CONFIRM')) {
-      evaluation_result = 'user_confirm'; // Updated mapping
-    } else if (llmResponse.includes('NEED_ASSISTANT_CONFIRM')) {
-      evaluation_result = 'ai_assistant_confirm'; // Updated mapping
-    } else if (llmResponse.includes('ELICIT_USER_INTENT') || llmResponse.includes('user_intent_question')) {
-      evaluation_result = 'user_confirm'; // Map legacy to user confirm
-    } else if (llmResponse.includes('DENY')) {
-      evaluation_result = 'deny';
-    } else if (llmResponse.includes('ALLOW')) {
-      evaluation_result = 'allow';
-    } else {
-      // Default to safe denial for unclear responses
-      evaluation_result = 'ai_assistant_confirm';
-      console.warn('LLM evaluation response unclear, defaulting to ai_assistant_confirm:', llmResponse);
-    }
-
-    return {
-      evaluation_result,
-      llm_reasoning: rawResponse,
-      model: model || 'unknown',
-      evaluation_time_ms: Date.now(),
     };
   }
 
