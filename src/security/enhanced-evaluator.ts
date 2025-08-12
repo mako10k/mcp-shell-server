@@ -92,6 +92,16 @@ interface MCPServerInterface {
   ): Promise<unknown>;
 }
 
+// Tool call interface for OpenAI API compatibility
+interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 // LLM evaluation result (using simplified structure)
 // Enhanced LLM evaluation result interface that supports new function-based tools
 interface LLMEvaluationResult {
@@ -133,7 +143,7 @@ interface UserIntentData {
 
 // Safety evaluation result
 interface SafetyEvaluation {
-  evaluation_result: 'ALLOW' | 'DENY' | 'NEED_MORE_HISTORY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM'; // Legacy format for external compatibility
+  evaluation_result: 'allow' | 'deny' | 'add_more_history' | 'user_confirm' | 'ai_assistant_confirm'; // Function-based evaluation results
   // Removed safety_level property as requested
   basic_classification: string;
   reasoning: string;
@@ -157,23 +167,6 @@ export class EnhancedSafetyEvaluator {
   private historyManager: CommandHistoryManager;
   private mcpServer: MCPServerInterface | undefined;
   private functionCallHandlers: FunctionCallHandlerRegistry;
-
-  // Helper function to convert legacy result to tool-based result
-  private convertLegacyToToolResult(legacyResult: string): 'allow' | 'deny' | 'user_confirm' | 'add_more_history' | 'ai_assistant_confirm' {
-    const conversionMap: { [key: string]: 'allow' | 'deny' | 'user_confirm' | 'add_more_history' | 'ai_assistant_confirm' } = {
-      'ALLOW': 'allow',
-      'DENY': 'deny',
-      'NEED_USER_CONFIRM': 'user_confirm',
-      'NEED_MORE_HISTORY': 'add_more_history',
-      'NEED_ASSISTANT_CONFIRM': 'ai_assistant_confirm'
-    };
-    
-    const converted = conversionMap[legacyResult];
-    if (!converted) {
-      throw new Error(`Unknown legacy result: ${legacyResult}`);
-    }
-    return converted;
-  }
 
   constructor(
     securityManager: SecurityManager,
@@ -550,7 +543,7 @@ export class EnhancedSafetyEvaluator {
         
         if (maxIteration <= 0) {
           return {
-            evaluation_result: 'NEED_USER_CONFIRM',
+            evaluation_result: 'user_confirm',
             basic_classification: 'timeout_fallback',
             reasoning: 'Maximum iterations reached - fallback to safe denial',
             requires_confirmation: true,
@@ -618,7 +611,7 @@ export class EnhancedSafetyEvaluator {
                 messagesCount: messages.length
               });
               return {
-                evaluation_result: 'NEED_USER_CONFIRM',
+                evaluation_result: 'user_confirm',
                 basic_classification: 'elicitation_limit_exceeded',
                 reasoning: 'ELICITATION already attempted for user confirmation - defaulting to safe denial',
                 requires_confirmation: true,
@@ -645,7 +638,7 @@ export class EnhancedSafetyEvaluator {
             const assistantMessage = llmResult.assistant_request_message || 
                                    llmResult.reasoning;
             return {
-              evaluation_result: 'NEED_ASSISTANT_CONFIRM',
+              evaluation_result: 'ai_assistant_confirm',
               basic_classification: 'assistant_info_required',
               reasoning: assistantMessage,
               requires_confirmation: true,
@@ -654,7 +647,7 @@ export class EnhancedSafetyEvaluator {
             };
 
           // Handle requests for assistant confirmation
-          case 'NEED_ASSISTANT_CONFIRM':
+          case 'ai_assistant_confirm':
             // Add LLM's response to message chain before processing
             messages.push({
               role: 'assistant',
@@ -671,7 +664,7 @@ export class EnhancedSafetyEvaluator {
                   messagesCount: messages.length
                 });
                 return {
-                  evaluation_result: 'NEED_USER_CONFIRM',
+                  evaluation_result: 'user_confirm',
                   basic_classification: 'elicitation_limit_exceeded',
                   reasoning: 'ELICITATION already attempted in forceUserConfirm - defaulting to safe denial',
                   requires_confirmation: true,
@@ -699,7 +692,7 @@ export class EnhancedSafetyEvaluator {
                   user_intent_question: llmResult.requires_additional_context.user_intent_question
                 });
                 return {
-                  evaluation_result: 'NEED_USER_CONFIRM',
+                  evaluation_result: 'user_confirm',
                   basic_classification: 'elicitation_limit_exceeded',
                   reasoning: 'ELICITATION already attempted for user intent - defaulting to safe denial',
                   requires_confirmation: true,
@@ -719,7 +712,7 @@ export class EnhancedSafetyEvaluator {
             
             return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
 
-          case 'NEED_MORE_HISTORY':
+          case 'add_more_history':
             // Handle requests for additional command history
             messages.push({
               role: 'assistant',
@@ -750,7 +743,7 @@ export class EnhancedSafetyEvaluator {
               reasoning: llmResult.reasoning
             });
             return {
-              evaluation_result: 'NEED_USER_CONFIRM',
+              evaluation_result: 'user_confirm',
               basic_classification: 'unknown_response',
               reasoning: `Unknown LLM response: ${llmResult.evaluation_result} - defaulting to safe denial`,
               requires_confirmation: true,
@@ -843,65 +836,44 @@ export class EnhancedSafetyEvaluator {
         const toolCall = message.tool_calls[0];
         const toolName = toolCall?.function?.name;
         
-        // Handle new individual evaluation tools
-        if (toolName && ['allow', 'deny', 'user_confirm', 'add_more_history', 'ai_assistant_confirm'].includes(toolName)) {
-          try {
-            // Parse and validate the function arguments with JSON repair fallback
-            const rawArgs = toolCall.function.arguments;
-            let result;
-            
-            try {
-              result = JSON.parse(rawArgs);
-            } catch (parseError) {
-              // Try JSON repair as fallback
-              logger.warn(`JSON parse failed, attempting repair. Error: ${parseError}. Raw: ${rawArgs.substring(0, 200)}...`);
-              
-              const repairResult = repairAndParseJson(rawArgs);
-              if (repairResult.success) {
-                result = repairResult.value;
-                logger.info(`JSON repair successful after ${repairResult.repairAttempts?.length || 0} attempts`);
-              } else {
-                throw new Error(`JSON parse and repair failed. Original error: ${parseError}. Repair attempts: ${repairResult.repairAttempts?.length || 0}. Final error: ${repairResult.finalError}. Repair details: ${JSON.stringify(repairResult.repairAttempts || [])}. Raw: ${rawArgs.substring(0, 200)}...`);
-              }
-            }
-            
-            // Tool name already matches internal evaluation result format
-            const evaluationResult = toolName as 'allow' | 'deny' | 'user_confirm' | 'add_more_history' | 'ai_assistant_confirm';
-            
-            // Expand $COMMAND variable in reasoning before returning
-            const expandedReasoning = this.expandCommandVariable(result.reasoning, command);
-            
-            // Prepare the result object with evaluation_result from tool name
-            const evaluationResponse: LLMEvaluationResult = {
-              evaluation_result: evaluationResult,
-              reasoning: expandedReasoning,
-              // Copy specific fields based on tool type
-              command_history_depth: result.command_history_depth,
-              execution_results_count: result.execution_results_count,
-              user_intent_search_keywords: result.user_intent_search_keywords,
-              confirmation_question: result.confirmation_question,
-              assistant_request_message: result.assistant_request_message,
-              suggested_alternatives: result.suggested_alternatives || []
-            };
-            
-            // Validate required fields
-            const missingFields = [];
-            if (!evaluationResponse.evaluation_result) missingFields.push('evaluation_result');
-            if (!evaluationResponse.reasoning) missingFields.push('reasoning');
-            
-            // If basic fields are missing, this is a critical Function Call failure
-            if (missingFields.length > 0) {
-              throw new Error(`Function Call missing required fields: ${missingFields.join(', ')}. Received: ${Object.keys(evaluationResponse).join(', ')}`);
-            }
-            
-            // Return the properly typed result
-            return evaluationResponse;
-          } catch (parseError) {
-            console.error('Function Call argument parsing error:', parseError);
-            console.error('Raw arguments:', toolCall.function.arguments);
-            throw new Error(`Function Call argument parsing failed: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
-          }
+        // Ensure toolCall is not undefined
+        if (!toolCall) {
+          throw new Error('Tool call is undefined');
         }
+        
+        // Early return with ToolHandler pattern for each evaluation tool
+        if (toolName === 'allow') {
+          return await this.handleAllowTool(toolCall, command);
+        }
+        
+        if (toolName === 'deny') {
+          return await this.handleDenyTool(toolCall, command);
+        }
+        
+        if (toolName === 'user_confirm') {
+          return await this.handleUserConfirmTool(toolCall, command);
+        }
+        
+        if (toolName === 'add_more_history') {
+          return await this.handleAddMoreHistoryTool(toolCall, command);
+        }
+        
+        if (toolName === 'ai_assistant_confirm') {
+          return await this.handleAiAssistantConfirmTool(toolCall, command);
+        }
+        
+        // If tool is not recognized, log and fallback
+        logger.warn('Unknown tool call received from LLM', {
+          toolName,
+          availableTools: ['allow', 'deny', 'user_confirm', 'add_more_history', 'ai_assistant_confirm'],
+          command
+        });
+        
+        return {
+          evaluation_result: 'deny',
+          reasoning: `Unknown evaluation tool: ${toolName}. Defaulting to denial for security.`,
+          suggested_alternatives: []
+        };
       }
       
       // Handle edge case: LLM returns tool_calls in content field as JSON string
@@ -1178,32 +1150,9 @@ This command has been flagged for review. Please provide your intent:
    * Convert SafetyEvaluation to CommandSafetyEvaluationResult
    */
   private convertToCommandSafetyResult(safetyEval: SafetyEvaluation): CommandSafetyEvaluationResult {
-    // Use tool-based evaluation results directly
-    let evaluation_result: 'allow' | 'deny' | 'user_confirm' | 'ai_assistant_confirm' | 'add_more_history';
-    
-    switch (safetyEval.evaluation_result) {
-      case 'allow':
-        evaluation_result = 'allow';
-        break;
-      case 'deny':
-        evaluation_result = 'deny';
-        break;
-      case 'add_more_history':
-        evaluation_result = 'add_more_history';
-        break;
-      case 'user_confirm':
-        evaluation_result = 'user_confirm';
-        break;
-      case 'ai_assistant_confirm':
-        evaluation_result = 'ai_assistant_confirm';
-        break;
-      default:
-        evaluation_result = 'user_confirm';
-        break;
-    }
-
+    // Function-based evaluation results are used directly
     const result: CommandSafetyEvaluationResult = {
-      evaluation_result,
+      evaluation_result: safetyEval.evaluation_result,
       reasoning: safetyEval.reasoning,
       requires_confirmation: safetyEval.requires_confirmation,
       suggested_alternatives: safetyEval.suggested_alternatives,
@@ -1231,36 +1180,30 @@ This command has been flagged for review. Please provide your intent:
     llmResult: LLMEvaluationResult,
     classification: string
   ): SafetyEvaluation {
-    // Map new evaluation results to legacy format for compatibility
-    let legacyResult: 'ALLOW' | 'DENY' | 'NEED_MORE_HISTORY' | 'NEED_USER_CONFIRM' | 'NEED_ASSISTANT_CONFIRM';
+    // Use function-based evaluation results directly - no legacy conversion needed
     let requiresConfirmation = false;
     
     switch (llmResult.evaluation_result) {
       case 'allow':
-        legacyResult = 'ALLOW';
-        break;
       case 'deny':
-        legacyResult = 'DENY';
+        requiresConfirmation = false;
         break;
       case 'add_more_history':
-        legacyResult = 'NEED_MORE_HISTORY';
+        requiresConfirmation = false;
         break;
       case 'user_confirm':
-        legacyResult = 'NEED_USER_CONFIRM';
         requiresConfirmation = true;
         break;
       case 'ai_assistant_confirm':
-        legacyResult = 'NEED_ASSISTANT_CONFIRM';
         requiresConfirmation = false; // AI assistant needs to provide info, not user confirmation
         break;
       default:
-        legacyResult = 'NEED_ASSISTANT_CONFIRM';
         requiresConfirmation = false;
         break;
     }
     
     return {
-      evaluation_result: legacyResult,
+      evaluation_result: llmResult.evaluation_result,
       basic_classification: classification,
       reasoning: llmResult.reasoning,
       requires_confirmation: requiresConfirmation,
@@ -1270,11 +1213,159 @@ This command has been flagged for review. Please provide your intent:
   }
 
   /**
+   * ToolHandler: Handle 'allow' tool - command is safe to execute
+   */
+  private async handleAllowTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+    try {
+      const result = await this.parseToolArguments(toolCall, ['reasoning']);
+      const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'Command allowed';
+      const expandedReasoning = this.expandCommandVariable(reasoning, command);
+      
+      return {
+        evaluation_result: 'allow',
+        reasoning: expandedReasoning,
+        suggested_alternatives: []
+      };
+    } catch (error) {
+      logger.error('Failed to handle allow tool', { error, command });
+      throw error;
+    }
+  }
+
+  /**
+   * ToolHandler: Handle 'deny' tool - command is too dangerous
+   */
+  private async handleDenyTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+    try {
+      const result = await this.parseToolArguments(toolCall, ['reasoning', 'suggested_alternatives']);
+      const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'Command denied';
+      const expandedReasoning = this.expandCommandVariable(reasoning, command);
+      const alternatives = Array.isArray(result['suggested_alternatives']) ? result['suggested_alternatives'] : [];
+      
+      return {
+        evaluation_result: 'deny',
+        reasoning: expandedReasoning,
+        suggested_alternatives: alternatives
+      };
+    } catch (error) {
+      logger.error('Failed to handle deny tool', { error, command });
+      throw error;
+    }
+  }
+
+  /**
+   * ToolHandler: Handle 'user_confirm' tool - requires user confirmation
+   */
+  private async handleUserConfirmTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+    try {
+      const result = await this.parseToolArguments(toolCall, ['reasoning', 'confirmation_question']);
+      const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'Requires confirmation';
+      const expandedReasoning = this.expandCommandVariable(reasoning, command);
+      const question = typeof result['confirmation_question'] === 'string' ? result['confirmation_question'] : 'Do you want to proceed?';
+      
+      return {
+        evaluation_result: 'user_confirm',
+        reasoning: expandedReasoning,
+        confirmation_question: question,
+        suggested_alternatives: []
+      };
+    } catch (error) {
+      logger.error('Failed to handle user_confirm tool', { error, command });
+      throw error;
+    }
+  }
+
+  /**
+   * ToolHandler: Handle 'add_more_history' tool - needs additional context
+   */
+  private async handleAddMoreHistoryTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+    try {
+      const result = await this.parseToolArguments(toolCall, ['reasoning', 'command_history_depth']);
+      const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'Need more context';
+      const expandedReasoning = this.expandCommandVariable(reasoning, command);
+      const historyDepth = typeof result['command_history_depth'] === 'number' ? result['command_history_depth'] : 0;
+      const resultsCount = typeof result['execution_results_count'] === 'number' ? result['execution_results_count'] : 0;
+      const keywords = Array.isArray(result['user_intent_search_keywords']) ? result['user_intent_search_keywords'] : [];
+      
+      return {
+        evaluation_result: 'add_more_history',
+        reasoning: expandedReasoning,
+        command_history_depth: historyDepth,
+        execution_results_count: resultsCount,
+        user_intent_search_keywords: keywords,
+        suggested_alternatives: []
+      };
+    } catch (error) {
+      logger.error('Failed to handle add_more_history tool', { error, command });
+      throw error;
+    }
+  }
+
+  /**
+   * ToolHandler: Handle 'ai_assistant_confirm' tool - needs AI assistant info
+   */
+  private async handleAiAssistantConfirmTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+    try {
+      const result = await this.parseToolArguments(toolCall, ['reasoning', 'assistant_request_message']);
+      const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'AI assistant confirmation needed';
+      const expandedReasoning = this.expandCommandVariable(reasoning, command);
+      const message = typeof result['assistant_request_message'] === 'string' ? result['assistant_request_message'] : 'Please provide additional information';
+      
+      return {
+        evaluation_result: 'ai_assistant_confirm',
+        reasoning: expandedReasoning,
+        assistant_request_message: message,
+        suggested_alternatives: []
+      };
+    } catch (error) {
+      logger.error('Failed to handle ai_assistant_confirm tool', { error, command });
+      throw error;
+    }
+  }
+
+  /**
+   * Helper: Parse and validate tool arguments with JSON repair fallback
+   */
+  private async parseToolArguments(toolCall: ToolCall, requiredFields: string[]): Promise<Record<string, unknown>> {
+    const rawArgs = toolCall.function.arguments;
+    let result;
+    
+    try {
+      result = JSON.parse(rawArgs);
+    } catch (parseError) {
+      // Try JSON repair as fallback
+      logger.warn(`JSON parse failed, attempting repair. Error: ${parseError}. Raw: ${rawArgs.substring(0, 200)}...`);
+      
+      const repairResult = repairAndParseJson(rawArgs);
+      if (repairResult.success) {
+        result = repairResult.value;
+        logger.info(`JSON repair successful after ${repairResult.repairAttempts?.length || 0} attempts`);
+      } else {
+        throw new Error(`JSON parse and repair failed. Original error: ${parseError}. Repair attempts: ${repairResult.repairAttempts?.length || 0}. Final error: ${repairResult.finalError}`);
+      }
+    }
+    
+    // Validate required fields
+    const missingFields = [];
+    for (const field of requiredFields) {
+      if (!result[field]) {
+        missingFields.push(field);
+      }
+    }
+    
+    if (missingFields.length > 0) {
+      throw new Error(`Tool call missing required fields: ${missingFields.join(', ')}. Received: ${Object.keys(result).join(', ')}`);
+    }
+    
+    return result;
+  }
+
+  /**
    * Expand $COMMAND variable in text with the actual command
    */
   private expandCommandVariable(text: string, command: string): string {
     if (!text || !command) {
-      return text;
+      return text || '';
     }
     
     // Replace all instances of $COMMAND with the actual command

@@ -134,7 +134,7 @@ export class CommonLLMEvaluator {
     model?: string,
     parseTime?: number
   ): CommonLLMEvaluationResult {
-    let evaluation_result: EvaluationResult = 'NEED_ASSISTANT_CONFIRM'; // Updated default
+    let evaluation_result: EvaluationResult = 'ai_assistant_confirm'; // Updated default
     let llm_reasoning = 'No reasoning provided';
     let eval_time = Date.now();
     if (typeof data === 'object' && data !== null) {
@@ -144,7 +144,7 @@ export class CommonLLMEvaluator {
         confidence?: number;
         reasoning?: string;
       };
-      evaluation_result = d.evaluation_result || d.final_evaluation || 'NEED_ASSISTANT_CONFIRM'; // Updated default
+      evaluation_result = d.evaluation_result || d.final_evaluation || 'ai_assistant_confirm'; // Updated default
       llm_reasoning = d.reasoning ?? 'No reasoning provided';
     }
     if (typeof parseTime === 'number') {
@@ -170,21 +170,21 @@ export class CommonLLMEvaluator {
 
     // 共通のパースロジック - 新しい評価システム対応
     if (llmResponse.includes('NEED_MORE_HISTORY')) {
-      evaluation_result = 'NEED_MORE_HISTORY'; // Updated mapping
+      evaluation_result = 'add_more_history'; // Updated mapping
     } else if (llmResponse.includes('NEED_USER_CONFIRM')) {
-      evaluation_result = 'NEED_USER_CONFIRM'; // Updated mapping
+      evaluation_result = 'user_confirm'; // Updated mapping
     } else if (llmResponse.includes('NEED_ASSISTANT_CONFIRM')) {
-      evaluation_result = 'NEED_ASSISTANT_CONFIRM'; // Updated mapping
+      evaluation_result = 'ai_assistant_confirm'; // Updated mapping
     } else if (llmResponse.includes('ELICIT_USER_INTENT') || llmResponse.includes('user_intent_question')) {
-      evaluation_result = 'NEED_USER_CONFIRM'; // Map legacy to user confirm
+      evaluation_result = 'user_confirm'; // Map legacy to user confirm
     } else if (llmResponse.includes('DENY')) {
-      evaluation_result = 'DENY';
+      evaluation_result = 'deny';
     } else if (llmResponse.includes('ALLOW')) {
-      evaluation_result = 'ALLOW';
+      evaluation_result = 'allow';
     } else {
       // Default to safe denial for unclear responses
-      evaluation_result = 'NEED_ASSISTANT_CONFIRM';
-      console.warn('LLM evaluation response unclear, defaulting to NEED_ASSISTANT_CONFIRM:', llmResponse);
+      evaluation_result = 'ai_assistant_confirm';
+      console.warn('LLM evaluation response unclear, defaulting to ai_assistant_confirm:', llmResponse);
     }
 
     return {
@@ -306,7 +306,7 @@ export class CommonLLMEvaluator {
    */
   createErrorEvaluation(errorMessage: string, model: string = 'error'): CommonLLMEvaluationResult {
     return {
-      evaluation_result: 'NEED_ASSISTANT_CONFIRM', // Updated - maps to assistant confirmation
+      evaluation_result: 'ai_assistant_confirm', // Updated - maps to assistant confirmation
       llm_reasoning: `Evaluation failed: ${errorMessage}`,
       model,
       evaluation_time_ms: Date.now(),
