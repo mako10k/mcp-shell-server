@@ -715,8 +715,7 @@ export class SecurityManager {
   async evaluateCommandSafetyByEnhancedEvaluator(
     command: string,
     workingDirectory: string,
-    comment?: string,
-    forceUserConfirm?: boolean
+    comment?: string
   ): Promise<CommandSafetyEvaluationResult> {
     if (!this.enhancedConfig.enhanced_mode_enabled) {
       throw new Error('Enhanced mode is not enabled');
@@ -725,6 +724,6 @@ export class SecurityManager {
     if (!this.enhancedEvaluator) {
       throw new Error('Enhanced evaluator not initialized');
     }
-    return await this.enhancedEvaluator.evaluateCommandLLMCentric(command, workingDirectory, [], comment, forceUserConfirm);
+    return await this.enhancedEvaluator.evaluateCommandLLMCentric(command, workingDirectory, [], comment);
   }
 }

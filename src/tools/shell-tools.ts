@@ -81,8 +81,7 @@ export class ShellTools {
         safetyEvaluation = await this.securityManager.evaluateCommandSafetyByEnhancedEvaluator(
           params.command,
           workingDir,
-          params.comment,
-          params.force_user_confirm // Pass force_user_confirm flag
+          params.comment
         );
 
         // Handle evaluation results with strict safety guards

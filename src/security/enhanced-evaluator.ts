@@ -454,15 +454,13 @@ export class EnhancedSafetyEvaluator {
     command: string,
     workingDirectory: string,
     history: CommandHistoryEntry[],
-    comment?: string,
-    forceUserConfirm?: boolean
+    comment?: string
   ): Promise<CommandSafetyEvaluationResult> {
     const result = await this.performLLMCentricEvaluation(
       command,
       workingDirectory,
       history,
-      comment,
-      forceUserConfirm
+      comment
     );
     
     // Convert SafetyEvaluation to CommandSafetyEvaluationResult
@@ -501,8 +499,7 @@ export class EnhancedSafetyEvaluator {
     command: string,
     workingDirectory: string,
     history: CommandHistoryEntry[],
-    comment?: string,
-    forceUserConfirm?: boolean
+    comment?: string
   ): Promise<SafetyEvaluation> {
     logger.debug('performLLMCentricEvaluation START', {
       command,
@@ -543,10 +540,10 @@ export class EnhancedSafetyEvaluator {
         
         if (maxIteration <= 0) {
           return {
-            evaluation_result: 'user_confirm',
+            evaluation_result: 'deny',
             basic_classification: 'timeout_fallback',
             reasoning: 'Maximum iterations reached - fallback to safe denial',
-            requires_confirmation: true,
+            requires_confirmation: false,
             suggested_alternatives: [],
             llm_evaluation_used: true,
           };
@@ -555,17 +552,53 @@ export class EnhancedSafetyEvaluator {
         
         const llmResult = await this.callLLMForEvaluationWithMessages(messages, promptContext.command);
 
+        // ToolHandler pattern with early returns - clean architecture
         switch (llmResult.evaluation_result) {
           case 'allow':
           case 'deny':
-            // Add LLM's response to message chain before processing
+            // Early return - no message chain manipulation needed for final decisions
+            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
+
+          case 'user_confirm':
+            // CRITICAL: Check ELICITATION limit
+            if (hasElicitationBeenAttempted) {
+              logger.warn('user_confirm ELICITATION blocked - already attempted', {
+                command,
+                messagesCount: messages.length
+              });
+              return {
+                evaluation_result: 'deny',
+                basic_classification: 'elicitation_limit_exceeded',
+                reasoning: 'ELICITATION already attempted for user confirmation - defaulting to safe denial',
+                requires_confirmation: false,
+                suggested_alternatives: [],
+                llm_evaluation_used: true,
+              };
+            }
+            
+            // Add LLM's response to message chain before processing elicitation
             messages.push({
               role: 'assistant',
               content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
               timestamp: getCurrentTimestamp()
             });
             
-            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
+            hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
+            const userConfirmQuestion = llmResult.confirmation_question || 
+                               "Do you want to proceed with this operation?";
+            await this.handleElicitationInLoop(command, userConfirmQuestion, messages);
+            continue; // Continue loop with elicitation result
+
+          case 'ai_assistant_confirm':
+            // Early return for assistant confirmation - no loop continuation needed
+            return {
+              evaluation_result: 'ai_assistant_confirm',
+              basic_classification: 'assistant_info_required',
+              reasoning: llmResult.assistant_request_message || llmResult.reasoning,
+              requires_confirmation: true,
+              suggested_alternatives: llmResult.suggested_alternatives || [],
+              llm_evaluation_used: true,
+            };
 
           case 'add_more_history':
             // Add LLM's response to message chain before handling additional context
@@ -596,145 +629,6 @@ export class EnhancedSafetyEvaluator {
             }
             continue; // Continue loop with additional context
 
-          case 'user_confirm':
-            // Add LLM's response to message chain before processing
-            messages.push({
-              role: 'assistant',
-              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
-              timestamp: getCurrentTimestamp()
-            });
-            
-            // CRITICAL: Check ELICITATION limit
-            if (hasElicitationBeenAttempted) {
-              logger.warn('user_confirm ELICITATION blocked - already attempted', {
-                command,
-                messagesCount: messages.length
-              });
-              return {
-                evaluation_result: 'user_confirm',
-                basic_classification: 'elicitation_limit_exceeded',
-                reasoning: 'ELICITATION already attempted for user confirmation - defaulting to safe denial',
-                requires_confirmation: true,
-                suggested_alternatives: [],
-                llm_evaluation_used: true,
-              };
-            }
-            
-            hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
-            const userQuestion = llmResult.confirmation_question || 
-                               "Do you want to proceed with this operation?";
-            await this.handleElicitationInLoop(command, userQuestion, messages);
-            continue; // Continue loop with elicitation result
-
-          case 'ai_assistant_confirm':
-            // Add LLM's response to message chain before processing
-            messages.push({
-              role: 'assistant',
-              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
-              timestamp: getCurrentTimestamp()
-            });
-            
-            // Return with assistant request message for the calling system to handle
-            const assistantMessage = llmResult.assistant_request_message || 
-                                   llmResult.reasoning;
-            return {
-              evaluation_result: 'ai_assistant_confirm',
-              basic_classification: 'assistant_info_required',
-              reasoning: assistantMessage,
-              requires_confirmation: true,
-              suggested_alternatives: llmResult.suggested_alternatives || [],
-              llm_evaluation_used: true,
-            };
-
-          // Handle requests for assistant confirmation
-          case 'ai_assistant_confirm':
-            // Add LLM's response to message chain before processing
-            messages.push({
-              role: 'assistant',
-              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
-              timestamp: getCurrentTimestamp()
-            });
-            
-            // If force user confirm is enabled, add elicitation to messages and continue
-            if (forceUserConfirm) {
-              // CRITICAL: Check ELICITATION limit
-              if (hasElicitationBeenAttempted) {
-                logger.warn('forceUserConfirm ELICITATION blocked - already attempted', {
-                  command,
-                  messagesCount: messages.length
-                });
-                return {
-                  evaluation_result: 'user_confirm',
-                  basic_classification: 'elicitation_limit_exceeded',
-                  reasoning: 'ELICITATION already attempted in forceUserConfirm - defaulting to safe denial',
-                  requires_confirmation: true,
-                  suggested_alternatives: [],
-                  llm_evaluation_used: true,
-                };
-              }
-              
-              hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
-              await this.handleElicitationInLoop(
-                command,
-                "AI Assistant forced user confirmation: Do you want to proceed with this operation?",
-                messages
-              );
-              continue; // Continue loop with elicitation result
-            }
-            
-            // Check for user intent question in the new schema structure
-            if (llmResult.requires_additional_context?.user_intent_question) {
-              // CRITICAL: Check ELICITATION limit
-              if (hasElicitationBeenAttempted) {
-                logger.warn('user_intent_question ELICITATION blocked - already attempted', {
-                  command,
-                  messagesCount: messages.length,
-                  user_intent_question: llmResult.requires_additional_context.user_intent_question
-                });
-                return {
-                  evaluation_result: 'user_confirm',
-                  basic_classification: 'elicitation_limit_exceeded',
-                  reasoning: 'ELICITATION already attempted for user intent - defaulting to safe denial',
-                  requires_confirmation: true,
-                  suggested_alternatives: [],
-                  llm_evaluation_used: true,
-                };
-              }
-              
-              hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
-              await this.handleElicitationInLoop(
-                command,
-                llmResult.requires_additional_context.user_intent_question,
-                messages
-              );
-              continue; // Continue loop with elicitation result
-            }
-            
-            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
-
-          case 'add_more_history':
-            // Handle requests for additional command history
-            messages.push({
-              role: 'assistant',
-              content: `Evaluation result: ${llmResult.evaluation_result}\nReasoning: ${llmResult.reasoning}`,
-              timestamp: getCurrentTimestamp()
-            });
-            
-            // Handle additional context requests by modifying messages
-            if (llmResult.requires_additional_context) {
-              await this.handleAdditionalContextRequest(llmResult.requires_additional_context, messages);
-            } else {
-              // If no specific context is requested but we got NEED_MORE_HISTORY, 
-              // add a note that we're proceeding with current information
-              messages.push({
-                role: 'user',
-                content: 'No additional context available. Please proceed with evaluation based on current information or provide a definitive decision.',
-                timestamp: getCurrentTimestamp(),
-                type: 'history'
-              });
-            }
-            continue; // Continue loop with additional context
-
           default:
             // Fallback for unknown results
             logger.warn('Unknown LLM evaluation result', {
@@ -743,10 +637,10 @@ export class EnhancedSafetyEvaluator {
               reasoning: llmResult.reasoning
             });
             return {
-              evaluation_result: 'user_confirm',
+              evaluation_result: 'ai_assistant_confirm',
               basic_classification: 'unknown_response',
-              reasoning: `Unknown LLM response: ${llmResult.evaluation_result} - defaulting to safe denial`,
-              requires_confirmation: true,
+              reasoning: `Unknown LLM response: ${llmResult.evaluation_result} - requesting AI assistant clarification`,
+              requires_confirmation: false,
               suggested_alternatives: [],
               llm_evaluation_used: true,
             };
