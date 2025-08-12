@@ -662,6 +662,7 @@ export class EnhancedSafetyEvaluator {
 
   /**
    * Call LLM for evaluation using message-based approach
+   * Responsibility: Pure LLM communication and ToolCall parsing only
    */
   private async callLLMForEvaluationWithMessages(
     messages: Array<{
@@ -725,7 +726,7 @@ export class EnhancedSafetyEvaluator {
         fullResponse: JSON.stringify(response, null, 2)
       });
 
-      // Process Function Call response - LLM provides the evaluation directly
+      // Process Function Call response - Parse tool calls into LLMEvaluationResult
       if (message?.tool_calls && message.tool_calls.length > 0) {
         const toolCall = message.tool_calls[0];
         const toolName = toolCall?.function?.name;
@@ -735,39 +736,8 @@ export class EnhancedSafetyEvaluator {
           throw new Error('Tool call is undefined');
         }
         
-        // Early return with ToolHandler pattern for each evaluation tool
-        if (toolName === 'allow') {
-          return await this.handleAllowTool(toolCall, command);
-        }
-        
-        if (toolName === 'deny') {
-          return await this.handleDenyTool(toolCall, command);
-        }
-        
-        if (toolName === 'user_confirm') {
-          return await this.handleUserConfirmTool(toolCall, command);
-        }
-        
-        if (toolName === 'add_more_history') {
-          return await this.handleAddMoreHistoryTool(toolCall, command);
-        }
-        
-        if (toolName === 'ai_assistant_confirm') {
-          return await this.handleAiAssistantConfirmTool(toolCall, command);
-        }
-        
-        // If tool is not recognized, log and fallback
-        logger.warn('Unknown tool call received from LLM', {
-          toolName,
-          availableTools: ['allow', 'deny', 'user_confirm', 'add_more_history', 'ai_assistant_confirm'],
-          command
-        });
-        
-        return {
-          evaluation_result: 'deny',
-          reasoning: `Unknown evaluation tool: ${toolName}. Defaulting to denial for security.`,
-          suggested_alternatives: []
-        };
+        // Parse tool call to LLMEvaluationResult - simple data transformation only
+        return await this.parseToolCallToEvaluationResult(toolCall, toolName, command);
       }
       
       // Handle edge case: LLM returns tool_calls in content field as JSON string
@@ -847,6 +817,43 @@ export class EnhancedSafetyEvaluator {
       console.error('=== End Exception Debug ===');
       
       throw new Error(`Function Call evaluation failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Parse ToolCall to LLMEvaluationResult - Simple data transformation only
+   * Responsibility: Convert LLM Function Call into standardized evaluation result
+   */
+  private async parseToolCallToEvaluationResult(
+    toolCall: ToolCall, 
+    toolName: string | undefined, 
+    command: string
+  ): Promise<LLMEvaluationResult> {
+    // Parse based on tool name - unified logic for all tool types
+    switch (toolName) {
+      case 'allow':
+        return await this.parseAllowTool(toolCall, command);
+      case 'deny':
+        return await this.parseDenyTool(toolCall, command);
+      case 'user_confirm':
+        return await this.parseUserConfirmTool(toolCall, command);
+      case 'add_more_history':
+        return await this.parseAddMoreHistoryTool(toolCall, command);
+      case 'ai_assistant_confirm':
+        return await this.parseAiAssistantConfirmTool(toolCall, command);
+      default:
+        // If tool is not recognized, log and fallback
+        logger.warn('Unknown tool call received from LLM', {
+          toolName,
+          availableTools: ['allow', 'deny', 'user_confirm', 'add_more_history', 'ai_assistant_confirm'],
+          command
+        });
+        
+        return {
+          evaluation_result: 'deny',
+          reasoning: `Unknown evaluation tool: ${toolName}. Defaulting to denial for security.`,
+          suggested_alternatives: []
+        };
     }
   }
 
@@ -1107,9 +1114,10 @@ This command has been flagged for review. Please provide your intent:
   }
 
   /**
-   * ToolHandler: Handle 'allow' tool - command is safe to execute
+   * Parse 'allow' tool - command is safe to execute
+   * Responsibility: Simple data transformation from ToolCall to LLMEvaluationResult
    */
-  private async handleAllowTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+  private async parseAllowTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
     try {
       const result = await this.parseToolArguments(toolCall, ['reasoning']);
       const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'Command allowed';
@@ -1121,15 +1129,16 @@ This command has been flagged for review. Please provide your intent:
         suggested_alternatives: []
       };
     } catch (error) {
-      logger.error('Failed to handle allow tool', { error, command });
+      logger.error('Failed to parse allow tool', { error, command });
       throw error;
     }
   }
 
   /**
-   * ToolHandler: Handle 'deny' tool - command is too dangerous
+   * Parse 'deny' tool - command is too dangerous
+   * Responsibility: Simple data transformation from ToolCall to LLMEvaluationResult
    */
-  private async handleDenyTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+  private async parseDenyTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
     try {
       const result = await this.parseToolArguments(toolCall, ['reasoning', 'suggested_alternatives']);
       const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'Command denied';
@@ -1142,15 +1151,16 @@ This command has been flagged for review. Please provide your intent:
         suggested_alternatives: alternatives
       };
     } catch (error) {
-      logger.error('Failed to handle deny tool', { error, command });
+      logger.error('Failed to parse deny tool', { error, command });
       throw error;
     }
   }
 
   /**
-   * ToolHandler: Handle 'user_confirm' tool - requires user confirmation
+   * Parse 'user_confirm' tool - requires user confirmation
+   * Responsibility: Simple data transformation from ToolCall to LLMEvaluationResult
    */
-  private async handleUserConfirmTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+  private async parseUserConfirmTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
     try {
       const result = await this.parseToolArguments(toolCall, ['reasoning', 'confirmation_question']);
       const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'Requires confirmation';
@@ -1164,15 +1174,16 @@ This command has been flagged for review. Please provide your intent:
         suggested_alternatives: []
       };
     } catch (error) {
-      logger.error('Failed to handle user_confirm tool', { error, command });
+      logger.error('Failed to parse user_confirm tool', { error, command });
       throw error;
     }
   }
 
   /**
-   * ToolHandler: Handle 'add_more_history' tool - needs additional context
+   * Parse 'add_more_history' tool - needs additional context
+   * Responsibility: Simple data transformation from ToolCall to LLMEvaluationResult
    */
-  private async handleAddMoreHistoryTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+  private async parseAddMoreHistoryTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
     try {
       const result = await this.parseToolArguments(toolCall, ['reasoning', 'command_history_depth']);
       const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'Need more context';
@@ -1190,15 +1201,16 @@ This command has been flagged for review. Please provide your intent:
         suggested_alternatives: []
       };
     } catch (error) {
-      logger.error('Failed to handle add_more_history tool', { error, command });
+      logger.error('Failed to parse add_more_history tool', { error, command });
       throw error;
     }
   }
 
   /**
-   * ToolHandler: Handle 'ai_assistant_confirm' tool - needs AI assistant info
+   * Parse 'ai_assistant_confirm' tool - needs AI assistant info
+   * Responsibility: Simple data transformation from ToolCall to LLMEvaluationResult
    */
-  private async handleAiAssistantConfirmTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
+  private async parseAiAssistantConfirmTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
     try {
       const result = await this.parseToolArguments(toolCall, ['reasoning', 'assistant_request_message']);
       const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'AI assistant confirmation needed';
@@ -1212,7 +1224,7 @@ This command has been flagged for review. Please provide your intent:
         suggested_alternatives: []
       };
     } catch (error) {
-      logger.error('Failed to handle ai_assistant_confirm tool', { error, command });
+      logger.error('Failed to parse ai_assistant_confirm tool', { error, command });
       throw error;
     }
   }
