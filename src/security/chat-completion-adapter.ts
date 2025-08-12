@@ -366,6 +366,8 @@ export function createSystemPromptFromTools(
   // Based on OpenAI Function Calls specification
   return `# Function Calling Assistant
 
+⚠️ **CRITICAL JSON REQUIREMENT**: All JSON responses MUST be properly escaped to prevent parsing errors.
+
 You are a helpful assistant that responds using function calls when tools are available.
 
 ## Available Functions
@@ -399,12 +401,21 @@ When making function calls, respond with a JSON object containing a "tool_calls"
   ]
 }
 
-## Important Notes
+## Critical JSON Formatting Requirements
+
+### JSON Escaping Rules (MANDATORY)
+- **Double Quotes**: Always escape with \\" inside JSON strings
+- **Backslashes**: Always escape with \\\\ inside JSON strings  
+- **Newlines**: Use \\n for line breaks in JSON strings
+- **Tab Characters**: Use \\t for tabs in JSON strings
+
+### Function Call Structure
 - The "id" field should be "call_" followed by a random string
-- The "type" field must always be "function"
-- The "arguments" field must be a JSON string (not an object)
+- The "type" field must always be "function"  
+- The "arguments" field must be a valid JSON string (not an object)
 - Multiple function calls can be made by adding more objects to the tool_calls array
 - Ensure your function arguments match the required schema exactly
+- **ALL string values in arguments must follow the escaping rules above**
 
 Make function calls as needed to fulfill the user's request.`;
 }

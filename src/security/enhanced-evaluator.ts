@@ -13,14 +13,12 @@ import {
 import { CommandSafetyEvaluationResult, SecurityManager } from './manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId, logger } from '../utils/helpers.js';
+import { repairAndParseJson } from '../utils/json-repair.js';
 import { CCCToMCPCMAdapter } from './chat-completion-adapter.js';
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 // Structured Output imports (minimal usage for fallback only)
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
-import {
-  CommonEvaluationContext,
-} from './common-llm-evaluator.js';
 
 // Tools for Function Calling (external use only)
 // import { securityEvaluationTool } from './security-tools.js';
@@ -110,8 +108,7 @@ interface UserIntentData {
 // Safety evaluation result
 interface SafetyEvaluation {
   evaluation_result: EvaluationResult;
-  safety_level: number;
-  // Removed confidence property
+  // Removed safety_level property as requested
   basic_classification: string;
   reasoning: string;
   requires_confirmation: boolean;
@@ -437,7 +434,32 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
-   * LLM-centric evaluation flow (simple and clean)
+   * Handle elicitation and add result to messages
+   */
+  private async handleElicitationInLoop(
+    command: string,
+    question: string,
+    messages: Array<{
+      role: 'system' | 'user' | 'assistant';
+      content: string;
+      timestamp?: string;
+      type?: 'history' | 'elicitation' | 'execution_result';
+    }>
+  ): Promise<void> {
+    const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, question);
+    
+    // Add elicitation result to userMessage and continue loop
+    const elicitationResult = `\n\nELICITATION RESULT:\nUser Action: ${elicitationResponse?.action || 'no_response'}\nUser Intent: ${userIntent?.justification || 'Not provided'}\nTimestamp: ${getCurrentTimestamp()}`;
+    messages.push({
+      role: 'user',
+      content: elicitationResult,
+      timestamp: getCurrentTimestamp(),
+      type: 'elicitation'
+    });
+  }
+
+  /**
+   * LLM-centric evaluation flow (improved with message-based approach)
    */
   private async performLLMCentricEvaluation(
     command: string,
@@ -451,17 +473,41 @@ export class EnhancedSafetyEvaluator {
       workingDirectory
     });
     
+    // Initialize system prompt and base user message before loop
+    const promptContext = {
+      command,
+      commandHistory: history.slice(0, 5).map((entry) => entry.command).filter((cmd) => cmd && cmd.trim().length > 0),
+      workingDirectory,
+      ...(comment && { comment }),
+    };
+    
+    const { systemPrompt, userMessage: baseUserMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
+    
+    // Initialize message chain - systemPrompt + baseUserMessage + chronological additions
+    const messages: Array<{
+      role: 'system' | 'user' | 'assistant';
+      content: string;
+      timestamp?: string;
+      type?: 'history' | 'elicitation' | 'execution_result';
+    }> = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: baseUserMessage, timestamp: getCurrentTimestamp(), type: 'history' }
+    ];
+    
     let maxIteration = 5;
+    let hasElicitationBeenAttempted = false; // Track ELICITATION attempts
+    
     try {
       while (true) {
         logger.debug('LLM Evaluation iteration', {
-          remainingIterations: maxIteration
+          remainingIterations: maxIteration,
+          messagesCount: messages.length,
+          hasElicitationBeenAttempted
         });
         
         if (maxIteration <= 0) {
           return {
             evaluation_result: 'CONDITIONAL_DENY',
-            safety_level: 0.3,
             basic_classification: 'timeout_fallback',
             reasoning: 'Maximum iterations reached - fallback to safe denial',
             requires_confirmation: false,
@@ -470,62 +516,108 @@ export class EnhancedSafetyEvaluator {
           };
         }
         maxIteration--;
-        const llmResult = await this.callLLMForEvaluation(
-          command,
-          workingDirectory,
-          history,
-          comment
-        );
+        
+        const llmResult = await this.callLLMForEvaluationWithMessages(messages, promptContext.command);
 
         switch (llmResult.evaluation_result) {
           case 'ALLOW':
           case 'CONDITIONAL_DENY':
           case 'DENY':
-            // If force user confirm is enabled, always trigger ELICITATION regardless of LLM result
+            // If force user confirm is enabled, add elicitation to messages and continue
             if (forceUserConfirm) {
-              return await this._handleUserIntentElicitation(
+              // CRITICAL: Check ELICITATION limit
+              if (hasElicitationBeenAttempted) {
+                logger.warn('forceUserConfirm ELICITATION blocked - already attempted', {
+                  command,
+                  messagesCount: messages.length
+                });
+                return {
+                  evaluation_result: 'CONDITIONAL_DENY',
+                  basic_classification: 'elicitation_limit_exceeded',
+                  reasoning: 'ELICITATION already attempted in forceUserConfirm - defaulting to safe denial',
+                  requires_confirmation: false,
+                  suggested_alternatives: [],
+                  llm_evaluation_used: true,
+                };
+              }
+              
+              hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
+              await this.handleElicitationInLoop(
                 command,
-                workingDirectory,
-                history,
                 "AI Assistant forced user confirmation: Do you want to proceed with this operation?",
-                comment
+                messages
               );
+              continue; // Continue loop with elicitation result
             }
             
             // Check for user intent question in the new schema structure
             if (llmResult.requires_additional_context?.user_intent_question) {
-              return await this._handleUserIntentElicitation(
-                command, 
-                workingDirectory, 
-                history,
+              // CRITICAL: Check ELICITATION limit
+              if (hasElicitationBeenAttempted) {
+                logger.warn('user_intent_question ELICITATION blocked - already attempted', {
+                  command,
+                  messagesCount: messages.length,
+                  user_intent_question: llmResult.requires_additional_context.user_intent_question
+                });
+                return {
+                  evaluation_result: 'CONDITIONAL_DENY',
+                  basic_classification: 'elicitation_limit_exceeded',
+                  reasoning: 'ELICITATION already attempted for user intent - defaulting to safe denial',
+                  requires_confirmation: false,
+                  suggested_alternatives: [],
+                  llm_evaluation_used: true,
+                };
+              }
+              
+              hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
+              await this.handleElicitationInLoop(
+                command,
                 llmResult.requires_additional_context.user_intent_question,
-                comment
+                messages
               );
+              continue; // Continue loop with elicitation result
             }
-            return this.llmResultToSafetyEvaluation(
-              llmResult,
-              'llm_required'
-            );
+            
+            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
 
           case 'NEED_MORE_INFO':
-            // If force user confirm is enabled, always trigger ELICITATION
+            // If force user confirm is enabled, add elicitation to messages and continue
             if (forceUserConfirm) {
-              return await this._handleUserIntentElicitation(
+              // CRITICAL: Check ELICITATION limit
+              if (hasElicitationBeenAttempted) {
+                logger.warn('NEED_MORE_INFO forceUserConfirm ELICITATION blocked - already attempted', {
+                  command,
+                  messagesCount: messages.length
+                });
+                return {
+                  evaluation_result: 'CONDITIONAL_DENY',
+                  basic_classification: 'elicitation_limit_exceeded',
+                  reasoning: 'ELICITATION already attempted in NEED_MORE_INFO - defaulting to safe denial',
+                  requires_confirmation: false,
+                  suggested_alternatives: [],
+                  llm_evaluation_used: true,
+                };
+              }
+              
+              hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
+              await this.handleElicitationInLoop(
                 command,
-                workingDirectory,
-                history,
                 "AI Assistant forced user confirmation: Do you want to proceed with this operation?",
-                comment
+                messages
               );
+              continue; // Continue loop with elicitation result
             }
-            // Handle additional context request (history, execution results, etc.)
-            return await this.handleMoreInfoRequest(command, workingDirectory, history, comment);
+            
+            // Handle additional context requests by modifying messages
+            if (llmResult.requires_additional_context) {
+              await this.handleAdditionalContextRequest(llmResult.requires_additional_context, messages);
+            }
+            continue; // Continue loop with additional context
 
           default:
             // Fallback for unknown results
             return {
               evaluation_result: 'CONDITIONAL_DENY',
-              safety_level: 0.3,
               basic_classification: 'unknown_response',
               reasoning: 'Unknown LLM response - defaulting to safe denial',
               requires_confirmation: false,
@@ -549,36 +641,22 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
-   * Call LLM for evaluation using Function Calling - PROPER IMPLEMENTATION
-   * LLM directly returns the evaluation result as function call arguments
+   * Call LLM for evaluation using message-based approach
    */
-  private async callLLMForEvaluation(
-    command: string,
-    workingDirectory: string,
-    history: CommandHistoryEntry[],
-    comment?: string
+  private async callLLMForEvaluationWithMessages(
+    messages: Array<{
+      role: 'system' | 'user' | 'assistant';
+      content: string;
+      timestamp?: string;
+      type?: 'history' | 'elicitation' | 'execution_result';
+    }>,
+    command: string
   ): Promise<LLMEvaluationResult> {
-    const historyContext = history
-      .slice(0, 5)
-      .map((entry) => entry.command)
-      .filter((cmd) => cmd && cmd.trim().length > 0);
-
-    const promptContext = {
-      command,
-      commandHistory: historyContext,
-      workingDirectory,
-      ...(comment && { comment }),
-    };
-
-    // Generate prompt for security evaluation with Function Calling
-    const { systemPrompt, userMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
-
     try {
-      logger.debug('Pre-LLM Debug', {
+      logger.debug('Pre-LLM Debug (Messages)', {
         createMessageCallbackAvailable: !!this.createMessageCallback,
-        systemPromptLength: systemPrompt?.length || 0,
-        userMessageLength: userMessage?.length || 0,
-        command
+        messagesCount: messages.length,
+        messagesPreview: messages.map(m => ({ role: m.role, type: m.type, contentLength: m.content.length }))
       });
 
       if (!this.chatAdapter) {
@@ -590,11 +668,14 @@ export class EnhancedSafetyEvaluator {
       const { securityEvaluationTool } = await import('./security-tools.js');
       logger.debug('Security tool imported successfully');
 
-      logger.debug('About to call LLM with Function Calling', {
-        systemPromptLength: systemPrompt?.length || 0,
-        userMessageLength: userMessage?.length || 0,
-        systemPromptPreview: systemPrompt?.substring(0, 500) + '...',
-        fullSystemPrompt: systemPrompt,
+      // Convert our message format to OpenAI format
+      const openAIMessages = messages.map(msg => ({
+        role: msg.role as 'system' | 'user' | 'assistant',
+        content: msg.content
+      }));
+
+      logger.debug('About to call LLM with Function Calling (Messages)', {
+        messagesCount: openAIMessages.length,
         securityTool: JSON.stringify(securityEvaluationTool, null, 2),
         toolChoice: JSON.stringify({ type: 'function', function: { name: 'evaluate_command_security' } }, null, 2)
       });
@@ -602,16 +683,7 @@ export class EnhancedSafetyEvaluator {
       // Use ChatCompletionAdapter with OpenAI API compatible format
       const response = await this.chatAdapter.chatCompletion({
         model: 'gpt-4-turbo',  // Required by OpenAI API format
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: userMessage
-          }
-        ],
+        messages: openAIMessages,
         max_tokens: 500,
         temperature: 0.1,
         tools: [securityEvaluationTool],
@@ -623,7 +695,7 @@ export class EnhancedSafetyEvaluator {
       const firstChoice = response.choices?.[0];
       const message = firstChoice?.message;
       
-      logger.debug('=== COMPLETE LLM RESPONSE DEBUG ===', {
+      logger.debug('=== COMPLETE LLM RESPONSE DEBUG (Messages) ===', {
         responseType: typeof response,
         responseKeys: Object.keys(response || {}),
         hasToolCalls: !!message?.tool_calls,
@@ -638,14 +710,23 @@ export class EnhancedSafetyEvaluator {
         const toolCall = message.tool_calls[0];
         if (toolCall && toolCall.function.name === 'evaluate_command_security') {
           try {
-            // Parse and validate the function arguments
+            // Parse and validate the function arguments with JSON repair fallback
             const rawArgs = toolCall.function.arguments;
             let result;
             
             try {
               result = JSON.parse(rawArgs);
             } catch (parseError) {
-              throw new Error(`JSON parse failed: ${parseError}. Raw: ${rawArgs.substring(0, 100)}...`);
+              // Try JSON repair as fallback
+              logger.warn(`JSON parse failed, attempting repair. Error: ${parseError}. Raw: ${rawArgs.substring(0, 200)}...`);
+              
+              const repairResult = repairAndParseJson(rawArgs);
+              if (repairResult.success) {
+                result = repairResult.value;
+                logger.info(`JSON repair successful after ${repairResult.repairAttempts?.length || 0} attempts`);
+              } else {
+                throw new Error(`JSON parse and repair failed. Original error: ${parseError}. Repair attempts: ${repairResult.repairAttempts?.length || 0}. Final error: ${repairResult.finalError}. Repair details: ${JSON.stringify(repairResult.repairAttempts || [])}. Raw: ${rawArgs.substring(0, 200)}...`);
+              }
             }
             
             // Validate required fields (now only evaluation_result and reasoning)
@@ -658,10 +739,13 @@ export class EnhancedSafetyEvaluator {
               throw new Error(`Function Call missing required fields: ${missingFields.join(', ')}. Received: ${Object.keys(result).join(', ')}`);
             }
             
+            // Expand $COMMAND variable in reasoning before returning
+            const expandedReasoning = this.expandCommandVariable(result.reasoning, command);
+            
             // LLM directly provides the evaluation - no need to execute anything
             return {
               evaluation_result: result.evaluation_result,
-              reasoning: result.reasoning,
+              reasoning: expandedReasoning,
               requires_additional_context: result.requires_additional_context || {
                 command_history_depth: 0,
                 execution_results_count: 0,
@@ -679,26 +763,24 @@ export class EnhancedSafetyEvaluator {
       }
 
       // If no tool calls, this is a critical failure - log detailed information
-      logger.error('CRITICAL: LLM did not return Function Call', {
+      logger.error('CRITICAL: LLM did not return Function Call (Messages)', {
         responseContent: message?.content || '',
         responseStopReason: firstChoice?.finish_reason,
-        systemPromptUsed: systemPrompt,
-        toolsProvided: JSON.stringify([securityEvaluationTool], null, 2),
-        userMessage: userMessage,
-        command: command
+        messagesUsed: JSON.stringify(openAIMessages, null, 2),
+        toolsProvided: JSON.stringify([securityEvaluationTool], null, 2)
       });
 
       throw new Error('No valid tool call in response - Function Calling is required');
     } catch (error) {
       // NO FALLBACK - Function Call must succeed
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('=== Exception Caught in LLM Evaluation ===');
+      console.error('=== Exception Caught in LLM Evaluation (Messages) ===');
       console.error('Error type:', error?.constructor?.name || 'Unknown');
       console.error('Error message:', errorMessage);
       if (error instanceof Error) {
         console.error('Error stack:', error.stack);
       }
-      console.error('Command that caused error:', command);
+      console.error('Messages that caused error:', JSON.stringify(messages, null, 2));
       console.error('createMessageCallback available:', !!this.createMessageCallback);
       console.error('=== End Exception Debug ===');
       
@@ -707,141 +789,93 @@ export class EnhancedSafetyEvaluator {
   }
 
   /**
-   * Handle user intent elicitation
+   * Handle additional context requests by modifying messages
    */
-  private async _handleUserIntentElicitation(
-    command: string,
-    workingDirectory: string,
-    history: CommandHistoryEntry[],
-    userIntentQuestion: string,
-    comment?: string
-  ): Promise<SafetyEvaluation> {
-    try {
-      const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, userIntentQuestion);
+  private async handleAdditionalContextRequest(
+    additionalContext: {
+      command_history_depth?: number;
+      execution_results_count?: number;
+      user_intent_search_keywords?: string[] | null;
+      user_intent_question?: string | null;
+    },
+    messages: Array<{
+      role: 'system' | 'user' | 'assistant';
+      content: string;
+      timestamp?: string;
+      type?: 'history' | 'elicitation' | 'execution_result';
+    }>
+  ): Promise<void> {
+    // Handle request for more command history
+    if (additionalContext.command_history_depth && additionalContext.command_history_depth > 0) {
+      try {
+        const config = this.securityManager.getEnhancedConfig();
+        const moreHistory = await this.historyManager.searchHistory({
+          limit: additionalContext.command_history_depth || config.max_additional_history_for_context || 20,
+        });
 
-      if (userIntent && elicitationResponse?.action === 'accept') {
-        // Re-evaluate with user intent
-        const llmResult = await this.callLLMForEvaluationWithUserIntent(
-          command,
-          workingDirectory,
-          history,
-          userIntent,
-          comment
-        );
+        if (moreHistory.length > 0) {
+          // Insert additional history right after system message
+          const historyContent = `ADDITIONAL COMMAND HISTORY:\n${moreHistory.map((entry, idx) => 
+            `${idx + 1}. ${entry.command} (${entry.timestamp})`
+          ).join('\n')}`;
 
-        const finalEval = this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
-        finalEval.user_confirmation_required = true;
-        finalEval.user_response = elicitationResponse.content || {};
-        finalEval.confirmation_message = 'User intent confirmed';
-        return finalEval;
-      } else {
-        // User declined or cancelled
-        return {
-          evaluation_result: 'CONDITIONAL_DENY',
-          safety_level: 0.3,
-          basic_classification: 'user_declined',
-          reasoning: 'User declined intent confirmation',
-          requires_confirmation: false,
-          suggested_alternatives: [],
-          llm_evaluation_used: true,
-        };
+          messages.splice(1, 0, {
+            role: 'user',
+            content: historyContent,
+            timestamp: getCurrentTimestamp(),
+            type: 'history'
+          });
+        }
+      } catch (error) {
+        console.error('Failed to get additional command history:', error);
       }
-    } catch (error) {
-      console.error('User intent elicitation failed:', error);
-      return {
-        evaluation_result: 'CONDITIONAL_DENY',
-        safety_level: 0.2,
-        basic_classification: 'elicitation_error',
-        reasoning: 'Intent elicitation failed - requiring manual confirmation',
-        requires_confirmation: false,
-        suggested_alternatives: [],
-        llm_evaluation_used: true,
-      };
+    }
+
+    // Handle request for execution results
+    if (additionalContext.execution_results_count && additionalContext.execution_results_count > 0) {
+      try {
+        // Find the last user message and append execution results
+        const lastUserMessageIndex = messages.map(m => m.role).lastIndexOf('user');
+        if (lastUserMessageIndex >= 0 && messages[lastUserMessageIndex]) {
+          const executionResults = await this.getRecentExecutionResults(additionalContext.execution_results_count);
+          
+          if (executionResults.length > 0) {
+            messages[lastUserMessageIndex].content += `\n\nRECENT EXECUTION RESULTS:\n${executionResults.map((result, idx) => 
+              `${idx + 1}. Command: ${result.command}, Exit Code: ${result.exit_code}, Output: ${result.stdout?.substring(0, 200) || 'N/A'}`
+            ).join('\n')}`;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to get execution results:', error);
+      }
     }
   }
 
   /**
-   * Handle more info request from LLM
+   * Get recent execution results for context
    */
-  private async handleMoreInfoRequest(
-    command: string,
-    workingDirectory: string,
-    _history: CommandHistoryEntry[], // Marked as unused with underscore
-    comment?: string
-  ): Promise<SafetyEvaluation> {
+  private async getRecentExecutionResults(count: number): Promise<Array<{
+    command: string;
+    exit_code?: number;
+    stdout?: string;
+    stderr?: string;
+  }>> {
     try {
-      // Get more command history
-      const config = this.securityManager.getEnhancedConfig();
-      const moreHistory = await this.historyManager.searchHistory({
-        limit: config.max_additional_history_for_context || 20,
+      const recentHistory = await this.historyManager.searchHistory({
+        limit: count,
       });
-
-      // Re-evaluate with more context
-      const llmResult = await this.callLLMForEvaluationWithMoreInfo(
-        command,
-        workingDirectory,
-        moreHistory,
-        comment
-      );
-
-      return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
+      
+      // Transform history entries to execution results format
+      return recentHistory.map(entry => ({
+        command: entry.command,
+        exit_code: 0, // Default success - could be enhanced with actual exit codes
+        stdout: 'Execution completed', // Placeholder - could be enhanced with actual output
+        stderr: ''
+      }));
     } catch (error) {
-      console.error('More info evaluation failed:', error);
-      return {
-        evaluation_result: 'CONDITIONAL_DENY',
-        safety_level: 0.2,
-        basic_classification: 'additional_context_error',
-        reasoning: 'Additional context evaluation failed - requiring manual confirmation',
-        requires_confirmation: false,
-        suggested_alternatives: [],
-        llm_evaluation_used: true,
-      };
+      console.error('Failed to get recent execution results:', error);
+      return [];
     }
-  }
-
-  /**
-   * Call LLM with user intent context using Structured Output (using common implementation)
-   */
-  private async callLLMForEvaluationWithUserIntent(
-    command: string,
-    _workingDirectory: string,
-    _history: CommandHistoryEntry[],
-    _userIntent: UserIntentData,
-    comment?: string
-  ): Promise<LLMEvaluationResult> {
-    const context: CommonEvaluationContext = {
-      command,
-      workingDirectory: _workingDirectory,
-      ...(comment && { comment }),
-    };
-
-    // For now, simply re-evaluate with basic context
-    // TODO: Implement proper user intent evaluation using userIntent data
-    return await this.callLLMForEvaluation(
-      context.command,
-      context.workingDirectory || '',
-      [],
-      context.comment
-    );
-  }
-
-  /**
-   * Call LLM with additional context using Structured Output (using common implementation)
-   */
-  private async callLLMForEvaluationWithMoreInfo(
-    command: string,
-    workingDirectory: string,
-    _history: CommandHistoryEntry[],
-    comment?: string
-  ): Promise<LLMEvaluationResult> {
-    // For now, simply re-evaluate with additional context
-    // TODO: Implement proper additional context evaluation using history data
-    return await this.callLLMForEvaluation(
-      command,
-      workingDirectory,
-      [],
-      comment
-    );
   }
 
   /**
@@ -965,13 +999,26 @@ This command has been flagged for review. Please provide your intent:
         break;
     }
 
-    return {
+    const result: CommandSafetyEvaluationResult = {
       evaluation_result,
       reasoning: safetyEval.reasoning,
       requires_confirmation: safetyEval.requires_confirmation,
       suggested_alternatives: safetyEval.suggested_alternatives,
       llm_evaluation_used: safetyEval.llm_evaluation_used,
     };
+    
+    // Add optional fields only if they exist
+    if (safetyEval.user_confirmation_required !== undefined) {
+      result.user_confirmation_required = safetyEval.user_confirmation_required;
+    }
+    if (safetyEval.user_response !== undefined) {
+      result.user_response = safetyEval.user_response;
+    }
+    if (safetyEval.confirmation_message !== undefined) {
+      result.confirmation_message = safetyEval.confirmation_message;
+    }
+    
+    return result;
   }
 
   /**
@@ -983,12 +1030,24 @@ This command has been flagged for review. Please provide your intent:
   ): SafetyEvaluation {
     return {
       evaluation_result: llmResult.evaluation_result,
-      safety_level: 0.7, 
       basic_classification: classification,
       reasoning: llmResult.reasoning,
       requires_confirmation: llmResult.evaluation_result === 'CONDITIONAL_DENY',
       suggested_alternatives: [],
       llm_evaluation_used: true,
     };
+  }
+
+  /**
+   * Expand $COMMAND variable in text with the actual command
+   */
+  private expandCommandVariable(text: string, command: string): string {
+    if (!text || !command) {
+      return text;
+    }
+    
+    // Replace all instances of $COMMAND with the actual command
+    // Use simple string replacement to avoid regex complications
+    return text.replace(/\$COMMAND/g, command);
   }
 }

@@ -47,6 +47,9 @@ export interface CommandSafetyEvaluationResult {
   requires_confirmation: boolean;
   suggested_alternatives?: string[];
   llm_evaluation_used?: boolean;
+  user_confirmation_required?: boolean;
+  user_response?: Record<string, unknown>;
+  confirmation_message?: string;
 }
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 

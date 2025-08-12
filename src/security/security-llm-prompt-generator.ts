@@ -125,11 +125,31 @@ Analyze the provided shell command for potential security risks, safety concerns
 - Provide clear reasoning for your security assessment
 - Suggest safer alternatives when appropriate
 
+## Important: Command Reference in Reasoning
+**CRITICAL**: When referencing the command in your reasoning field, ALWAYS use the variable \\$COMMAND:
+- ✅ CORRECT: "The command \\$COMMAND is safe because..."
+- ✅ CORRECT: "\\$COMMAND performs a file search operation..."
+- ✅ CORRECT: "This \\$COMMAND does not require elevated privileges..."
+- ❌ WRONG: "The command 'find /tmp -name \\"*.tmp\\"' is..." (causes JSON parsing errors)
+
+**MANDATORY**: Use ONLY \\$COMMAND - no other variable names, no literal command text, no quotes around commands.
+
+## JSON Response Formatting for Security Evaluation
+**SIMPLIFIED**: Always use \\$COMMAND instead of literal commands to avoid ALL JSON escaping issues.
+No complex escaping needed when using the \\$COMMAND variable.
+
 ## Safety Levels
 - ALLOW: Safe to execute without restrictions
 - CONDITIONAL_DENY: Requires user confirmation or additional context
 - DENY: Too dangerous to execute
-- NEED_MORE_INFO: Requires additional context for proper evaluation`;
+- NEED_MORE_INFO: Requires additional context for proper evaluation
+
+## ELICITATION Usage Rules
+- **CRITICAL**: ELICITATION should be used ONLY ONCE per security evaluation chain
+- If user confirmation is needed, use ELICITATION for the first attempt
+- If ELICITATION fails or subsequent evaluation is needed, default to CONDITIONAL_DENY
+- **DO NOT** trigger multiple ELICITATION attempts in a single evaluation sequence
+- ELICITATION results are reference information - do not re-evaluate them repeatedly`;
 
     const userMessage = `# Security Evaluation Request
 
