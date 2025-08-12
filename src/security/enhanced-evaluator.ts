@@ -141,13 +141,6 @@ interface UserIntentData {
   elicitation_id: string;
 }
 
-// Elicitation results for tracking in evaluation flow
-interface ElicitationResultsData {
-  userIntent: UserIntentData | null;
-  elicitationResponse: ElicitationResponse | null;
-  confirmationQuestion?: string;
-}
-
 // Safety evaluation result
 interface SafetyEvaluation {
   evaluation_result: 'allow' | 'deny' | 'add_more_history' | 'user_confirm' | 'ai_assistant_confirm'; // Function-based evaluation results
@@ -484,7 +477,7 @@ export class EnhancedSafetyEvaluator {
       role: 'system' | 'user' | 'assistant';
       content: string;
       timestamp?: string;
-      type?: 'history' | 'elicitation' | 'execution_result';
+      type?: 'history' | 'elicitation' | 'execution_result' | 'user_response';
     }>
   ): Promise<{
     userIntent: UserIntentData | null;
@@ -533,7 +526,7 @@ export class EnhancedSafetyEvaluator {
       role: 'system' | 'user' | 'assistant';
       content: string;
       timestamp?: string;
-      type?: 'history' | 'elicitation' | 'execution_result';
+      type?: 'history' | 'elicitation' | 'execution_result' | 'user_response';
     }> = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: baseUserMessage, timestamp: getCurrentTimestamp(), type: 'history' }
@@ -541,7 +534,6 @@ export class EnhancedSafetyEvaluator {
     
     let maxIteration = 5;
     let hasElicitationBeenAttempted = false; // Track ELICITATION attempts
-    let elicitationResults: ElicitationResultsData | null = null;
     
     try {
       while (true) {
@@ -570,21 +562,7 @@ export class EnhancedSafetyEvaluator {
           case 'allow':
           case 'deny':
             // Early return - no message chain manipulation needed for final decisions
-            // Include elicitation results if they exist
-            const baseResult = this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
-            if (elicitationResults) {
-              const elicitResponse = elicitationResults.elicitationResponse;
-              const confirmQuestion = elicitationResults.confirmationQuestion;
-              if (elicitResponse) {
-                return {
-                  ...baseResult,
-                  user_confirmation_required: true,
-                  user_response: elicitResponse.content || {},
-                  confirmation_message: confirmQuestion || 'User confirmation was requested'
-                };
-              }
-            }
-            return baseResult;
+            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
 
           case 'user_confirm':
             // CRITICAL: Check ELICITATION limit
@@ -613,42 +591,31 @@ export class EnhancedSafetyEvaluator {
             hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
             const userConfirmQuestion = llmResult.confirmation_question || 
                                "Do you want to proceed with this operation?";
-            const { userIntent, elicitationResponse } = await this.handleElicitationInLoop(command, userConfirmQuestion, messages);
+            const { userIntent: _userIntent, elicitationResponse } = await this.handleElicitationInLoop(command, userConfirmQuestion, messages);
             
-            // Store elicitation results for inclusion in final response
-            elicitationResults = {
-              userIntent,
-              elicitationResponse,
-              confirmationQuestion: userConfirmQuestion
-            };
-            
-            // Check elicitation result and return appropriate response
+            // Check elicitation result and add user response to message chain for LLM re-evaluation
             if (elicitationResponse?.action === 'accept') {
-              return {
-                evaluation_result: 'allow',
-                basic_classification: 'user_confirmed',
-                reasoning: `User confirmed execution: ${userIntent?.justification || 'User accepted the operation'}`,
-                requires_confirmation: false,
-                suggested_alternatives: [],
-                llm_evaluation_used: true,
-                user_confirmation_required: true,
-                user_response: elicitationResponse.content || {},
-                confirmation_message: userConfirmQuestion
-              };
+              // Add user's acceptance to message chain
+              const userResponseMessage = `User approved the command execution. They accepted the confirmation request.`;
+              messages.push({
+                role: 'user',
+                content: userResponseMessage,
+                timestamp: getCurrentTimestamp(),
+                type: 'user_response'
+              });
             } else {
-              return {
-                evaluation_result: 'deny',
-                basic_classification: 'user_declined',
-                reasoning: `User declined execution: ${elicitationResponse?.action || 'no_response'}`,
-                requires_confirmation: false,
-                suggested_alternatives: llmResult.suggested_alternatives || [],
-                llm_evaluation_used: true,
-                user_confirmation_required: true,
-                user_response: elicitationResponse?.content || {},
-                confirmation_message: userConfirmQuestion
-              };
+              // Add user's decline/cancel to message chain
+              const userResponseMessage = `User declined the command execution. They ${elicitationResponse?.action || 'declined'} the confirmation request. The user has explicitly refused to allow this command to run.`;
+              messages.push({
+                role: 'user',
+                content: userResponseMessage,
+                timestamp: getCurrentTimestamp(),
+                type: 'user_response'
+              });
             }
-            // No continue here - we return directly based on user response
+            
+            // Continue with LLM evaluation loop to get final decision based on user response
+            continue;
 
           case 'ai_assistant_confirm':
             // Early return for assistant confirmation - no loop continuation needed
@@ -730,7 +697,7 @@ export class EnhancedSafetyEvaluator {
       role: 'system' | 'user' | 'assistant';
       content: string;
       timestamp?: string;
-      type?: 'history' | 'elicitation' | 'execution_result';
+      type?: 'history' | 'elicitation' | 'execution_result' | 'user_response';
     }>,
     command: string
   ): Promise<LLMEvaluationResult> {
@@ -932,7 +899,7 @@ export class EnhancedSafetyEvaluator {
       role: 'system' | 'user' | 'assistant';
       content: string;
       timestamp?: string;
-      type?: 'history' | 'elicitation' | 'execution_result';
+      type?: 'history' | 'elicitation' | 'execution_result' | 'user_response';
     }>
   ): Promise<void> {
     // Handle request for more command history

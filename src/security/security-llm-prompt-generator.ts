@@ -126,17 +126,17 @@ Analyze the provided shell command for potential security risks, safety concerns
 - Suggest safer alternatives when appropriate
 
 ## Important: Command Reference in Reasoning
-**CRITICAL**: When referencing the command in your reasoning field, ALWAYS use the variable \\$COMMAND:
-- ✅ CORRECT: "The command \\$COMMAND is safe because..."
-- ✅ CORRECT: "\\$COMMAND performs a file search operation..."
-- ✅ CORRECT: "This \\$COMMAND does not require elevated privileges..."
+**CRITICAL**: When referencing the command in your reasoning field, ALWAYS use the variable $COMMAND:
+- ✅ CORRECT: "The command $COMMAND is safe because..."
+- ✅ CORRECT: "$COMMAND performs a file search operation..."
+- ✅ CORRECT: "This $COMMAND does not require elevated privileges..."
 - ❌ WRONG: "The command 'find /tmp -name \\"*.tmp\\"' is..." (causes JSON parsing errors)
 
-**MANDATORY**: Use ONLY \\$COMMAND - no other variable names, no literal command text, no quotes around commands.
+**MANDATORY**: Use ONLY $COMMAND - no other variable names, no literal command text, no quotes around commands.
 
 ## JSON Response Formatting for Security Evaluation
-**SIMPLIFIED**: Always use \\$COMMAND instead of literal commands to avoid ALL JSON escaping issues.
-No complex escaping needed when using the \\$COMMAND variable.
+**SIMPLIFIED**: Always use $COMMAND instead of literal commands to avoid ALL JSON escaping issues.
+No complex escaping needed when using the $COMMAND variable.
 
 ## Safety Evaluation Tools
 
