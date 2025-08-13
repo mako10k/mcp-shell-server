@@ -44,7 +44,7 @@ export type CommandClassification = z.infer<typeof CommandClassificationSchema>;
 export const EnhancedSecurityConfigSchema = z
   .object({
     // 機能切り替え (LLM中心設計)
-    enhanced_mode_enabled: z.boolean().default(false).describe('Enable enhanced security features'),
+    enhanced_mode_enabled: z.boolean().default(true).describe('Enable enhanced security features'),
     basic_safe_classification: z
       .boolean()
       .default(true)
@@ -254,13 +254,11 @@ export type ShellServerConfig = z.infer<typeof ShellServerConfigSchema>;
 
 // デフォルト設定 (LLM中心設計)
 export const DEFAULT_ENHANCED_SECURITY_CONFIG: EnhancedSecurityConfig = {
-  enhanced_mode_enabled: false,
+  enhanced_mode_enabled: true,  // Enhanced Evaluatorを使用するため有効化
   basic_safe_classification: true,
   llm_evaluation_enabled: true, // LLM中心設計: デフォルトでLLM評価有効
   elicitation_enabled: true, // LLM中心設計: デフォルトでElicitation有効
-  enable_pattern_filtering: false, // デフォルト: パターンフィルタリング無効（全てLLM審査にかける）
-
-  // LLM中心設計: アルゴリズム複雑化を回避
+  enable_pattern_filtering: false, // LLM中心設計: デフォルトで全コマンドLLM評価
   disable_algorithmic_preprocessing: true,
   max_additional_history_for_context: 20,
   enable_command_output_context: true,

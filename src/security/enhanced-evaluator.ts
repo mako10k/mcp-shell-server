@@ -9,7 +9,8 @@ import {
   ReevaluateWithUserIntentArgs,
   ReevaluateWithAdditionalContextArgs
 } from '../types/enhanced-security.js';
-import { CommandSafetyEvaluationResult, SecurityManager } from './manager.js';
+import { SecurityManager } from './manager.js';
+import type { SafetyEvaluationResult } from '../types/index.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId, logger } from '../utils/helpers.js';
 import { repairAndParseJson } from '../utils/json-repair.js';
@@ -191,6 +192,11 @@ export class EnhancedSafetyEvaluator {
       (() => {
         throw new Error('LLM evaluation attempted before createMessageCallback was set');
       });
+    
+    // Initialize chatAdapter if createMessageCallback is provided
+    if (createMessageCallback) {
+      this.chatAdapter = new CCCToMCPCMAdapter(createMessageCallback);
+    }
   }
 
   /**
@@ -298,7 +304,7 @@ export class EnhancedSafetyEvaluator {
           user_intent_search_keywords: null,
           user_intent_question: null
         },
-        suggested_alternatives: reevaluationResult.suggested_alternatives || []
+        suggested_alternatives: ('suggested_alternatives' in reevaluationResult) ? reevaluationResult.suggested_alternatives || [] : []
       };
 
       logger.info('Function Call User Intent Reevaluation', {
@@ -359,7 +365,7 @@ export class EnhancedSafetyEvaluator {
           user_intent_search_keywords: null,
           user_intent_question: null
         },
-        suggested_alternatives: reevaluationResult.suggested_alternatives || []
+        suggested_alternatives: ('suggested_alternatives' in reevaluationResult) ? reevaluationResult.suggested_alternatives || [] : []
       };
 
       logger.info('Function Call Additional Context Reevaluation', {
@@ -455,7 +461,7 @@ export class EnhancedSafetyEvaluator {
     workingDirectory: string,
     history: CommandHistoryEntry[],
     comment?: string
-  ): Promise<CommandSafetyEvaluationResult> {
+  ): Promise<SafetyEvaluationResult> {
     const result = await this.performLLMCentricEvaluation(
       command,
       workingDirectory,
@@ -574,7 +580,7 @@ export class EnhancedSafetyEvaluator {
           case 'allow':
           case 'deny':
             // Early return - no message chain manipulation needed for final decisions
-            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required');
+            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required', _lastElicitationResponse);
 
           case 'user_confirm':
             // CRITICAL: Check ELICITATION limit
@@ -1074,30 +1080,70 @@ This command has been flagged for review. Please provide your intent:
   }
 
   /**
-   * Convert SafetyEvaluation to CommandSafetyEvaluationResult
+   * Convert SafetyEvaluation to SafetyEvaluationResult
    */
-  private convertToCommandSafetyResult(safetyEval: SafetyEvaluation): CommandSafetyEvaluationResult {
-    // Function-based evaluation results are used directly
-    const result: CommandSafetyEvaluationResult = {
-      evaluation_result: safetyEval.evaluation_result,
-      reasoning: safetyEval.reasoning,
-      requires_confirmation: safetyEval.requires_confirmation,
-      suggested_alternatives: safetyEval.suggested_alternatives,
-      llm_evaluation_used: safetyEval.llm_evaluation_used,
-    };
-    
-    // Add optional fields only if they exist
-    if (safetyEval.user_confirmation_required !== undefined) {
-      result.user_confirmation_required = safetyEval.user_confirmation_required;
+  private convertToCommandSafetyResult(safetyEval: SafetyEvaluation): SafetyEvaluationResult {
+    // Create result based on evaluation result type due to discriminated union constraints
+    switch (safetyEval.evaluation_result) {
+      case 'allow':
+        return {
+          evaluation_result: 'allow',
+          reasoning: safetyEval.reasoning,
+          requires_confirmation: safetyEval.requires_confirmation,
+          suggested_alternatives: safetyEval.suggested_alternatives,
+          llm_evaluation_used: safetyEval.llm_evaluation_used,
+          basic_classification: safetyEval.basic_classification,
+          confirmation_message: safetyEval.confirmation_message,
+          user_response: safetyEval.user_response,
+        };
+      
+      case 'deny':
+        return {
+          evaluation_result: 'deny',
+          reasoning: safetyEval.reasoning,
+          requires_confirmation: safetyEval.requires_confirmation,
+          suggested_alternatives: safetyEval.suggested_alternatives,
+          llm_evaluation_used: safetyEval.llm_evaluation_used,
+          basic_classification: safetyEval.basic_classification,
+          confirmation_message: safetyEval.confirmation_message,
+          user_response: safetyEval.user_response,
+        };
+      
+      case 'user_confirm':
+        return {
+          evaluation_result: 'user_confirm',
+          reasoning: safetyEval.reasoning,
+          requires_confirmation: safetyEval.requires_confirmation,
+          suggested_alternatives: safetyEval.suggested_alternatives,
+          llm_evaluation_used: safetyEval.llm_evaluation_used,
+          basic_classification: safetyEval.basic_classification,
+          user_confirmation_required: safetyEval.user_confirmation_required,
+        };
+      
+      case 'ai_assistant_confirm':
+        return {
+          evaluation_result: 'ai_assistant_confirm',
+          reasoning: safetyEval.reasoning,
+          requires_confirmation: safetyEval.requires_confirmation,
+          suggested_alternatives: safetyEval.suggested_alternatives,
+          llm_evaluation_used: safetyEval.llm_evaluation_used,
+          basic_classification: safetyEval.basic_classification,
+          confirmation_message: safetyEval.confirmation_message,
+          user_response: safetyEval.user_response,
+        };
+      
+      case 'add_more_history':
+        return {
+          evaluation_result: 'add_more_history',
+          reasoning: safetyEval.reasoning,
+          requires_confirmation: safetyEval.requires_confirmation,
+          llm_evaluation_used: safetyEval.llm_evaluation_used,
+          basic_classification: safetyEval.basic_classification,
+        };
+      
+      default:
+        throw new Error(`Unknown evaluation result: ${safetyEval.evaluation_result}`);
     }
-    if (safetyEval.user_response !== undefined) {
-      result.user_response = safetyEval.user_response;
-    }
-    if (safetyEval.confirmation_message !== undefined) {
-      result.confirmation_message = safetyEval.confirmation_message;
-    }
-    
-    return result;
   }
 
   /**
@@ -1105,7 +1151,8 @@ This command has been flagged for review. Please provide your intent:
    */
   private llmResultToSafetyEvaluation(
     llmResult: LLMEvaluationResult,
-    classification: string
+    classification: string,
+    elicitationResponse?: ElicitationResponse | null
   ): SafetyEvaluation {
     // Use function-based evaluation results directly - no legacy conversion needed
     let requiresConfirmation = false;
@@ -1136,6 +1183,8 @@ This command has been flagged for review. Please provide your intent:
       requires_confirmation: requiresConfirmation,
       suggested_alternatives: llmResult.suggested_alternatives || [],
       llm_evaluation_used: true,
+      // Include elicitation response information if available
+      ...(elicitationResponse && { elicitation_response: elicitationResponse }),
     };
   }
 

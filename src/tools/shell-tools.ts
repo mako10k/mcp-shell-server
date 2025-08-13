@@ -1,4 +1,4 @@
-import { ShellType, Dimensions } from '../types/index.js';
+import { ShellType, Dimensions, SafetyEvaluationResult } from '../types/index.js';
 // ターミナル出力レスポンス型（クラス全体で利用可能にする）
 export interface TerminalOutputResponse {
   terminal_id: string;
@@ -42,19 +42,6 @@ import { SecurityManager } from '../security/manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { TerminalOptions } from '../core/terminal-manager.js';
 import { MCPShellError } from '../utils/errors.js';
-
-// ...existing code...
-
-// Safety evaluation result interface
-interface SafetyEvaluationResult {
-  evaluation_result: 'allow' | 'deny' | 'user_confirm' | 'ai_assistant_confirm' | 'add_more_history';
-  basic_classification?: string;
-  reasoning: string;
-  requires_confirmation: boolean;
-  suggested_alternatives?: string[];
-  llm_evaluation_used?: boolean;
-  context_analysis?: unknown;
-}
 
 // ...existing code...
 
@@ -143,7 +130,7 @@ export class ShellTools {
               reasoning: safetyEvaluation.reasoning,
               basic_classification: safetyEvaluation.basic_classification,
               requires_confirmation: safetyEvaluation.requires_confirmation,
-              suggested_alternatives: safetyEvaluation.suggested_alternatives,
+              suggested_alternatives: [],  // add_more_history doesn't have suggested_alternatives
               llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
               context_analysis: safetyEvaluation.context_analysis,
             },
@@ -153,9 +140,10 @@ export class ShellTools {
         }
 
         // CRITICAL SAFETY GUARD: Only execute if explicitly ALLOWED
-        if (safetyEvaluation?.evaluation_result !== 'allow') {
+        if (safetyEvaluation && safetyEvaluation.evaluation_result !== 'allow') {
+          const evalResult = safetyEvaluation as SafetyEvaluationResult;
           throw new Error(
-            `Command execution blocked: evaluation result '${safetyEvaluation?.evaluation_result}' is not ALLOW. Reasoning: ${safetyEvaluation?.reasoning}`
+            `Command execution blocked: evaluation result '${evalResult.evaluation_result}' is not ALLOW. Reasoning: ${evalResult.reasoning}`
           );
         }
       }
@@ -231,6 +219,7 @@ export class ShellTools {
           suggested_alternatives: safetyEvaluation.suggested_alternatives,
           llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
           context_analysis: safetyEvaluation.context_analysis,
+          next_action: safetyEvaluation.next_action,
         };
       }
 

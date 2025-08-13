@@ -12,45 +12,19 @@ import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
+// Import shared types from chat-completion-adapter.ts
+import type { CreateMessageCallback } from './chat-completion-adapter.js';
+import { createMessageCallbackFromMCPServer } from './chat-completion-adapter.js';
+
+// Import SafetyEvaluationResult from types
+import type { SafetyEvaluationResult } from '../types/index.js';
+
 // MCP Protocol interfaces for type safety
 interface MCPRequest {
   method: string;
   params?: Record<string, unknown>;
 }
 
-// LLM Sampling interfaces for type safety (matching enhanced-evaluator.ts)
-interface CreateMessageCallback {
-  (request: {
-    messages: Array<{
-      role: 'user' | 'assistant';
-      content: { type: 'text'; text: string };
-    }>;
-    maxTokens?: number;
-    temperature?: number;
-    systemPrompt?: string;
-    includeContext?: 'none' | 'thisServer' | 'allServers';
-    stopSequences?: string[];
-    metadata?: Record<string, unknown>;
-    modelPreferences?: Record<string, unknown>;
-  }): Promise<{
-    content: { type: 'text'; text: string };
-    model?: string;
-    stopReason?: string;
-  }>;
-}
-
-// Command safety evaluation result interface
-export interface CommandSafetyEvaluationResult {
-  evaluation_result: 'allow' | 'deny' | 'user_confirm' | 'ai_assistant_confirm' | 'add_more_history';
-  basic_classification?: CommandClassification;
-  reasoning: string;
-  requires_confirmation: boolean;
-  suggested_alternatives?: string[];
-  llm_evaluation_used?: boolean;
-  user_confirmation_required?: boolean;
-  user_response?: Record<string, unknown>;
-  confirmation_message?: string;
-}
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class SecurityManager {
@@ -58,14 +32,10 @@ export class SecurityManager {
   private enhancedConfig: EnhancedSecurityConfig;
   private basicSafetyRules: BasicSafetyRule[];
   private enhancedEvaluator?: EnhancedSafetyEvaluator;
+  private historyManager?: CommandHistoryManager;
 
-  constructor(enhancedEvaluator?: EnhancedSafetyEvaluator) {
-    if (enhancedEvaluator) {
-      this.enhancedEvaluator = enhancedEvaluator;
-    }
-
-    // Initialize Enhanced Security configuration
-    this.enhancedConfig = { ...DEFAULT_ENHANCED_SECURITY_CONFIG };
+  constructor(config?: EnhancedSecurityConfig) {
+    this.enhancedConfig = config ? { ...config } : { ...DEFAULT_ENHANCED_SECURITY_CONFIG };
     this.basicSafetyRules = [...DEFAULT_BASIC_SAFETY_RULES];
 
     // Load Enhanced Security configuration from environment variables
@@ -109,11 +79,15 @@ export class SecurityManager {
     // Enhanced mode (backward compatibility)
     if (process.env['MCP_SHELL_ENHANCED_MODE'] === 'true') {
       this.enhancedConfig.enhanced_mode_enabled = true;
+    } else if (process.env['MCP_SHELL_ENHANCED_MODE'] === 'false') {
+      this.enhancedConfig.enhanced_mode_enabled = false;
     }
 
     // LLM evaluation (backward compatibility)
     if (process.env['MCP_SHELL_LLM_EVALUATION'] === 'true') {
       this.enhancedConfig.llm_evaluation_enabled = true;
+    } else if (process.env['MCP_SHELL_LLM_EVALUATION'] === 'false') {
+      this.enhancedConfig.llm_evaluation_enabled = false;
     }
 
     // Safe command skip (new simplified naming)
@@ -565,7 +539,9 @@ export class SecurityManager {
    * Check if enhanced security mode is enabled
    */
   isEnhancedModeEnabled(): boolean {
-    return this.enhancedConfig.enhanced_mode_enabled;
+    const enabled = this.enhancedConfig.enhanced_mode_enabled;
+    console.error('isEnhancedModeEnabled() called:', enabled);
+    return enabled;
   }
 
   /**
@@ -650,7 +626,7 @@ export class SecurityManager {
    */
   initializeEnhancedEvaluator(historyManager: CommandHistoryManager, server?: Server): void {
     if (this.enhancedConfig.enhanced_mode_enabled) {
-      this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager);
+      this.historyManager = historyManager;
 
       // Enhanced mode requires LLM evaluation capability
       if (!server) {
@@ -659,10 +635,10 @@ export class SecurityManager {
         );
       }
 
-      // Note: Enhanced evaluator uses ChatCompletionAdapter internally
-      // Type casting needed due to interface mismatch - enhanced evaluator handles the conversion
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.enhancedEvaluator.setCreateMessageCallback(server.createMessage.bind(server) as any);
+      // Create enhanced evaluator with server for automatic createMessage setup
+      // Create message callback from MCP server
+      const createMessageCallback = createMessageCallbackFromMCPServer(server);
+      this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager, createMessageCallback);
 
       // Set up MCP server reference for elicitation (proper MCP protocol)
       this.enhancedEvaluator.setMCPServer({
@@ -716,7 +692,7 @@ export class SecurityManager {
     command: string,
     workingDirectory: string,
     comment?: string
-  ): Promise<CommandSafetyEvaluationResult> {
+  ): Promise<SafetyEvaluationResult> {
     if (!this.enhancedConfig.enhanced_mode_enabled) {
       throw new Error('Enhanced mode is not enabled');
     }
@@ -724,6 +700,14 @@ export class SecurityManager {
     if (!this.enhancedEvaluator) {
       throw new Error('Enhanced evaluator not initialized');
     }
-    return await this.enhancedEvaluator.evaluateCommandLLMCentric(command, workingDirectory, [], comment);
+    
+    // Get recent command history for context
+    const history = this.historyManager ? this.historyManager.searchHistory({ limit: 10 }) : [];
+    
+    console.error(`[DEBUG] Enhanced Evaluator - Command: ${command}`);
+    console.error(`[DEBUG] Enhanced Evaluator - History entries: ${history.length}`);
+    console.error(`[DEBUG] Enhanced Evaluator - History commands: ${history.map((h: { command: string }) => h.command).join(', ')}`);
+    
+    return await this.enhancedEvaluator.evaluateCommandLLMCentric(command, workingDirectory, history, comment);
   }
 }

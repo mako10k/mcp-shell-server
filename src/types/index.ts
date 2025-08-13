@@ -242,3 +242,97 @@ export interface ExecutionProcessInfo {
   started_at?: string;
   completed_at?: string;
 }
+
+// Safety Evaluation Result Schemas
+//
+// 設計原則:
+// 1. 確認プロセス完了後の結果（Allow/Deny）には confirmation_message と user_response が含まれる
+// 2. 確認要求中（UserConfirm/AiAssistantConfirm）にはこれらのフィールドは未存在
+// 3. 各結果タイプに応じて、本当に必要なフィールドのみを含む
+// 4. MCPツールレベルでは user_confirm は出現しない（内部で解決される）
+// 5. Allow結果では代替案や次のアクションは不要（実行すればよいため）
+//
+// 最小共通フィールド（全ての結果タイプで必要）
+const SafetyEvaluationBaseSchema = z.object({
+  reasoning: z.string().describe('Evaluation reasoning'),
+  requires_confirmation: z.boolean().describe('Whether confirmation is required'),
+  llm_evaluation_used: z.boolean().optional().describe('Whether LLM evaluation was used'),
+  basic_classification: z.string().optional().describe('Basic security classification'),
+});
+
+// 確認プロセス完了後の追加フィールド（Allow/Deny/AiAssistantConfirm結果用）
+const SafetyEvaluationCompletedSchema = SafetyEvaluationBaseSchema.extend({
+  confirmation_message: z.string().optional().describe('Confirmation message from completed process'),
+  user_response: z.record(z.string(), z.unknown()).optional().describe('User response data from completed process'),
+});
+
+// Allow結果 - 実行が許可された場合（確認プロセス完了後）
+export const SafetyEvaluationAllowResultSchema = SafetyEvaluationCompletedSchema.extend({
+  evaluation_result: z.literal('allow').describe('Command is allowed to execute'),
+  suggested_alternatives: z.array(z.string()).optional().describe('Suggested alternative commands (for reference)'),
+  context_analysis: z.unknown().optional().describe('Additional context analysis'),
+  next_action: z.string().optional().describe('Suggested next action'),
+  // confirmation_message と user_response は SafetyEvaluationCompletedSchema に含まれている
+});
+export type SafetyEvaluationAllowResult = z.infer<typeof SafetyEvaluationAllowResultSchema>;
+
+// Deny結果 - 実行が拒否された場合（確認プロセス完了後）
+export const SafetyEvaluationDenyResultSchema = SafetyEvaluationCompletedSchema.extend({
+  evaluation_result: z.literal('deny').describe('Command is denied execution'),
+  suggested_alternatives: z.array(z.string()).optional().describe('Suggested alternative commands'),
+  next_action: z.string().optional().describe('Suggested next action for user'),
+  // confirmation_message と user_response は SafetyEvaluationCompletedSchema に含まれている
+});
+export type SafetyEvaluationDenyResult = z.infer<typeof SafetyEvaluationDenyResultSchema>;
+
+// User Confirm結果 - ユーザー確認が必要（確認プロセス中）
+// 注意: MCPツールレベルでは通常出現しない（内部で解決される）
+export const SafetyEvaluationUserConfirmResultSchema = SafetyEvaluationBaseSchema.extend({
+  evaluation_result: z.literal('user_confirm').describe('Requires user confirmation (internal use)'),
+  suggested_alternatives: z.array(z.string()).optional().describe('Suggested alternative commands'),
+  context_analysis: z.unknown().optional().describe('Additional context for user decision'),
+  user_confirmation_required: z.boolean().optional().describe('Legacy field for compatibility'),
+  // confirmation_message と user_response は確認完了前なので含まれない
+});
+export type SafetyEvaluationUserConfirmResult = z.infer<typeof SafetyEvaluationUserConfirmResultSchema>;
+
+// AI Assistant Confirm結果 - AI助手確認が必要（最終応答）
+export const SafetyEvaluationAiAssistantConfirmResultSchema = SafetyEvaluationCompletedSchema.extend({
+  evaluation_result: z.literal('ai_assistant_confirm').describe('Requires AI assistant confirmation'),
+  suggested_alternatives: z.array(z.string()).optional().describe('Suggested alternative commands'),
+  context_analysis: z.unknown().optional().describe('Additional context for assistant decision'),
+  next_action: z.string().optional().describe('What the assistant should do next'),
+  // confirmation_message と user_response は SafetyEvaluationCompletedSchema に含まれている
+});
+export type SafetyEvaluationAiAssistantConfirmResult = z.infer<typeof SafetyEvaluationAiAssistantConfirmResultSchema>;
+
+// Add More History結果 - 履歴情報が不足（確認プロセス中）
+export const SafetyEvaluationAddMoreHistoryResultSchema = SafetyEvaluationBaseSchema.extend({
+  evaluation_result: z.literal('add_more_history').describe('Requires more historical context'),
+  context_analysis: z.unknown().optional().describe('Analysis of what context is missing'),
+  next_action: z.string().optional().describe('How to provide more context'),
+  // このケースでは suggested_alternatives は通常不要
+  // 履歴が足りないだけで、コマンド自体に問題があるわけではない
+  // confirmation_message と user_response は確認完了前なので含まれない
+});
+export type SafetyEvaluationAddMoreHistoryResult = z.infer<typeof SafetyEvaluationAddMoreHistoryResultSchema>;
+
+// MCPツールレベルで使用される結果タイプ
+// User Confirmは内部処理で解決されるため、MCPレベルでは以下の3つのみ
+export const MCPSafetyEvaluationResultSchema = z.discriminatedUnion('evaluation_result', [
+  SafetyEvaluationAllowResultSchema,
+  SafetyEvaluationDenyResultSchema,
+  SafetyEvaluationAiAssistantConfirmResultSchema,
+  SafetyEvaluationAddMoreHistoryResultSchema,
+]);
+export type MCPSafetyEvaluationResult = z.infer<typeof MCPSafetyEvaluationResultSchema>;
+
+// 内部処理で使用される完全な結果タイプ（UserConfirmを含む）
+export const SafetyEvaluationResultSchema = z.discriminatedUnion('evaluation_result', [
+  SafetyEvaluationAllowResultSchema,
+  SafetyEvaluationDenyResultSchema,
+  SafetyEvaluationUserConfirmResultSchema,
+  SafetyEvaluationAiAssistantConfirmResultSchema,
+  SafetyEvaluationAddMoreHistoryResultSchema,
+]);
+export type SafetyEvaluationResult = z.infer<typeof SafetyEvaluationResultSchema>;
