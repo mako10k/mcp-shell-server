@@ -1,6 +1,7 @@
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { z } from 'zod';
 
-// Import CreateMessageCallback from enhanced-evaluator.ts since it supports tools
+// CreateMessageCallback interface supporting tools
 export interface CreateMessageCallback {
   (request: {
     messages: Array<{
@@ -123,8 +124,8 @@ type CCCResponse = z.infer<typeof CCCResponseSchema>;
 export class CCCToMCPCMAdapter {
   private createMessage: CreateMessageCallback;
 
-  constructor(createMessage: CreateMessageCallback) {
-    this.createMessage = createMessage;
+  constructor(server: Server) {
+    this.createMessage = createMessageCallbackFromMCPServer(server);
   }
 
   // Update chatCompletion to handle optional properties explicitly
@@ -403,8 +404,8 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
     createSystemPromptFromTools(request.tools || [], toolChoiceString),
   ].join('\n');
 
-  // Generate MCPRequest (construct to fully satisfy the type)
-  const mcpRequest: MCPCreateMessageRequest = {
+  // Generate MCPRequest with type-safe approach
+  const mcpRequest: Partial<MCPCreateMessageRequest> = {
     messages: filteredMessages,
     systemPrompt,
     includeContext: 'none',
@@ -425,7 +426,7 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
     mcpRequest.stopSequences = request.stop;
   }
 
-  return mcpRequest;
+  return mcpRequest as MCPCreateMessageRequest;
 }
 
 
@@ -511,6 +512,117 @@ When making function calls, respond with a JSON object containing a "tool_calls"
 - **ALL string values in arguments must follow the escaping rules above**
 
 Make function calls as needed to fulfill the user's request.`;
+}
+/**
+ * Create a CreateMessageCallback from an MCP Server instance
+ */
+function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
+  return async (request: Parameters<CreateMessageCallback>[0]) => {
+    try {
+      // Convert request to MCP format
+      const mcpMessages = request.messages
+        .filter((msg: { role: string }) => msg.role !== 'tool') // Filter out tool messages as MCP doesn't support them
+        .map((msg: { role: string; content: { text: string } }) => ({
+          role: msg.role as 'user' | 'assistant',
+          content: { type: 'text' as const, text: msg.content.text },
+        }));
+
+      // Create MCP request with only defined values
+      const mcpRequest: Record<string, unknown> = {
+        messages: mcpMessages,
+        includeContext: request.includeContext || 'none',
+      };
+
+      if (request.maxTokens !== undefined) {
+        mcpRequest['maxTokens'] = request.maxTokens;
+      }
+      if (request.temperature !== undefined) {
+        mcpRequest['temperature'] = request.temperature;
+      }
+      if (request.systemPrompt !== undefined) {
+        mcpRequest['systemPrompt'] = request.systemPrompt;
+      }
+
+      // Call MCP createMessage method with type assertion
+      const result = await server.createMessage(mcpRequest as Parameters<typeof server.createMessage>[0]);
+
+      // Build response object conditionally
+      const response: {
+        content: { type: 'text'; text: string; };
+        model?: string;
+        stopReason?: string;
+        tool_calls?: Array<{
+          id: string;
+          type: 'function';
+          function: { name: string; arguments: string; };
+        }>;
+      } = {
+        content: { type: 'text', text: String(result.content?.text || '') },
+      };
+
+      if (result.model) {
+        response.model = result.model;
+      }
+      if (result.stopReason) {
+        response.stopReason = result.stopReason;
+      }
+      if (result['tool_calls']) {
+        const toolCalls = result['tool_calls'] as Array<{
+          type: 'function';
+          function: { name: string; arguments: string; };
+        }>;
+        response.tool_calls = toolCalls.map((call, index) => ({
+          id: `call_${index}`, // Generate ID for compatibility
+          ...call,
+        }));
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Error in createMessageCallbackFromMCPServer:', error);
+      throw error;
+    }
+  };
+}
+// Tools for Function Calling (external use only)
+// import { securityEvaluationTool } from './security-tools.js';
+// MCP sampling protocol interface (matches manager.ts implementation)
+export interface CreateMessageCallback {
+  (request: {
+    messages: Array<{
+      role: 'user' | 'assistant' | 'tool';
+      content: { type: 'text'; text: string; };
+      tool_call_id?: string;
+    }>;
+    maxTokens?: number;
+    temperature?: number;
+    systemPrompt?: string;
+    includeContext?: 'none' | 'thisServer' | 'allServers';
+    stopSequences?: string[];
+    metadata?: Record<string, unknown>;
+    modelPreferences?: Record<string, unknown>;
+    tools?: Array<{
+      type: 'function';
+      function: {
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+      };
+    }>;
+    tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string; }; } | { type: 'tool'; name: string; };
+  }): Promise<{
+    content: { type: 'text'; text: string; };
+    model?: string | undefined;
+    stopReason?: string | undefined;
+    tool_calls?: Array<{
+      id: string;
+      type: 'function';
+      function: {
+        name: string;
+        arguments: string;
+      };
+    }>;
+  }>;
 }
 
 

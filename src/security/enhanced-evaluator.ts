@@ -18,50 +18,8 @@ import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 // Structured Output imports (minimal usage for fallback only)
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CCCToMCPCMAdapter } from './chat-completion-adapter.js';
-
-// Tools for Function Calling (external use only)
-// import { securityEvaluationTool } from './security-tools.js';
-
-// MCP sampling protocol interface (matches manager.ts implementation)
-interface CreateMessageCallback {
-  (request: {
-    messages: Array<{
-      role: 'user' | 'assistant' | 'tool';
-      content: { type: 'text'; text: string };
-      tool_call_id?: string;
-    }>;
-    maxTokens?: number;
-    temperature?: number;
-    systemPrompt?: string;
-    includeContext?: 'none' | 'thisServer' | 'allServers';
-    stopSequences?: string[];
-    metadata?: Record<string, unknown>;
-    modelPreferences?: Record<string, unknown>;
-    tools?: Array<{
-      type: 'function';
-      function: {
-        name: string;
-        description: string;
-        parameters: Record<string, unknown>;
-      };
-    }>;
-    tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } } | { type: 'tool'; name: string };
-  }): Promise<{
-    content: { type: 'text'; text: string };
-    model?: string | undefined;
-    stopReason?: string | undefined;
-    tool_calls?: Array<{
-      id: string;
-      type: 'function';
-      function: {
-        name: string;
-        arguments: string;
-      };
-    }>;
-  }>;
-}
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 // Elicitation interfaces (based on mcp-confirm implementation)
 interface ElicitationSchema {
@@ -84,14 +42,6 @@ interface ElicitationSchema {
 interface ElicitationResponse {
   action: 'accept' | 'decline' | 'cancel';
   content?: Record<string, unknown>;
-}
-
-// MCP Server interface for elicitation
-interface MCPServerInterface {
-  request(
-    request: { method: string; params?: Record<string, unknown> },
-    schema?: unknown
-  ): Promise<unknown>;
 }
 
 // Tool call interface for OpenAI API compatibility
@@ -162,18 +112,17 @@ interface SafetyEvaluation {
  * LLM-centric security evaluation with structured output
  */
 export class EnhancedSafetyEvaluator {
-  private createMessageCallback: CreateMessageCallback;
   private chatAdapter: CCCToMCPCMAdapter;
   private promptGenerator: SecurityLLMPromptGenerator;
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
-  private mcpServer: MCPServerInterface;
+  private mcpServer: Server;
   private functionCallHandlers: FunctionCallHandlerRegistry;
 
   constructor(
     securityManager: SecurityManager,
     historyManager: CommandHistoryManager,
-    mcpServer: MCPServerInterface
+    mcpServer: Server
   ) {
     this.securityManager = securityManager;
     this.historyManager = historyManager;
@@ -186,11 +135,8 @@ export class EnhancedSafetyEvaluator {
     const generator = new SecurityLLMPromptGenerator();
     this.promptGenerator = generator;
 
-    // Generate createMessageCallback from MCP server
-    this.createMessageCallback = createMessageCallbackFromMCPServer(mcpServer as unknown as import('@modelcontextprotocol/sdk/server/index.js').Server);
-    
     // Initialize chatAdapter with generated callback
-    this.chatAdapter = new CCCToMCPCMAdapter(this.createMessageCallback);
+    this.chatAdapter = new CCCToMCPCMAdapter(mcpServer);
   }
 
   /**
@@ -436,14 +382,7 @@ export class EnhancedSafetyEvaluator {
     return new Map(Object.entries(this.functionCallHandlers));
   }
 
-  setCreateMessageCallback(callback: CreateMessageCallback | undefined): void {
-    if (callback) {
-      this.createMessageCallback = callback;
-      this.chatAdapter = new CCCToMCPCMAdapter(callback);
-    }
-  }
-
-  setMCPServer(server: MCPServerInterface): void {
+  setMCPServer(server: Server): void {
     this.mcpServer = server;
   }
 
@@ -698,7 +637,6 @@ export class EnhancedSafetyEvaluator {
   ): Promise<LLMEvaluationResult> {
     try {
       logger.debug('Pre-LLM Debug (Messages)', {
-        createMessageCallbackAvailable: !!this.createMessageCallback,
         messagesCount: messages.length,
         messagesPreview: messages.map(m => ({ role: m.role, type: m.type, contentLength: m.content.length }))
       });
@@ -829,16 +767,15 @@ export class EnhancedSafetyEvaluator {
     } catch (error) {
       // NO FALLBACK - Function Call must succeed
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('=== Exception Caught in LLM Evaluation (Messages) ===');
-      console.error('Error type:', error?.constructor?.name || 'Unknown');
-      console.error('Error message:', errorMessage);
+      logger.error('=== Exception Caught in LLM Evaluation (Messages) ===');
+      logger.error('Error type:', error?.constructor?.name || 'Unknown');
+      logger.error('Error message:', errorMessage);
       if (error instanceof Error) {
-        console.error('Error stack:', error.stack);
+        logger.error('Error stack:', error.stack);
       }
-      console.error('Messages that caused error:', JSON.stringify(messages, null, 2));
-      console.error('createMessageCallback available:', !!this.createMessageCallback);
-      console.error('=== End Exception Debug ===');
-      
+      logger.error('Messages that caused error:', JSON.stringify(messages, null, 2));
+      logger.error('=== End Exception Debug ===');
+
       throw new Error(`Function Call evaluation failed: ${errorMessage}`);
     }
   }
@@ -1347,77 +1284,5 @@ This command has been flagged for review. Please provide your intent:
     // Use simple string replacement to avoid regex complications
     return text.replace(/\$COMMAND/g, command);
   }
-}
-/**
- * Create a CreateMessageCallback from an MCP Server instance
- */
-
-function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
-  return async (request) => {
-    try {
-      // Convert request to MCP format
-      const mcpMessages = request.messages
-        .filter(msg => msg.role !== 'tool') // Filter out tool messages as MCP doesn't support them
-        .map(msg => ({
-          role: msg.role as 'user' | 'assistant',
-          content: { type: 'text' as const, text: msg.content.text },
-        }));
-
-      // Create MCP request with only defined values
-      const mcpRequest: Record<string, unknown> = {
-        messages: mcpMessages,
-        includeContext: request.includeContext || 'none',
-      };
-
-      if (request.maxTokens !== undefined) {
-        mcpRequest['maxTokens'] = request.maxTokens;
-      }
-      if (request.temperature !== undefined) {
-        mcpRequest['temperature'] = request.temperature;
-      }
-      if (request.systemPrompt !== undefined) {
-        mcpRequest['systemPrompt'] = request.systemPrompt;
-      }
-
-      // Call MCP createMessage method with type assertion
-      const result = await server.createMessage(mcpRequest as Parameters<typeof server.createMessage>[0]);
-
-      // Build response object conditionally
-      const response: {
-        content: { type: 'text'; text: string; };
-        model?: string;
-        stopReason?: string;
-        tool_calls?: Array<{
-          id: string;
-          type: 'function';
-          function: { name: string; arguments: string; };
-        }>;
-      } = {
-        content: { type: 'text', text: String(result.content?.text || '') },
-      };
-
-      if (result.model) {
-        response.model = result.model;
-      }
-      if (result.stopReason) {
-        response.stopReason = result.stopReason;
-      }
-      if (result['tool_calls']) {
-        const toolCalls = result['tool_calls'] as Array<{
-          type: 'function';
-          function: { name: string; arguments: string; };
-        }>;
-        response.tool_calls = toolCalls.map((call, index) => ({
-          id: `call_${index}`, // Generate ID for compatibility
-          ...call,
-        }));
-      }
-
-      return response;
-    } catch (error) {
-      console.error('Error in createMessageCallbackFromMCPServer:', error);
-      throw error;
-    }
-  };
 }
 

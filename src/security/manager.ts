@@ -12,19 +12,8 @@ import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
-// Import shared types from chat-completion-adapter.ts
-import type { CreateMessageCallback } from './chat-completion-adapter.js';
-
 // Import SafetyEvaluationResult from types
 import type { SafetyEvaluationResult } from '../types/index.js';
-
-// MCP Protocol interfaces for type safety
-interface MCPRequest {
-  method: string;
-  params?: Record<string, unknown>;
-}
-
-import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class SecurityManager {
   private restrictions: SecurityRestrictions | null = null;
@@ -638,47 +627,7 @@ export class SecurityManager {
       this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager, server);
 
       // Set up MCP server reference for elicitation (proper MCP protocol)
-      this.enhancedEvaluator.setMCPServer({
-        request: async (request: MCPRequest, _schema?: unknown): Promise<unknown> => {
-          try {
-            // Use actual MCP server.request method for elicitation protocol
-            console.error('Sending MCP elicitation request:', request.method, request.params);
-
-            // This is the actual elicitation implementation using MCP protocol
-            // Based on mcp-confirm: server.request(request, ElicitResultSchema, options)
-            const result = await server.request(
-              {
-                method: request.method,
-                params: request.params,
-              },
-              ElicitResultSchema,
-              {
-                timeout: (request.params?.['timeoutMs'] as number) || 180000, // 3 minutes default
-              }
-            );
-            console.error('MCP elicitation result:', result);
-
-            return result;
-          } catch (error) {
-            console.error('MCP elicitation request failed:', error);
-            // Elicitation failure should be a proper MCP error, not a generic error
-            throw error;
-          }
-        },
-      });
-    }
-  }
-
-  /**
-   * Set LLM sampling callback for enhanced evaluator
-   */
-  setLLMSamplingCallback(callback: CreateMessageCallback): void {
-    if (this.enhancedEvaluator) {
-      // Type-safe wrapper to match enhanced evaluator's expected signature
-      const wrappedCallback = (request: unknown) => {
-        return callback(request as unknown as Parameters<CreateMessageCallback>[0]);
-      };
-      this.enhancedEvaluator.setCreateMessageCallback(wrappedCallback as Parameters<typeof this.enhancedEvaluator.setCreateMessageCallback>[0]);
+      this.enhancedEvaluator.setMCPServer(server);
     }
   }
 
