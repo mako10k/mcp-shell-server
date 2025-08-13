@@ -32,6 +32,7 @@ import {
   CleanupSuggestionsParamsSchema,
   AutoCleanupParamsSchema,
   CommandHistoryQueryParamsSchema,
+  AdjustCriteriaParamsSchema as _AdjustCriteriaParamsSchema, // Disabled MCP tool
 } from './types/schemas.js';
 import { TerminalOperateParamsSchema } from './types/quick-schemas.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
@@ -205,7 +206,18 @@ export class MCPShellServer {
           name: 'command_history_query',
           description: 'Universal command history query tool with pagination, search, individual reference, and analytics capabilities. Supports: entry references via execution_id (avoiding duplication with process_get_execution), analytics (stats/patterns/top_commands), paginated search with date filtering. Use this for all command history operations.',
           inputSchema: zodToJsonSchema(CommandHistoryQueryParamsSchema, { target: 'jsonSchema7' })
+        },
+
+        // Dynamic Security Criteria Adjustment
+        // NOTE: MCP-side adjust_criteria tool is disabled (security concern - evaluated party should not adjust evaluation criteria)
+        // Use Validator-side adjustValidatorCriteria instead for internal criteria adjustment
+        /*
+        {
+          name: 'adjust_criteria',
+          description: 'Adjust security evaluation criteria dynamically to better align with user workflow patterns. Allows modifying, appending, or overwriting criteria text with automatic backup functionality.',
+          inputSchema: zodToJsonSchema(AdjustCriteriaParamsSchema, { target: 'jsonSchema7' })
         }
+        */
       ].filter((tool) => !DISABLED_TOOLS.includes(tool.name))
     }));
 
@@ -350,6 +362,16 @@ export class MCPShellServer {
             const result = await this.shellTools.queryCommandHistory(params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
+
+          // Dynamic Security Criteria Adjustment
+          // NOTE: MCP-side adjust_criteria handler is disabled (security concern)
+          /*
+          case 'adjust_criteria': {
+            const params = AdjustCriteriaParamsSchema.parse(args);
+            const result = await this.shellTools.adjustCriteria(params);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+          */
 
           default:
             throw new McpError(

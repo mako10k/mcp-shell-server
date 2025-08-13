@@ -5,6 +5,7 @@
  */
 
 import { SafetyLevel } from '../types/enhanced-security.js';
+import { loadCriteria } from '../utils/criteria-manager.js';
 
 export interface ElicitationHistoryEntry {
   command: string;
@@ -108,16 +109,24 @@ Final Decision: ${entry.evaluationResult}` : ''}`
    * Generate system prompt for initial security evaluation
    * Function Call format is handled by ChatCompletionAdapter automatically
    */
-  generateSecurityEvaluationPrompt(context: SecurityPromptContext): {
+  async generateSecurityEvaluationPrompt(context: SecurityPromptContext): Promise<{
     systemPrompt: string;
     userMessage: string;
-  } {
+  }> {
+    // Load dynamic criteria
+    const adjustedCriteria = await loadCriteria();
+    
     const systemPrompt = `# Security Command Evaluator
 
 You are an expert security evaluator specialized in analyzing shell commands for safety and risk assessment.
 
 ## Your Role
 Analyze the provided shell command to prevent reckless, careless, or commands that deviate from user intent.
+
+## Adjusted Security Criteria
+${adjustedCriteria}
+
+**Dynamic Adjustment**: Security criteria can be refined using the adjust_criteria tool to better align with user workflow patterns and intent.
 
 ## Security Focus
 **Primary Goal**: Prevent commands that could cause harm through:
@@ -383,12 +392,12 @@ Return function execution result as JSON only.`;
   /**
    * Generate debug prompt (for development use only)
    */
-  generateDebugPrompt(context: SecurityPromptContext): {
+  async generateDebugPrompt(context: SecurityPromptContext): Promise<{
     systemPrompt: string;
     userMessage: string;
     expectedSchema: Record<string, unknown>;
-  } {
-    const { systemPrompt, userMessage } = this.generateSecurityEvaluationPrompt(context);
+  }> {
+    const { systemPrompt, userMessage } = await this.generateSecurityEvaluationPrompt(context);
 
     return {
       systemPrompt: systemPrompt + '\n\nDEBUG MODE: Include parsing metadata in response.',

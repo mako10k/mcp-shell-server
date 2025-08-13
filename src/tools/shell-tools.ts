@@ -53,6 +53,7 @@ import {
   CleanupSuggestionsParams,
   AutoCleanupParams,
   CommandHistoryQueryParams,
+  AdjustCriteriaParams as _AdjustCriteriaParams, // Disabled MCP tool type
 } from '../types/schemas.js';
 import { TerminalOperateParams } from '../types/quick-schemas.js';
 import { ProcessManager, ExecutionOptions } from '../core/process-manager.js';
@@ -63,6 +64,7 @@ import { SecurityManager } from '../security/manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { TerminalOptions } from '../core/terminal-manager.js';
 import { MCPShellError } from '../utils/errors.js';
+import { saveCriteria as _saveCriteria, getCriteriaStatus as _getCriteriaStatus } from '../utils/criteria-manager.js'; // Disabled MCP tool functions
 
 // ...existing code...
 
@@ -904,6 +906,54 @@ export class ShellTools {
       };
     } catch (error) {
       throw MCPShellError.fromError(error);
+    }
+  }
+
+  // Dynamic Security Criteria Adjustment
+  // NOTE: MCP-side adjust_criteria method is disabled (security concern)
+  async _adjustCriteria(params: _AdjustCriteriaParams) {
+    try {
+      // Validate criteria text
+      if (!params.criteria_text || params.criteria_text.trim().length === 0) {
+        return {
+          success: false,
+          error: 'Criteria text cannot be empty',
+        };
+      }
+
+      // Get current status before modification
+      const statusBefore = await _getCriteriaStatus();
+
+      // Save criteria with backup option
+      const result = await _saveCriteria(
+        params.criteria_text,
+        params.append_mode || false,
+        params.backup_existing !== false // Default to true
+      );
+
+      // Get status after modification
+      const statusAfter = await _getCriteriaStatus();
+
+      return {
+        success: true,
+        message: `Security criteria ${params.append_mode ? 'appended to' : 'updated at'} ${result.criteriaPath}`,
+        details: {
+          criteria_path: result.criteriaPath,
+          backup_path: result.backupPath,
+          append_mode: params.append_mode || false,
+          backup_created: result.backupPath !== null,
+          status_before: statusBefore,
+          status_after: statusAfter,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to adjust criteria: ${error instanceof Error ? error.message : String(error)}`,
+        details: {
+          error_type: error instanceof Error ? error.constructor.name : 'Unknown',
+        },
+      };
     }
   }
 }

@@ -615,6 +615,22 @@ export const CommandHistoryQueryParamsSchema = z.object({
     .describe('Include full entry details or just metadata with IDs'),
 });
 
+// Dynamic Security Criteria Adjustment
+export const AdjustCriteriaParamsSchema = z.object({
+  criteria_text: z
+    .string()
+    .min(1)
+    .describe('New criteria content to apply for security evaluation'),
+  append_mode: z
+    .boolean()
+    .default(false)
+    .describe('If true, append to existing criteria; if false, overwrite existing criteria'),
+  backup_existing: z
+    .boolean()
+    .default(true)
+    .describe('Create timestamped backup of current criteria before modification'),
+});
+
 // Type exports
 export type ShellExecuteParams = z.infer<typeof ShellExecuteParamsSchema>;
 export type ShellGetExecutionParams = z.infer<typeof ShellGetExecutionParamsSchema>;
@@ -637,3 +653,4 @@ export type MonitoringGetStatsParams = z.infer<typeof MonitoringGetStatsParamsSc
 export type CleanupSuggestionsParams = z.infer<typeof CleanupSuggestionsParamsSchema>;
 export type AutoCleanupParams = z.infer<typeof AutoCleanupParamsSchema>;
 export type CommandHistoryQueryParams = z.infer<typeof CommandHistoryQueryParamsSchema>;
+export type AdjustCriteriaParams = z.infer<typeof AdjustCriteriaParamsSchema>;

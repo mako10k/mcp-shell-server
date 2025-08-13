@@ -18,6 +18,7 @@ import {
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId, logger } from '../utils/helpers.js';
 import { repairAndParseJson } from '../utils/json-repair.js';
+import { adjustCriteria } from '../utils/criteria-manager.js';
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 // Structured Output imports (minimal usage for fallback only)
@@ -488,7 +489,7 @@ export class EnhancedSafetyEvaluator {
       ...(comment && { comment }),
     };
     
-    const { systemPrompt, userMessage: baseUserMessage } = this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
+    const { systemPrompt, userMessage: baseUserMessage } = await this.promptGenerator.generateSecurityEvaluationPrompt(promptContext);
     
     // Initialize message chain - systemPrompt + baseUserMessage + chronological additions
     const messages: Array<{
@@ -1320,6 +1321,48 @@ This command has been flagged for review. Please provide your intent:
     // Replace all instances of $COMMAND with the actual command
     // Use simple string replacement to avoid regex complications
     return text.replace(/\$COMMAND/g, command);
+  }
+
+  /**
+   * Validator-side criteria adjustment
+   * Allows internal adjustment of security evaluation criteria
+   */
+  async adjustValidatorCriteria(
+    criteriaText: string,
+    appendMode: boolean = false,
+    backupExisting: boolean = true
+  ): Promise<{
+    success: boolean;
+    message: string;
+    backupPath?: string;
+    criteriaPath: string;
+  }> {
+    logger.info('Validator adjusting security criteria', {
+      appendMode,
+      backupExisting,
+      criteriaLength: criteriaText.length
+    });
+
+    try {
+      const result = await adjustCriteria(criteriaText, appendMode, backupExisting);
+      
+      logger.info('Validator criteria adjustment completed', {
+        success: result.success,
+        criteriaPath: result.criteriaPath,
+        backupPath: result.backupPath
+      });
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Validator criteria adjustment failed', { error: errorMessage });
+      
+      return {
+        success: false,
+        message: `Validator criteria adjustment failed: ${errorMessage}`,
+        criteriaPath: ''
+      };
+    }
   }
 }
 
