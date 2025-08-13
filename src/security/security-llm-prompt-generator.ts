@@ -171,6 +171,17 @@ No complex escaping needed when using the $COMMAND variable.
 
 **ai_assistant_confirm()**: Use when you need NEW information from AI Assistant:
 - assistant_request_message: Specific question/request for the assistant
+- next_action: REQUIRED - Provide detailed guidance for the assistant:
+  - instruction: Clear step-by-step instruction for what the assistant should do
+  - method: How the assistant should gather the required information  
+  - expected_outcome: What result is expected from the assistant action
+  - executable_commands: Array of specific commands the assistant should run (e.g., ["cat tsconfig.json", "npm list typescript"])
+
+Example ai_assistant_confirm() usage:
+When you need TypeScript config before allowing build commands, provide:
+- reasoning: "Need to verify TypeScript configuration before allowing npx tsc"
+- assistant_request_message: "Please provide TypeScript configuration details"
+- next_action with executable_commands: ["cat tsconfig.json", "cat package.json | grep -A3 scripts"]
 
 **user_confirm()**: Use when you need explicit human confirmation:
 - confirmation_question: Specific question to ask the user (include alternatives if applicable)

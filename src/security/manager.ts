@@ -637,7 +637,8 @@ export class SecurityManager {
   async evaluateCommandSafetyByEnhancedEvaluator(
     command: string,
     workingDirectory: string,
-    comment?: string
+    comment?: string,
+    forceUserConfirm?: boolean
   ): Promise<SafetyEvaluationResult> {
     if (!this.enhancedConfig.enhanced_mode_enabled) {
       throw new Error('Enhanced mode is not enabled');
@@ -654,6 +655,6 @@ export class SecurityManager {
     console.error(`[DEBUG] Enhanced Evaluator - History entries: ${history.length}`);
     console.error(`[DEBUG] Enhanced Evaluator - History commands: ${history.map((h: { command: string }) => h.command).join(', ')}`);
     
-    return await this.enhancedEvaluator.evaluateCommandLLMCentric(command, workingDirectory, history, comment);
+    return await this.enhancedEvaluator.evaluateCommandSafety(command, workingDirectory, history, comment, forceUserConfirm);
   }
 }

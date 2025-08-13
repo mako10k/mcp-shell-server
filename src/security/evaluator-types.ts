@@ -96,7 +96,8 @@ export const LLMEvaluationResultSchema = z.object({
   confirmation_question: z.string().optional(),
   assistant_request_message: z.string().optional(),
   suggested_alternatives: z.array(z.string()).optional(),
-  requires_additional_context: RequiresAdditionalContextSchema.optional()
+  requires_additional_context: RequiresAdditionalContextSchema.optional(),
+  next_steps: z.array(z.string()).optional()
 });
 
 export const UserIntentDataSchema = z.object({
@@ -110,7 +111,8 @@ export const UserIntentDataSchema = z.object({
 export const NextActionSchema = z.object({
   instruction: z.string(),
   method: z.string(),
-  expected_outcome: z.string()
+  expected_outcome: z.string(),
+  executable_commands: z.array(z.string()).optional()
 });
 
 export const SafetyEvaluationSchema = z.object({
@@ -124,7 +126,8 @@ export const SafetyEvaluationSchema = z.object({
   user_response: z.record(z.unknown()).optional(),
   confirmation_message: z.string().optional(),
   elicitation_response: ElicitationResponseSchema.nullable().optional(),
-  next_action: NextActionSchema.optional()
+  next_action: NextActionSchema.optional(),
+  next_steps: z.array(z.string()).optional()
 });
 
 export const MCPServerRequestSchema = z.object({

@@ -243,96 +243,256 @@ export interface ExecutionProcessInfo {
   completed_at?: string;
 }
 
-// Safety Evaluation Result Schemas
+// Elicitation Result interface
+export interface ElicitationResult {
+  status: 'timeout' | 'canceled' | 'confirmed' | 'declined';
+  user_response?: Record<string, unknown> | undefined;
+  timeout_duration_ms?: number;
+  question_asked: string;
+  timestamp: string;
+  comment?: string;  // ユーザーからのコメントがあれば含める
+}
+
+// Safety Evaluation Result Classes
 //
 // 設計原則:
-// 1. 確認プロセス完了後の結果（Allow/Deny）には confirmation_message と user_response が含まれる
-// 2. 確認要求中（UserConfirm/AiAssistantConfirm）にはこれらのフィールドは未存在
-// 3. 各結果タイプに応じて、本当に必要なフィールドのみを含む
-// 4. MCPツールレベルでは user_confirm は出現しない（内部で解決される）
-// 5. Allow結果では代替案や次のアクションは不要（実行すればよいため）
-//
-// 最小共通フィールド（全ての結果タイプで必要）
-const SafetyEvaluationBaseSchema = z.object({
-  reasoning: z.string().describe('Evaluation reasoning'),
-  requires_confirmation: z.boolean().describe('Whether confirmation is required'),
-  llm_evaluation_used: z.boolean().optional().describe('Whether LLM evaluation was used'),
-  basic_classification: z.string().optional().describe('Basic security classification'),
-});
+// 1. 最終応答のみのクラス（user_confirm, add_more_history は除外）
+// 2. 基底クラス + サブクラスによる型安全性
+// 3. ファクトリパターンによる生成
+// 4. 応答生成メソッドによる変換ロジックのカプセル化
 
-// 確認プロセス完了後の追加フィールド（Allow/Deny/AiAssistantConfirm結果用）
-const SafetyEvaluationCompletedSchema = SafetyEvaluationBaseSchema.extend({
-  confirmation_message: z.string().optional().describe('Confirmation message from completed process'),
-  user_response: z.record(z.string(), z.unknown()).optional().describe('User response data from completed process'),
-});
+// 基底クラス - 最小共通フィールド
+export abstract class SafetyEvaluationResult {
+  protected reasoning: string;
+  protected llm_evaluation_used?: boolean | undefined;
+  protected elicitation_result?: ElicitationResult | undefined;
+  
+  constructor(reasoning: string, llmEvaluationUsed?: boolean, elicitationResult?: ElicitationResult) {
+    this.reasoning = reasoning;
+    this.llm_evaluation_used = llmEvaluationUsed;
+    this.elicitation_result = elicitationResult;
+  }
+  
+  // 応答生成メソッド（抽象）
+  abstract generateToolResponse(): unknown;
+  abstract getEvaluationResult(): string;
+}
 
-// Allow結果 - 実行が許可された場合（確認プロセス完了後）
-export const SafetyEvaluationAllowResultSchema = SafetyEvaluationCompletedSchema.extend({
-  evaluation_result: z.literal('allow').describe('Command is allowed to execute'),
-  suggested_alternatives: z.array(z.string()).optional().describe('Suggested alternative commands (for reference)'),
-  context_analysis: z.unknown().optional().describe('Additional context analysis'),
-  next_action: z.string().optional().describe('Suggested next action'),
-  // confirmation_message と user_response は SafetyEvaluationCompletedSchema に含まれている
-});
-export type SafetyEvaluationAllowResult = z.infer<typeof SafetyEvaluationAllowResultSchema>;
+// 確認プロセス完了後の基底クラス
+export abstract class SafetyEvaluationCompletedResult extends SafetyEvaluationResult {
+  protected confirmation_message?: string | undefined;
+  protected user_response?: Record<string, unknown> | undefined;
+  
+  constructor(
+    reasoning: string, 
+    llmEvaluationUsed?: boolean,
+    elicitationResult?: ElicitationResult,
+    confirmationMessage?: string,
+    userResponse?: Record<string, unknown>
+  ) {
+    super(reasoning, llmEvaluationUsed, elicitationResult);
+    this.confirmation_message = confirmationMessage;
+    this.user_response = userResponse;
+  }
+}
 
-// Deny結果 - 実行が拒否された場合（確認プロセス完了後）
-export const SafetyEvaluationDenyResultSchema = SafetyEvaluationCompletedSchema.extend({
-  evaluation_result: z.literal('deny').describe('Command is denied execution'),
-  suggested_alternatives: z.array(z.string()).optional().describe('Suggested alternative commands'),
-  next_action: z.string().optional().describe('Suggested next action for user'),
-  // confirmation_message と user_response は SafetyEvaluationCompletedSchema に含まれている
-});
-export type SafetyEvaluationDenyResult = z.infer<typeof SafetyEvaluationDenyResultSchema>;
+// Allow結果クラス - 実行が許可された場合
+export class SafetyEvaluationAllowResult extends SafetyEvaluationCompletedResult {
+  private suggested_alternatives?: string[] | undefined;
+  private context_analysis?: unknown;
+  private next_action?: string | undefined;
+  
+  constructor(
+    reasoning: string,
+    llmEvaluationUsed?: boolean,
+    elicitationResult?: ElicitationResult,
+    suggestedAlternatives?: string[],
+    contextAnalysis?: unknown,
+    nextAction?: string,
+    confirmationMessage?: string,
+    userResponse?: Record<string, unknown>
+  ) {
+    super(reasoning, llmEvaluationUsed, elicitationResult, confirmationMessage, userResponse);
+    this.suggested_alternatives = suggestedAlternatives;
+    this.context_analysis = contextAnalysis;
+    this.next_action = nextAction;
+  }
+  
+  getEvaluationResult(): string { return 'allow'; }
+  
+  generateToolResponse() {
+    return {
+      evaluation_result: 'allow',
+      reasoning: this.reasoning,
+      llm_evaluation_used: this.llm_evaluation_used,
+      suggested_alternatives: this.suggested_alternatives,
+      context_analysis: this.context_analysis,
+      next_action: this.next_action,
+      confirmation_message: this.confirmation_message,
+      user_response: this.user_response,
+      elicitation_result: this.elicitation_result
+    };
+  }
+}
 
-// User Confirm結果 - ユーザー確認が必要（確認プロセス中）
-// 注意: MCPツールレベルでは通常出現しない（内部で解決される）
-export const SafetyEvaluationUserConfirmResultSchema = SafetyEvaluationBaseSchema.extend({
-  evaluation_result: z.literal('user_confirm').describe('Requires user confirmation (internal use)'),
-  suggested_alternatives: z.array(z.string()).optional().describe('Suggested alternative commands'),
-  context_analysis: z.unknown().optional().describe('Additional context for user decision'),
-  user_confirmation_required: z.boolean().optional().describe('Legacy field for compatibility'),
-  // confirmation_message と user_response は確認完了前なので含まれない
-});
-export type SafetyEvaluationUserConfirmResult = z.infer<typeof SafetyEvaluationUserConfirmResultSchema>;
+// Deny結果クラス - 実行が拒否された場合
+export class SafetyEvaluationDenyResult extends SafetyEvaluationCompletedResult {
+  private suggested_alternatives?: string[] | undefined;
+  private next_action?: string | undefined;
+  
+  constructor(
+    reasoning: string,
+    llmEvaluationUsed?: boolean,
+    elicitationResult?: ElicitationResult,
+    suggestedAlternatives?: string[],
+    nextAction?: string,
+    confirmationMessage?: string,
+    userResponse?: Record<string, unknown>
+  ) {
+    super(reasoning, llmEvaluationUsed, elicitationResult, confirmationMessage, userResponse);
+    this.suggested_alternatives = suggestedAlternatives;
+    this.next_action = nextAction;
+  }
+  
+  getEvaluationResult(): string { return 'deny'; }
+  
+  generateToolResponse() {
+    return {
+      evaluation_result: 'deny',
+      reasoning: this.reasoning,
+      llm_evaluation_used: this.llm_evaluation_used,
+      suggested_alternatives: this.suggested_alternatives,
+      next_action: this.next_action,
+      confirmation_message: this.confirmation_message,
+      user_response: this.user_response,
+      elicitation_result: this.elicitation_result
+    };
+  }
+}
 
-// AI Assistant Confirm結果 - AI助手確認が必要（最終応答）
-export const SafetyEvaluationAiAssistantConfirmResultSchema = SafetyEvaluationCompletedSchema.extend({
-  evaluation_result: z.literal('ai_assistant_confirm').describe('Requires AI assistant confirmation'),
-  suggested_alternatives: z.array(z.string()).optional().describe('Suggested alternative commands'),
-  context_analysis: z.unknown().optional().describe('Additional context for assistant decision'),
-  next_action: z.string().optional().describe('What the assistant should do next'),
-  // confirmation_message と user_response は SafetyEvaluationCompletedSchema に含まれている
-});
-export type SafetyEvaluationAiAssistantConfirmResult = z.infer<typeof SafetyEvaluationAiAssistantConfirmResultSchema>;
+// AiAssistantConfirm結果クラス - AI助手確認が必要
+export class SafetyEvaluationAiAssistantConfirmResult extends SafetyEvaluationCompletedResult {
+  private suggested_alternatives?: string[] | undefined;
+  private context_analysis?: unknown;
+  private next_action: {
+    instruction: string;
+    method: string;
+    expected_outcome: string;
+    executable_commands?: string[];
+  };
+  
+  constructor(
+    reasoning: string,
+    nextAction: {
+      instruction: string;
+      method: string;
+      expected_outcome: string;
+      executable_commands?: string[];
+    },
+    llmEvaluationUsed?: boolean,
+    elicitationResult?: ElicitationResult,
+    suggestedAlternatives?: string[],
+    contextAnalysis?: unknown,
+    confirmationMessage?: string,
+    userResponse?: Record<string, unknown>
+  ) {
+    super(reasoning, llmEvaluationUsed, elicitationResult, confirmationMessage, userResponse);
+    this.next_action = nextAction;
+    this.suggested_alternatives = suggestedAlternatives;
+    this.context_analysis = contextAnalysis;
+  }
+  
+  getEvaluationResult(): string { return 'ai_assistant_confirm'; }
+  
+  generateToolResponse() {
+    return {
+      evaluation_result: 'ai_assistant_confirm',
+      reasoning: this.reasoning,
+      llm_evaluation_used: this.llm_evaluation_used,
+      suggested_alternatives: this.suggested_alternatives,
+      context_analysis: this.context_analysis,
+      next_action: this.next_action,
+      confirmation_message: this.confirmation_message,
+      user_response: this.user_response,
+      elicitation_result: this.elicitation_result
+    };
+  }
+}
 
-// Add More History結果 - 履歴情報が不足（確認プロセス中）
-export const SafetyEvaluationAddMoreHistoryResultSchema = SafetyEvaluationBaseSchema.extend({
-  evaluation_result: z.literal('add_more_history').describe('Requires more historical context'),
-  context_analysis: z.unknown().optional().describe('Analysis of what context is missing'),
-  next_action: z.string().optional().describe('How to provide more context'),
-  // このケースでは suggested_alternatives は通常不要
-  // 履歴が足りないだけで、コマンド自体に問題があるわけではない
-  // confirmation_message と user_response は確認完了前なので含まれない
-});
-export type SafetyEvaluationAddMoreHistoryResult = z.infer<typeof SafetyEvaluationAddMoreHistoryResultSchema>;
-
-// MCPツールレベルで使用される結果タイプ
-// User Confirmは内部処理で解決されるため、MCPレベルでは以下の3つのみ
-export const MCPSafetyEvaluationResultSchema = z.discriminatedUnion('evaluation_result', [
-  SafetyEvaluationAllowResultSchema,
-  SafetyEvaluationDenyResultSchema,
-  SafetyEvaluationAiAssistantConfirmResultSchema,
-  SafetyEvaluationAddMoreHistoryResultSchema,
-]);
-export type MCPSafetyEvaluationResult = z.infer<typeof MCPSafetyEvaluationResultSchema>;
-
-// 内部処理で使用される完全な結果タイプ（UserConfirmを含む）
-export const SafetyEvaluationResultSchema = z.discriminatedUnion('evaluation_result', [
-  SafetyEvaluationAllowResultSchema,
-  SafetyEvaluationDenyResultSchema,
-  SafetyEvaluationUserConfirmResultSchema,
-  SafetyEvaluationAiAssistantConfirmResultSchema,
-  SafetyEvaluationAddMoreHistoryResultSchema,
-]);
-export type SafetyEvaluationResult = z.infer<typeof SafetyEvaluationResultSchema>;
+// ファクトリクラス
+export class SafetyEvaluationResultFactory {
+  static createAllow(
+    reasoning: string,
+    options: {
+      llmEvaluationUsed?: boolean;
+      elicitationResult?: ElicitationResult | undefined;
+      suggestedAlternatives?: string[] | undefined;
+      contextAnalysis?: unknown;
+      nextAction?: string | undefined;
+      confirmationMessage?: string | undefined;
+      userResponse?: Record<string, unknown> | undefined;
+    } = {}
+  ): SafetyEvaluationAllowResult {
+    return new SafetyEvaluationAllowResult(
+      reasoning,
+      options.llmEvaluationUsed,
+      options.elicitationResult,
+      options.suggestedAlternatives,
+      options.contextAnalysis,
+      options.nextAction,
+      options.confirmationMessage,
+      options.userResponse
+    );
+  }
+  
+  static createDeny(
+    reasoning: string,
+    options: {
+      llmEvaluationUsed?: boolean;
+      elicitationResult?: ElicitationResult | undefined;
+      suggestedAlternatives?: string[] | undefined;
+      nextAction?: string | undefined;
+      confirmationMessage?: string | undefined;
+      userResponse?: Record<string, unknown> | undefined;
+    } = {}
+  ): SafetyEvaluationDenyResult {
+    return new SafetyEvaluationDenyResult(
+      reasoning,
+      options.llmEvaluationUsed,
+      options.elicitationResult,
+      options.suggestedAlternatives,
+      options.nextAction,
+      options.confirmationMessage,
+      options.userResponse
+    );
+  }
+  
+  static createAiAssistantConfirm(
+    reasoning: string,
+    nextAction: {
+      instruction: string;
+      method: string;
+      expected_outcome: string;
+      executable_commands?: string[];
+    },
+    options: {
+      llmEvaluationUsed?: boolean;
+      elicitationResult?: ElicitationResult | undefined;
+      suggestedAlternatives?: string[] | undefined;
+      contextAnalysis?: unknown;
+      confirmationMessage?: string | undefined;
+      userResponse?: Record<string, unknown> | undefined;
+    } = {}
+  ): SafetyEvaluationAiAssistantConfirmResult {
+    return new SafetyEvaluationAiAssistantConfirmResult(
+      reasoning,
+      nextAction,
+      options.llmEvaluationUsed,
+      options.elicitationResult,
+      options.suggestedAlternatives,
+      options.contextAnalysis,
+      options.confirmationMessage,
+      options.userResponse
+    );
+  }
+}

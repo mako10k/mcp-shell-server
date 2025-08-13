@@ -10,7 +10,11 @@ import {
   ReevaluateWithAdditionalContextArgs
 } from '../types/enhanced-security.js';
 import { SecurityManager } from './manager.js';
-import type { SafetyEvaluationResult } from '../types/index.js';
+import { 
+  SafetyEvaluationResult,
+  SafetyEvaluationResultFactory,
+  ElicitationResult
+} from '../types/index.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId, logger } from '../utils/helpers.js';
 import { repairAndParseJson } from '../utils/json-repair.js';
@@ -56,23 +60,11 @@ interface ToolCall {
 
 // LLM evaluation result (using simplified structure)
 // Enhanced LLM evaluation result interface that supports new function-based tools
-interface LLMEvaluationResult {
-  evaluation_result: 'allow' | 'deny' | 'add_more_history' | 'user_confirm' | 'ai_assistant_confirm'; // Tool-based categories
+// Base interface with common fields
+interface LLMEvaluationResultBase {
   reasoning: string;
-  
-  // For add_more_history tool
-  command_history_depth?: number;
-  execution_results_count?: number;
-  user_intent_search_keywords?: string[];
-  
-  // For user_confirm tool
-  confirmation_question?: string;
-  
-  // For ai_assistant_confirm tool
-  assistant_request_message?: string;
-  
-  // For deny tool
-  suggested_alternatives?: string[];
+  suggested_alternatives?: string[];  // Common to all types for consistency
+  elicitationResult?: ElicitationResult | undefined;  // Elicitation details when applicable
   
   // Legacy compatibility
   requires_additional_context?: {
@@ -80,9 +72,38 @@ interface LLMEvaluationResult {
     execution_results_count: number;
     user_intent_search_keywords: string[] | null;
     user_intent_question: string | null;
-    assistant_request_message?: string | null; // New field for assistant requests
+    assistant_request_message?: string | null;
   };
 }
+
+// Discriminated union for type safety
+type LLMEvaluationResult = 
+  | (LLMEvaluationResultBase & {
+      evaluation_result: 'allow';
+    })
+  | (LLMEvaluationResultBase & {
+      evaluation_result: 'deny';
+    })
+  | (LLMEvaluationResultBase & {
+      evaluation_result: 'add_more_history';
+      command_history_depth?: number;
+      execution_results_count?: number;
+      user_intent_search_keywords?: string[];
+    })
+  | (LLMEvaluationResultBase & {
+      evaluation_result: 'user_confirm';
+      confirmation_question?: string;
+    })
+  | (LLMEvaluationResultBase & {
+      evaluation_result: 'ai_assistant_confirm';
+      assistant_request_message?: string;
+      next_action: {  // Required for ai_assistant_confirm
+        instruction: string;
+        method: string;
+        expected_outcome: string;
+        executable_commands?: string[];
+      };
+    });
 
 // User intent data from elicitation
 interface UserIntentData {
@@ -91,20 +112,6 @@ interface UserIntentData {
   timestamp: string;
   confidence_level: 'low' | 'medium' | 'high';
   elicitation_id: string;
-}
-
-// Safety evaluation result
-interface SafetyEvaluation {
-  evaluation_result: 'allow' | 'deny' | 'add_more_history' | 'user_confirm' | 'ai_assistant_confirm'; // Function-based evaluation results
-  // Removed safety_level property as requested
-  basic_classification: string;
-  reasoning: string;
-  requires_confirmation: boolean;
-  suggested_alternatives: string[];
-  llm_evaluation_used: boolean;
-  user_confirmation_required?: boolean;
-  user_response?: Record<string, unknown>;
-  confirmation_message?: string;
 }
 
 /**
@@ -227,7 +234,7 @@ export class EnhancedSafetyEvaluator {
       // Enhanced evaluation with user intent consideration
       const enhancedContext = `${args.additional_context || ''}\nUser Intent: ${args.user_intent}\nPrevious Evaluation: ${args.previous_evaluation.reasoning}`;
       
-      const reevaluationResult = await this.evaluateCommandLLMCentric(
+      const reevaluationResult = await this.performLLMCentricEvaluation(
         args.command,
         args.working_directory,
         [], // Empty history for function call context
@@ -288,7 +295,7 @@ export class EnhancedSafetyEvaluator {
         enhancedContext += `\nExecution Results: ${args.execution_results.join('; ')}`;
       }
 
-      const reevaluationResult = await this.evaluateCommandLLMCentric(
+      const reevaluationResult = await this.performLLMCentricEvaluation(
         args.command,
         args.working_directory,
         [], // Empty history for function call context
@@ -389,21 +396,24 @@ export class EnhancedSafetyEvaluator {
   /**
    * Simple LLM-centric command safety evaluation
    */
-  async evaluateCommandLLMCentric(
+  async evaluateCommandSafety(
     command: string,
     workingDirectory: string,
     history: CommandHistoryEntry[],
-    comment?: string
+    comment?: string,
+    forceUserConfirm?: boolean
   ): Promise<SafetyEvaluationResult> {
-    const result = await this.performLLMCentricEvaluation(
+    const llmResult = await this.performLLMCentricEvaluation(
       command,
       workingDirectory,
       history,
-      comment
+      comment,
+      forceUserConfirm
     );
     
-    // Convert SafetyEvaluation to CommandSafetyEvaluationResult
-    return this.convertToCommandSafetyResult(result);
+    // Direct conversion from LLMEvaluationResult to SafetyEvaluationResult
+    const elicitationResult = llmResult.elicitationResult;
+    return this.convertLLMResultToSafetyResult(llmResult, 'llm_required', elicitationResult);
   }
 
   /**
@@ -421,16 +431,23 @@ export class EnhancedSafetyEvaluator {
   ): Promise<{
     userIntent: UserIntentData | null;
     elicitationResponse: ElicitationResponse | null;
+    elicitationResult?: ElicitationResult | undefined;
   }> {
-    const { userIntent, elicitationResponse } = await this.elicitUserIntent(command, question);
+    const { userIntent, elicitationResponse, elicitationResult } = await this.elicitUserIntent(command, question);
     
     // Add detailed elicitation result to message chain with clear user decision
     let elicitationResultMessage = `\n\nELICITATION RESULT:\nUser Action: ${elicitationResponse?.action || 'no_response'}\nTimestamp: ${getCurrentTimestamp()}`;
     
     if (elicitationResponse?.action === 'accept') {
-      elicitationResultMessage += `\nUser Decision: APPROVED - User explicitly approved the command execution\nUser Intent: ${userIntent?.justification || 'Not provided'}`;
+      // Check command_execution_approved field for actual command execution decision
+      const commandApproved = elicitationResponse.content?.['command_execution_approved'] === true;
+      if (commandApproved) {
+        elicitationResultMessage += `\nUser Decision: APPROVED - User explicitly approved the command execution\nUser Intent: ${userIntent?.justification || 'Not provided'}`;
+      } else {
+        elicitationResultMessage += `\nUser Decision: DECLINED - User engaged with elicitation but declined command execution\nReason: ${userIntent?.justification || 'The user has refused to allow this command to run'}`;
+      }
     } else if (elicitationResponse?.action === 'decline') {
-      elicitationResultMessage += `\nUser Decision: DECLINED - User explicitly declined the command execution\nReason: ${userIntent?.justification || 'The user has refused to allow this command to run'}`;
+      elicitationResultMessage += `\nUser Decision: DECLINED - User explicitly declined the elicitation process\nReason: ${userIntent?.justification || 'The user has refused to allow this command to run'}`;
     } else if (elicitationResponse?.action === 'cancel') {
       elicitationResultMessage += `\nUser Decision: CANCELLED - User cancelled the confirmation request\nReason: The user has cancelled the operation`;
     } else {
@@ -444,7 +461,7 @@ export class EnhancedSafetyEvaluator {
       type: 'elicitation'
     });
     
-    return { userIntent, elicitationResponse };
+    return { userIntent, elicitationResponse, elicitationResult };
   }
 
   /**
@@ -454,11 +471,13 @@ export class EnhancedSafetyEvaluator {
     command: string,
     workingDirectory: string,
     history: CommandHistoryEntry[],
-    comment?: string
-  ): Promise<SafetyEvaluation> {
+    comment?: string,
+    forceUserConfirm?: boolean
+  ): Promise<LLMEvaluationResult> {
     logger.debug('performLLMCentricEvaluation START', {
       command,
-      workingDirectory
+      workingDirectory,
+      forceUserConfirm
     });
     
     // Initialize system prompt and base user message before loop
@@ -484,7 +503,7 @@ export class EnhancedSafetyEvaluator {
     
     let maxIteration = 5;
     let hasElicitationBeenAttempted = false; // Track ELICITATION attempts
-    let _lastElicitationResponse: ElicitationResponse | null = null; // Persist elicitation response across iterations
+    let capturedElicitationResult: ElicitationResult | undefined = undefined; // Store elicitation result
     
     try {
       while (true) {
@@ -497,23 +516,24 @@ export class EnhancedSafetyEvaluator {
         if (maxIteration <= 0) {
           return {
             evaluation_result: 'deny',
-            basic_classification: 'timeout_fallback',
             reasoning: 'Maximum iterations reached - fallback to safe denial',
-            requires_confirmation: false,
             suggested_alternatives: [],
-            llm_evaluation_used: true,
+            ...(capturedElicitationResult && { elicitationResult: capturedElicitationResult }),
           };
         }
         maxIteration--;
         
-        const llmResult = await this.callLLMForEvaluationWithMessages(messages, promptContext.command);
+        const llmResult = await this.callLLMForEvaluationWithMessages(messages, promptContext.command, forceUserConfirm);
 
         // ToolHandler pattern with early returns - clean architecture
         switch (llmResult.evaluation_result) {
           case 'allow':
           case 'deny':
             // Early return - no message chain manipulation needed for final decisions
-            return this.llmResultToSafetyEvaluation(llmResult, 'llm_required', _lastElicitationResponse);
+            return { 
+              ...llmResult, 
+              ...(capturedElicitationResult && { elicitationResult: capturedElicitationResult })
+            };
 
           case 'user_confirm':
             // CRITICAL: Check ELICITATION limit
@@ -524,11 +544,9 @@ export class EnhancedSafetyEvaluator {
               });
               return {
                 evaluation_result: 'deny',
-                basic_classification: 'elicitation_limit_exceeded',
                 reasoning: 'ELICITATION already attempted for user confirmation - defaulting to safe denial',
-                requires_confirmation: false,
                 suggested_alternatives: [],
-                llm_evaluation_used: true,
+                ...(capturedElicitationResult && { elicitationResult: capturedElicitationResult }),
               };
             }
             
@@ -542,10 +560,10 @@ export class EnhancedSafetyEvaluator {
             hasElicitationBeenAttempted = true; // Mark ELICITATION as attempted
             const userConfirmQuestion = llmResult.confirmation_question || 
                                "Do you want to proceed with this operation?";
-            const { userIntent: _userIntent, elicitationResponse } = await this.handleElicitationInLoop(command, userConfirmQuestion, messages);
+            const { userIntent: _userIntent, elicitationResponse: _elicitationResponse, elicitationResult } = await this.handleElicitationInLoop(command, userConfirmQuestion, messages);
             
-            // Store elicitation response for persistence across iterations
-            _lastElicitationResponse = elicitationResponse;
+            // Capture elicitation result for final response
+            capturedElicitationResult = elicitationResult;
             
             // Continue with LLM evaluation loop to get final decision based on user response
             // Note: User response is already added to messages in handleElicitationInLoop
@@ -555,11 +573,11 @@ export class EnhancedSafetyEvaluator {
             // Early return for assistant confirmation - no loop continuation needed
             return {
               evaluation_result: 'ai_assistant_confirm',
-              basic_classification: 'assistant_info_required',
               reasoning: llmResult.assistant_request_message || llmResult.reasoning,
-              requires_confirmation: true,
               suggested_alternatives: llmResult.suggested_alternatives || [],
-              llm_evaluation_used: true,
+              ...(llmResult.assistant_request_message && { assistant_request_message: llmResult.assistant_request_message }),
+              ...(llmResult.next_action && { next_action: llmResult.next_action }),
+              ...(capturedElicitationResult && { elicitationResult: capturedElicitationResult }),
             };
 
           case 'add_more_history':
@@ -592,19 +610,22 @@ export class EnhancedSafetyEvaluator {
             continue; // Continue loop with additional context
 
           default:
-            // Fallback for unknown results
-            logger.warn('Unknown LLM evaluation result', {
-              evaluation_result: llmResult.evaluation_result,
-              command,
-              reasoning: llmResult.reasoning
+            // TypeScript guarantees this case should never happen due to discriminated union
+            const exhaustiveCheck: never = llmResult;
+            logger.warn('Unexpected LLM evaluation result', {
+              result: exhaustiveCheck,
+              command
             });
             return {
               evaluation_result: 'ai_assistant_confirm',
-              basic_classification: 'unknown_response',
-              reasoning: `Unknown LLM response: ${llmResult.evaluation_result} - requesting AI assistant clarification`,
-              requires_confirmation: false,
+              reasoning: `Unexpected LLM response - requesting AI assistant clarification`,
               suggested_alternatives: [],
-              llm_evaluation_used: true,
+              next_action: {
+                instruction: `Please clarify the response for command: ${command}`,
+                method: 'user_interaction',
+                expected_outcome: 'Clear guidance on how to proceed with the command',
+                executable_commands: []
+              }
             };
         }
       }
@@ -633,7 +654,8 @@ export class EnhancedSafetyEvaluator {
       timestamp?: string;
       type?: 'history' | 'elicitation' | 'execution_result' | 'user_response';
     }>,
-    command: string
+    command: string,
+    forceUserConfirm?: boolean
   ): Promise<LLMEvaluationResult> {
     try {
       logger.debug('Pre-LLM Debug (Messages)', {
@@ -669,7 +691,7 @@ export class EnhancedSafetyEvaluator {
         max_tokens: 500,
         temperature: 0.1,
         tools: newSecurityEvaluationTools,
-        tool_choice: 'auto' // Let LLM choose appropriate evaluation tool
+        tool_choice: forceUserConfirm ? { type: 'function', function: { name: 'user_confirm' } } : 'auto'
       });
       logger.debug('LLM call completed successfully');
 
@@ -916,6 +938,7 @@ export class EnhancedSafetyEvaluator {
   ): Promise<{
     userIntent: UserIntentData | null;
     elicitationResponse: ElicitationResponse | null;
+    elicitationResult?: ElicitationResult;
   }> {
     if (!this.securityManager.getEnhancedConfig().elicitation_enabled) {
       console.warn('User intent elicitation is disabled');
@@ -960,6 +983,9 @@ This command has been flagged for review. Please provide your intent:
       required: ['confirmed'],
     };
 
+    const startTime = Date.now();
+    const timestamp = getCurrentTimestamp();
+
     try {
       const requestPayload = {
         method: 'elicitation/create',
@@ -972,9 +998,20 @@ This command has been flagged for review. Please provide your intent:
       };
 
       const response = await this.mcpServer.request(requestPayload, ElicitResultSchema);
+      const endTime = Date.now();
+      const duration = endTime - startTime;
 
       if (response && typeof response === 'object' && 'action' in response) {
         const result = response as { action: string; content?: Record<string, unknown> };
+
+        // Create base ElicitationResult
+        const elicitationResult: ElicitationResult = {
+          question_asked: elicitationMessage,
+          timestamp,
+          timeout_duration_ms: duration,
+          status: 'timeout',  // Will be updated based on actual response
+          user_response: result.content,
+        };
 
         if (result.action === 'accept' && result.content) {
           const confirmed = result.content['confirmed'] as boolean;
@@ -988,17 +1025,34 @@ This command has been flagged for review. Please provide your intent:
             elicitation_id: generateId(),
           };
 
+          // Update ElicitationResult based on user's command execution decision
+          elicitationResult.status = confirmed ? 'confirmed' : 'declined';
+          elicitationResult.comment = confirmed 
+            ? 'User confirmed command execution' 
+            : 'User declined command execution';
+
+          // FIXED: Elicitation was accepted, but command execution decision is separate
+          // action should always be 'accept' since user engaged with elicitation
+          // The confirmed field indicates the actual command execution decision
           return {
             userIntent,
             elicitationResponse: { 
-              action: confirmed ? 'accept' : 'decline',  // confirmed値に基づいて決定
-              content: result.content 
+              action: 'accept',  // User accepted elicitation process
+              content: { ...result.content, command_execution_approved: confirmed }  // Add clear execution decision
             },
+            elicitationResult,
           };
         } else {
+          // User declined or canceled the elicitation
+          elicitationResult.status = result.action === 'decline' ? 'declined' : 'canceled';
+          elicitationResult.comment = result.action === 'decline' 
+            ? 'User declined elicitation process' 
+            : 'User canceled elicitation process';
+
           return {
             userIntent: null,
             elicitationResponse: { action: result.action as 'decline' | 'cancel' },
+            elicitationResult,
           };
         }
       }
@@ -1006,117 +1060,82 @@ This command has been flagged for review. Please provide your intent:
       throw new Error('Invalid elicitation response format');
     } catch (error) {
       console.error('User intent elicitation failed:', error);
-      return { userIntent: null, elicitationResponse: null };
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+
+      // Create ElicitationResult for timeout/error case
+      const elicitationResult: ElicitationResult = {
+        status: 'timeout',
+        question_asked: elicitationMessage,
+        timestamp,
+        timeout_duration_ms: duration,
+        comment: `Elicitation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+
+      return { 
+        userIntent: null, 
+        elicitationResponse: null,
+        elicitationResult,
+      };
     }
   }
 
   /**
-   * Convert SafetyEvaluation to SafetyEvaluationResult
+   * Convert LLMEvaluationResult directly to SafetyEvaluationResult using factory pattern
    */
-  private convertToCommandSafetyResult(safetyEval: SafetyEvaluation): SafetyEvaluationResult {
-    // Create result based on evaluation result type due to discriminated union constraints
-    switch (safetyEval.evaluation_result) {
-      case 'allow':
-        return {
-          evaluation_result: 'allow',
-          reasoning: safetyEval.reasoning,
-          requires_confirmation: safetyEval.requires_confirmation,
-          suggested_alternatives: safetyEval.suggested_alternatives,
-          llm_evaluation_used: safetyEval.llm_evaluation_used,
-          basic_classification: safetyEval.basic_classification,
-          confirmation_message: safetyEval.confirmation_message,
-          user_response: safetyEval.user_response,
-        };
-      
-      case 'deny':
-        return {
-          evaluation_result: 'deny',
-          reasoning: safetyEval.reasoning,
-          requires_confirmation: safetyEval.requires_confirmation,
-          suggested_alternatives: safetyEval.suggested_alternatives,
-          llm_evaluation_used: safetyEval.llm_evaluation_used,
-          basic_classification: safetyEval.basic_classification,
-          confirmation_message: safetyEval.confirmation_message,
-          user_response: safetyEval.user_response,
-        };
-      
-      case 'user_confirm':
-        return {
-          evaluation_result: 'user_confirm',
-          reasoning: safetyEval.reasoning,
-          requires_confirmation: safetyEval.requires_confirmation,
-          suggested_alternatives: safetyEval.suggested_alternatives,
-          llm_evaluation_used: safetyEval.llm_evaluation_used,
-          basic_classification: safetyEval.basic_classification,
-          user_confirmation_required: safetyEval.user_confirmation_required,
-        };
-      
-      case 'ai_assistant_confirm':
-        return {
-          evaluation_result: 'ai_assistant_confirm',
-          reasoning: safetyEval.reasoning,
-          requires_confirmation: safetyEval.requires_confirmation,
-          suggested_alternatives: safetyEval.suggested_alternatives,
-          llm_evaluation_used: safetyEval.llm_evaluation_used,
-          basic_classification: safetyEval.basic_classification,
-          confirmation_message: safetyEval.confirmation_message,
-          user_response: safetyEval.user_response,
-        };
-      
-      case 'add_more_history':
-        return {
-          evaluation_result: 'add_more_history',
-          reasoning: safetyEval.reasoning,
-          requires_confirmation: safetyEval.requires_confirmation,
-          llm_evaluation_used: safetyEval.llm_evaluation_used,
-          basic_classification: safetyEval.basic_classification,
-        };
-      
-      default:
-        throw new Error(`Unknown evaluation result: ${safetyEval.evaluation_result}`);
-    }
-  }
-
-  /**
-   * Convert LLM result to SafetyEvaluation
-   */
-  private llmResultToSafetyEvaluation(
+  private convertLLMResultToSafetyResult(
     llmResult: LLMEvaluationResult,
-    classification: string,
-    elicitationResponse?: ElicitationResponse | null
-  ): SafetyEvaluation {
-    // Use function-based evaluation results directly - no legacy conversion needed
-    let requiresConfirmation = false;
-    
+    _classification: string,
+    elicitationResult?: ElicitationResult
+  ): SafetyEvaluationResult {
+    // Create result using factory based on evaluation result type
     switch (llmResult.evaluation_result) {
       case 'allow':
+        return SafetyEvaluationResultFactory.createAllow(
+          llmResult.reasoning,
+          {
+            llmEvaluationUsed: true,
+            suggestedAlternatives: llmResult.suggested_alternatives,
+            elicitationResult,
+          }
+        );
+      
       case 'deny':
-        requiresConfirmation = false;
-        break;
-      case 'add_more_history':
-        requiresConfirmation = false;
-        break;
-      case 'user_confirm':
-        requiresConfirmation = true;
-        break;
+        return SafetyEvaluationResultFactory.createDeny(
+          llmResult.reasoning,
+          {
+            llmEvaluationUsed: true,
+            suggestedAlternatives: llmResult.suggested_alternatives,
+            elicitationResult,
+          }
+        );
+      
       case 'ai_assistant_confirm':
-        requiresConfirmation = false; // AI assistant needs to provide info, not user confirmation
-        break;
+        // next_actionが提供されていることを確認
+        if (!llmResult.next_action) {
+          throw new Error('next_action is required for ai_assistant_confirm results');
+        }
+        return SafetyEvaluationResultFactory.createAiAssistantConfirm(
+          llmResult.reasoning,
+          llmResult.next_action,
+          {
+            llmEvaluationUsed: true,
+            suggestedAlternatives: llmResult.suggested_alternatives,
+            confirmationMessage: llmResult.assistant_request_message,
+            elicitationResult,
+          }
+        );
+      
+      case 'user_confirm':
+      case 'add_more_history':
+        // これらは最終応答ではないため、内部処理でこれらが返される場合はエラー
+        throw new Error(`${llmResult.evaluation_result} results are not supported in final responses. These should be handled internally.`);
+      
       default:
-        requiresConfirmation = false;
-        break;
+        // TypeScript guarantees this case should never happen due to discriminated union
+        const exhaustiveCheck: never = llmResult;
+        throw new Error(`Unexpected evaluation result in convertLLMResultToSafetyResult: ${JSON.stringify(exhaustiveCheck)}`);
     }
-    
-    return {
-      evaluation_result: llmResult.evaluation_result,
-      basic_classification: classification,
-      reasoning: llmResult.reasoning,
-      requires_confirmation: requiresConfirmation,
-      suggested_alternatives: llmResult.suggested_alternatives || [],
-      llm_evaluation_used: true,
-      // Include elicitation response information if available
-      ...(elicitationResponse && { elicitation_response: elicitationResponse }),
-    };
   }
 
   /**
@@ -1218,16 +1237,34 @@ This command has been flagged for review. Please provide your intent:
    */
   private async parseAiAssistantConfirmTool(toolCall: ToolCall, command: string): Promise<LLMEvaluationResult> {
     try {
-      const result = await this.parseToolArguments(toolCall, ['reasoning', 'assistant_request_message']);
+      const result = await this.parseToolArguments(toolCall, ['reasoning', 'assistant_request_message', 'next_action']);
       const reasoning = typeof result['reasoning'] === 'string' ? result['reasoning'] : 'AI assistant confirmation needed';
       const expandedReasoning = this.expandCommandVariable(reasoning, command);
       const message = typeof result['assistant_request_message'] === 'string' ? result['assistant_request_message'] : 'Please provide additional information';
+      
+      // Extract next_action - required for ai_assistant_confirm
+      if (!result['next_action'] || typeof result['next_action'] !== 'object') {
+        throw new Error('next_action is required for ai_assistant_confirm tool');
+      }
+      
+      const nextActionObj = result['next_action'] as Record<string, unknown>;
+      const executableCommands = Array.isArray(nextActionObj['executable_commands']) ? 
+        nextActionObj['executable_commands'].filter((cmd): cmd is string => typeof cmd === 'string') : 
+        undefined;
+      
+      const nextAction = {
+        instruction: typeof nextActionObj['instruction'] === 'string' ? nextActionObj['instruction'] : 'Gather required information',
+        method: typeof nextActionObj['method'] === 'string' ? nextActionObj['method'] : 'Execute provided commands',
+        expected_outcome: typeof nextActionObj['expected_outcome'] === 'string' ? nextActionObj['expected_outcome'] : 'Information for security evaluation',
+        ...(executableCommands && executableCommands.length > 0 && { executable_commands: executableCommands })
+      };
       
       return {
         evaluation_result: 'ai_assistant_confirm',
         reasoning: expandedReasoning,
         assistant_request_message: message,
-        suggested_alternatives: []
+        suggested_alternatives: [],
+        next_action: nextAction
       };
     } catch (error) {
       logger.error('Failed to parse ai_assistant_confirm tool', { error, command });

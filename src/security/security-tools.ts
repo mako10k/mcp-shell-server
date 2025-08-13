@@ -122,9 +122,34 @@ export const aiAssistantConfirmTool = {
         assistant_request_message: {
           type: "string" as const,
           description: 'Specific message/question to show to the AI assistant'
+        },
+        next_action: {
+          type: "object" as const,
+          description: 'Next action for the AI assistant to take',
+          properties: {
+            instruction: {
+              type: "string" as const,
+              description: 'Clear instruction for what the assistant should do'
+            },
+            method: {
+              type: "string" as const,
+              description: 'How the assistant should gather the required information'
+            },
+            expected_outcome: {
+              type: "string" as const,
+              description: 'What result is expected from the assistant action'
+            },
+            executable_commands: {
+              type: "array" as const,
+              items: { type: "string" as const },
+              description: 'List of specific commands the assistant should execute to gather information'
+            }
+          },
+          required: ['instruction', 'method', 'expected_outcome'],
+          additionalProperties: false
         }
       },
-      required: ['reasoning', 'assistant_request_message'],
+      required: ['reasoning', 'assistant_request_message', 'next_action'],
       additionalProperties: false
     }
   }

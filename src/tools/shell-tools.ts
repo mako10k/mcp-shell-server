@@ -1,4 +1,25 @@
 import { ShellType, Dimensions, SafetyEvaluationResult } from '../types/index.js';
+
+// Tool response type for safety evaluation
+interface ToolSafetyEvaluationResponse {
+  evaluation_result: string;
+  reasoning: string;
+  suggested_alternatives?: string[];
+  llm_evaluation_used?: boolean;
+  context_analysis?: unknown;
+  next_action?: unknown;
+  confirmation_message?: string;
+  user_response?: Record<string, unknown>;
+  elicitation_result?: {
+    status: 'timeout' | 'canceled' | 'confirmed' | 'declined';
+    user_response?: Record<string, unknown>;
+    timeout_duration_ms?: number;
+    question_asked: string;
+    timestamp: string;
+    comment?: string;
+  };
+}
+
 // ターミナル出力レスポンス型（クラス全体で利用可能にする）
 export interface TerminalOutputResponse {
   terminal_id: string;
@@ -68,82 +89,34 @@ export class ShellTools {
         safetyEvaluation = await this.securityManager.evaluateCommandSafetyByEnhancedEvaluator(
           params.command,
           workingDir,
-          params.comment
+          params.comment,
+          params.force_user_confirm
         );
 
         // Handle evaluation results with strict safety guards
-        if (safetyEvaluation?.evaluation_result === 'deny') {
-          throw new Error(`Command denied: ${safetyEvaluation.reasoning}`);
-        }
-
-        // For NEED_USER_CONFIRM, return evaluation info without executing
-        // User can review suggested alternatives and re-run if appropriate
-        if (safetyEvaluation?.evaluation_result === 'user_confirm') {
-          return {
-            status: 'need_user_confirm',
-            command: params.command,
-            working_directory: workingDir,
-            safety_evaluation: {
-              evaluation_result: safetyEvaluation.evaluation_result,
-              reasoning: safetyEvaluation.reasoning,
-              basic_classification: safetyEvaluation.basic_classification,
-              requires_confirmation: safetyEvaluation.requires_confirmation,
-              suggested_alternatives: safetyEvaluation.suggested_alternatives,
-              llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
-              context_analysis: safetyEvaluation.context_analysis,
-            },
-            message:
-              'Command requires user confirmation before execution. Please review the suggested alternatives and re-run if appropriate.',
-          };
+        if (safetyEvaluation?.getEvaluationResult() === 'deny') {
+          const toolResponse = safetyEvaluation.generateToolResponse() as ToolSafetyEvaluationResponse;
+          throw new Error(`Command denied: ${toolResponse.reasoning}`);
         }
 
         // For NEED_ASSISTANT_CONFIRM, return evaluation info without executing
-        // Assistant should review and provide more context
-        if (safetyEvaluation?.evaluation_result === 'ai_assistant_confirm') {
+        // Assistant must provide additional context
+        if (safetyEvaluation?.getEvaluationResult() === 'ai_assistant_confirm') {
           return {
             status: 'need_assistant_confirm',
             command: params.command,
             working_directory: workingDir,
-            safety_evaluation: {
-              evaluation_result: safetyEvaluation.evaluation_result,
-              reasoning: safetyEvaluation.reasoning,
-              basic_classification: safetyEvaluation.basic_classification,
-              requires_confirmation: safetyEvaluation.requires_confirmation,
-              suggested_alternatives: safetyEvaluation.suggested_alternatives,
-              llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
-              context_analysis: safetyEvaluation.context_analysis,
-            },
+            safety_evaluation: safetyEvaluation.generateToolResponse(),
             message:
               'Command requires assistant confirmation before execution. Assistant should provide more context.',
           };
         }
 
-        // For NEED_MORE_HISTORY, return evaluation info without executing
-        // System needs more context to make a decision
-        if (safetyEvaluation?.evaluation_result === 'add_more_history') {
-          return {
-            status: 'need_more_history',
-            command: params.command,
-            working_directory: workingDir,
-            safety_evaluation: {
-              evaluation_result: safetyEvaluation.evaluation_result,
-              reasoning: safetyEvaluation.reasoning,
-              basic_classification: safetyEvaluation.basic_classification,
-              requires_confirmation: safetyEvaluation.requires_confirmation,
-              suggested_alternatives: [],  // add_more_history doesn't have suggested_alternatives
-              llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
-              context_analysis: safetyEvaluation.context_analysis,
-            },
-            message:
-              'Command evaluation requires more historical context. Please provide additional context.',
-          };
-        }
-
         // CRITICAL SAFETY GUARD: Only execute if explicitly ALLOWED
-        if (safetyEvaluation && safetyEvaluation.evaluation_result !== 'allow') {
-          const evalResult = safetyEvaluation as SafetyEvaluationResult;
+        if (safetyEvaluation && safetyEvaluation.getEvaluationResult() !== 'allow') {
+          const toolResponse = safetyEvaluation.generateToolResponse() as ToolSafetyEvaluationResponse;
           throw new Error(
-            `Command execution blocked: evaluation result '${evalResult.evaluation_result}' is not ALLOW. Reasoning: ${evalResult.reasoning}`
+            `Command execution blocked: evaluation result '${safetyEvaluation.getEvaluationResult()}' is not ALLOW. Reasoning: ${toolResponse.reasoning}`
           );
         }
       }
@@ -211,16 +184,7 @@ export class ShellTools {
       // Include safety evaluation in response if available
       const response: Record<string, unknown> = { ...executionInfo };
       if (safetyEvaluation) {
-        response['safety_evaluation'] = {
-          evaluation_result: safetyEvaluation.evaluation_result,
-          reasoning: safetyEvaluation.reasoning,
-          basic_classification: safetyEvaluation.basic_classification,
-          requires_confirmation: safetyEvaluation.requires_confirmation,
-          suggested_alternatives: safetyEvaluation.suggested_alternatives,
-          llm_evaluation_used: safetyEvaluation.llm_evaluation_used || false,
-          context_analysis: safetyEvaluation.context_analysis,
-          next_action: safetyEvaluation.next_action,
-        };
+        response['safety_evaluation'] = safetyEvaluation.generateToolResponse();
       }
 
       return response;
