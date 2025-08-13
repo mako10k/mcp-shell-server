@@ -14,11 +14,12 @@ import type { SafetyEvaluationResult } from '../types/index.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId, logger } from '../utils/helpers.js';
 import { repairAndParseJson } from '../utils/json-repair.js';
-import { CCCToMCPCMAdapter } from './chat-completion-adapter.js';
 import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 // Structured Output imports (minimal usage for fallback only)
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { CCCToMCPCMAdapter } from './chat-completion-adapter.js';
 
 // Tools for Function Calling (external use only)
 // import { securityEvaluationTool } from './security-tools.js';
@@ -162,18 +163,17 @@ interface SafetyEvaluation {
  */
 export class EnhancedSafetyEvaluator {
   private createMessageCallback: CreateMessageCallback;
-  private chatAdapter: CCCToMCPCMAdapter | undefined;
+  private chatAdapter: CCCToMCPCMAdapter;
   private promptGenerator: SecurityLLMPromptGenerator;
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
-  private mcpServer: MCPServerInterface | undefined;
+  private mcpServer: MCPServerInterface;
   private functionCallHandlers: FunctionCallHandlerRegistry;
 
   constructor(
     securityManager: SecurityManager,
     historyManager: CommandHistoryManager,
-    createMessageCallback?: CreateMessageCallback,
-    mcpServer?: MCPServerInterface
+    mcpServer: MCPServerInterface
   ) {
     this.securityManager = securityManager;
     this.historyManager = historyManager;
@@ -186,17 +186,11 @@ export class EnhancedSafetyEvaluator {
     const generator = new SecurityLLMPromptGenerator();
     this.promptGenerator = generator;
 
-    // Use placeholder callback if not provided - will be set later via setCreateMessageCallback
-    this.createMessageCallback =
-      createMessageCallback ||
-      (() => {
-        throw new Error('LLM evaluation attempted before createMessageCallback was set');
-      });
+    // Generate createMessageCallback from MCP server
+    this.createMessageCallback = createMessageCallbackFromMCPServer(mcpServer as unknown as import('@modelcontextprotocol/sdk/server/index.js').Server);
     
-    // Initialize chatAdapter if createMessageCallback is provided
-    if (createMessageCallback) {
-      this.chatAdapter = new CCCToMCPCMAdapter(createMessageCallback);
-    }
+    // Initialize chatAdapter with generated callback
+    this.chatAdapter = new CCCToMCPCMAdapter(this.createMessageCallback);
   }
 
   /**
@@ -449,7 +443,7 @@ export class EnhancedSafetyEvaluator {
     }
   }
 
-  setMCPServer(server: MCPServerInterface | undefined): void {
+  setMCPServer(server: MCPServerInterface): void {
     this.mcpServer = server;
   }
 
@@ -1354,3 +1348,76 @@ This command has been flagged for review. Please provide your intent:
     return text.replace(/\$COMMAND/g, command);
   }
 }
+/**
+ * Create a CreateMessageCallback from an MCP Server instance
+ */
+
+function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
+  return async (request) => {
+    try {
+      // Convert request to MCP format
+      const mcpMessages = request.messages
+        .filter(msg => msg.role !== 'tool') // Filter out tool messages as MCP doesn't support them
+        .map(msg => ({
+          role: msg.role as 'user' | 'assistant',
+          content: { type: 'text' as const, text: msg.content.text },
+        }));
+
+      // Create MCP request with only defined values
+      const mcpRequest: Record<string, unknown> = {
+        messages: mcpMessages,
+        includeContext: request.includeContext || 'none',
+      };
+
+      if (request.maxTokens !== undefined) {
+        mcpRequest['maxTokens'] = request.maxTokens;
+      }
+      if (request.temperature !== undefined) {
+        mcpRequest['temperature'] = request.temperature;
+      }
+      if (request.systemPrompt !== undefined) {
+        mcpRequest['systemPrompt'] = request.systemPrompt;
+      }
+
+      // Call MCP createMessage method with type assertion
+      const result = await server.createMessage(mcpRequest as Parameters<typeof server.createMessage>[0]);
+
+      // Build response object conditionally
+      const response: {
+        content: { type: 'text'; text: string; };
+        model?: string;
+        stopReason?: string;
+        tool_calls?: Array<{
+          id: string;
+          type: 'function';
+          function: { name: string; arguments: string; };
+        }>;
+      } = {
+        content: { type: 'text', text: String(result.content?.text || '') },
+      };
+
+      if (result.model) {
+        response.model = result.model;
+      }
+      if (result.stopReason) {
+        response.stopReason = result.stopReason;
+      }
+      if (result['tool_calls']) {
+        const toolCalls = result['tool_calls'] as Array<{
+          type: 'function';
+          function: { name: string; arguments: string; };
+        }>;
+        response.tool_calls = toolCalls.map((call, index) => ({
+          id: `call_${index}`, // Generate ID for compatibility
+          ...call,
+        }));
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Error in createMessageCallbackFromMCPServer:', error);
+      throw error;
+    }
+  };
+}
+

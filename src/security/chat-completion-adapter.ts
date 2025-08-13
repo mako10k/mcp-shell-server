@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 // Import CreateMessageCallback from enhanced-evaluator.ts since it supports tools
 export interface CreateMessageCallback {
@@ -514,75 +513,4 @@ When making function calls, respond with a JSON object containing a "tool_calls"
 Make function calls as needed to fulfill the user's request.`;
 }
 
-/**
- * Create a CreateMessageCallback from an MCP Server instance
- */
-export function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
-  return async (request) => {
-    try {
-      // Convert request to MCP format
-      const mcpMessages = request.messages
-        .filter(msg => msg.role !== 'tool') // Filter out tool messages as MCP doesn't support them
-        .map(msg => ({
-          role: msg.role as 'user' | 'assistant',
-          content: { type: 'text' as const, text: msg.content.text },
-        }));
-
-      // Create MCP request with only defined values
-      const mcpRequest: Record<string, unknown> = {
-        messages: mcpMessages,
-        includeContext: request.includeContext || 'none',
-      };
-
-      if (request.maxTokens !== undefined) {
-        mcpRequest['maxTokens'] = request.maxTokens;
-      }
-      if (request.temperature !== undefined) {
-        mcpRequest['temperature'] = request.temperature;
-      }
-      if (request.systemPrompt !== undefined) {
-        mcpRequest['systemPrompt'] = request.systemPrompt;
-      }
-
-      // Call MCP createMessage method with type assertion
-      const result = await server.createMessage(mcpRequest as Parameters<typeof server.createMessage>[0]);
-      
-      // Build response object conditionally
-      const response: {
-        content: { type: 'text'; text: string };
-        model?: string;
-        stopReason?: string;
-        tool_calls?: Array<{
-          id: string;
-          type: 'function';
-          function: { name: string; arguments: string };
-        }>;
-      } = {
-        content: { type: 'text', text: String(result.content?.text || '') },
-      };
-
-      if (result.model) {
-        response.model = result.model;
-      }
-      if (result.stopReason) {
-        response.stopReason = result.stopReason;
-      }
-      if (result['tool_calls']) {
-        const toolCalls = result['tool_calls'] as Array<{
-          type: 'function';
-          function: { name: string; arguments: string };
-        }>;
-        response.tool_calls = toolCalls.map((call, index) => ({
-          id: `call_${index}`, // Generate ID for compatibility
-          ...call,
-        }));
-      }
-
-      return response;
-    } catch (error) {
-      console.error('Error in createMessageCallbackFromMCPServer:', error);
-      throw error;
-    }
-  };
-}
 

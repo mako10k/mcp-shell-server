@@ -14,7 +14,6 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 // Import shared types from chat-completion-adapter.ts
 import type { CreateMessageCallback } from './chat-completion-adapter.js';
-import { createMessageCallbackFromMCPServer } from './chat-completion-adapter.js';
 
 // Import SafetyEvaluationResult from types
 import type { SafetyEvaluationResult } from '../types/index.js';
@@ -636,9 +635,7 @@ export class SecurityManager {
       }
 
       // Create enhanced evaluator with server for automatic createMessage setup
-      // Create message callback from MCP server
-      const createMessageCallback = createMessageCallbackFromMCPServer(server);
-      this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager, createMessageCallback);
+      this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager, server);
 
       // Set up MCP server reference for elicitation (proper MCP protocol)
       this.enhancedEvaluator.setMCPServer({
