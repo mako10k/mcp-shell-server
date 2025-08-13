@@ -1,6 +1,18 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { z } from 'zod';
 
+// OpenAI compatible tool definitions
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export type ToolDefinitions = Array<ToolDefinition>;
+
 // CreateMessageCallback interface supporting tools
 export interface CreateMessageCallback {
   (request: {
@@ -16,14 +28,7 @@ export interface CreateMessageCallback {
     stopSequences?: string[];
     metadata?: Record<string, unknown>;
     modelPreferences?: Record<string, unknown>;
-    tools?: Array<{
-      type: 'function';
-      function: {
-        name: string;
-        description: string;
-        parameters: Record<string, unknown>;
-      };
-    }>;
+    tools?: ToolDefinitions;
   }): Promise<{
     content: { type: 'text'; text: string };
     model?: string | undefined;
@@ -145,10 +150,10 @@ export class CCCToMCPCMAdapter {
 
     if (mcpResponse.content.type === 'text') {
       const responseText = mcpResponse.content.text;
-      
+
       // Use flexible parsing
       const parseResult = await this.parseFlexibleResponse(responseText, request);
-      
+
       if (parseResult.toolCalls) {
         toolCalls = parseResult.toolCalls;
         finishReason = 'tool_calls';
@@ -196,109 +201,147 @@ export class CCCToMCPCMAdapter {
   }> {
     // Try to extract JSON objects from the response
     const jsonObjects = this.extractJsonObjects(responseText);
-    
+
     // Look for Function Call patterns
     for (const obj of jsonObjects) {
       // Type guard for object
-      if (typeof obj !== 'object' || obj === null) continue;
+      if (!this.isValidObject(obj)) continue;
+      
       const objRecord = obj as Record<string, unknown>;
-      
+
       // Standard OpenAI format: {"tool_calls": [...]}
-      if (objRecord['tool_calls'] && Array.isArray(objRecord['tool_calls'])) {
-        return {
-          toolCalls: objRecord['tool_calls'].map((call: unknown) => {
-            const callObj = call as Record<string, unknown>;
-            const functionObj = callObj['function'] as Record<string, unknown> | undefined;
-            return {
-              id: (callObj['id'] as string) || `call_${Math.random().toString(36).substr(2, 15)}`,
-              type: 'function' as const,
-              function: {
-                name: (functionObj?.['name'] as string) || 'unknown_function',
-                arguments: typeof functionObj?.['arguments'] === 'string' 
-                  ? functionObj['arguments'] 
-                  : JSON.stringify(functionObj?.['arguments'] || {})
-              }
-            };
-          })
-        };
+      if (this.hasToolCalls(objRecord)) {
+        const toolCalls = this.parseToolCallsArray(objRecord['tool_calls']);
+        if (toolCalls.length > 0) {
+          return { toolCalls };
+        }
       }
-      
+
       // Check if this looks like direct function arguments
       if (request.tools && request.tools.length > 0) {
         const expectedTool = this.getExpectedTool(request);
         if (expectedTool && this.looksLikeFunctionArgs(objRecord, expectedTool)) {
-          return {
-            toolCalls: [{
-              id: `call_${Math.random().toString(36).substr(2, 15)}`,
-              type: 'function' as const,
-              function: {
-                name: expectedTool.function.name,
-                arguments: JSON.stringify(objRecord)
-              }
-            }]
-          };
+          const toolCall = this.createToolCallFromArgs(expectedTool.function.name, objRecord);
+          return { toolCalls: [toolCall] };
         }
       }
     }
-    
+
     // Special case: Check if the entire response text is a JSON string containing tool_calls
+    const directToolCalls = await this.tryParseDirectToolCalls(responseText);
+    if (directToolCalls) {
+      return { toolCalls: directToolCalls };
+    }
+
+    // No valid function calls found, return as content
+    return { content: responseText };
+  }
+
+  // Type guard functions
+  private isValidObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  private hasToolCalls(obj: Record<string, unknown>): boolean {
+    return !!obj['tool_calls'] && Array.isArray(obj['tool_calls']);
+  }
+
+  private isString(value: unknown): value is string {
+    return typeof value === 'string';
+  }
+
+  private isValidToolCall(call: unknown): call is Record<string, unknown> {
+    return this.isValidObject(call);
+  }
+
+  private isValidFunction(func: unknown): func is Record<string, unknown> {
+    return this.isValidObject(func);
+  }
+
+  // Helper functions for parsing
+  private parseToolCallsArray(toolCallsData: unknown): Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> {
+    if (!Array.isArray(toolCallsData)) return [];
+
+    return toolCallsData
+      .filter(this.isValidToolCall.bind(this))
+      .map(call => this.parseToolCall(call));
+  }
+
+  private parseToolCall(call: Record<string, unknown>): { id: string; type: 'function'; function: { name: string; arguments: string } } {
+    const id = this.extractStringValue(call['id']) || this.generateCallId();
+    const functionData = call['function'];
+    
+    if (!this.isValidFunction(functionData)) {
+      return this.createDefaultToolCall(id);
+    }
+
+    const name = this.extractStringValue(functionData['name']) || 'unknown_function';
+    const args = this.extractArguments(functionData['arguments']);
+
+    return {
+      id,
+      type: 'function' as const,
+      function: { name, arguments: args }
+    };
+  }
+
+  private extractStringValue(value: unknown): string | null {
+    return this.isString(value) ? value : null;
+  }
+
+  private extractArguments(args: unknown): string {
+    if (this.isString(args)) {
+      return args;
+    }
+    return JSON.stringify(args || {});
+  }
+
+  private generateCallId(): string {
+    return `call_${Math.random().toString(36).substr(2, 15)}`;
+  }
+
+  private createDefaultToolCall(id: string): { id: string; type: 'function'; function: { name: string; arguments: string } } {
+    return {
+      id,
+      type: 'function' as const,
+      function: { name: 'unknown_function', arguments: '{}' }
+    };
+  }
+
+  private createToolCallFromArgs(functionName: string, args: Record<string, unknown>): { id: string; type: 'function'; function: { name: string; arguments: string } } {
+    return {
+      id: this.generateCallId(),
+      type: 'function' as const,
+      function: {
+        name: functionName,
+        arguments: JSON.stringify(args)
+      }
+    };
+  }
+
+  private async tryParseDirectToolCalls(responseText: string): Promise<Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> | null> {
     try {
       const parsed = JSON.parse(responseText);
-      if (parsed && typeof parsed === 'object' && parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-        return {
-          toolCalls: parsed.tool_calls.map((call: unknown) => {
-            const callObj = call as Record<string, unknown>;
-            const functionObj = callObj['function'] as Record<string, unknown> | undefined;
-            return {
-              id: (callObj['id'] as string) || `call_${Math.random().toString(36).substr(2, 15)}`,
-              type: 'function' as const,
-              function: {
-                name: (functionObj?.['name'] as string) || 'unknown_function',
-                arguments: typeof functionObj?.['arguments'] === 'string' 
-                  ? functionObj['arguments'] 
-                  : JSON.stringify(functionObj?.['arguments'] || {})
-              }
-            };
-          })
-        };
+      if (this.isValidObject(parsed) && this.hasToolCalls(parsed)) {
+        return this.parseToolCallsArray(parsed['tool_calls']);
       }
     } catch (parseError) {
       // Try with JSON repair if standard parsing fails
       try {
-        // Import JSON repair function dynamically
         const { repairAndParseJson } = await import('../utils/json-repair.js');
         const repairResult = repairAndParseJson(responseText);
-        
-        if (repairResult.success && repairResult.value && 
-            typeof repairResult.value === 'object') {
-          const valueObj = repairResult.value as Record<string, unknown>;
-          
-          if (valueObj['tool_calls'] && Array.isArray(valueObj['tool_calls'])) {
-            return {
-              toolCalls: (valueObj['tool_calls'] as unknown[]).map((call: unknown) => {
-                const callObj = call as Record<string, unknown>;
-                const functionObj = callObj['function'] as Record<string, unknown> | undefined;
-                return {
-                  id: (callObj['id'] as string) || `call_${Math.random().toString(36).substr(2, 15)}`,
-                  type: 'function' as const,
-                  function: {
-                    name: (functionObj?.['name'] as string) || 'unknown_function',
-                    arguments: typeof functionObj?.['arguments'] === 'string' 
-                      ? functionObj['arguments'] 
-                      : JSON.stringify(functionObj?.['arguments'] || {})
-                  }
-                };
-              })
-            };
+
+        if (repairResult.success && this.isValidObject(repairResult.value)) {
+          const valueObj = repairResult.value;
+          if (this.hasToolCalls(valueObj)) {
+            return this.parseToolCallsArray(valueObj['tool_calls']);
           }
         }
       } catch (repairError) {
         // JSON repair also failed, continue with other methods
       }
     }
-    
-    // No valid function calls found, return as content
-    return { content: responseText };
+    return null;
   }
 
   /**
@@ -306,7 +349,7 @@ export class CCCToMCPCMAdapter {
    */
   private extractJsonObjects(text: string): unknown[] {
     const objects: unknown[] = [];
-    
+
     // Try parsing the entire text as JSON first
     try {
       const parsed = JSON.parse(text);
@@ -315,7 +358,7 @@ export class CCCToMCPCMAdapter {
     } catch {
       // Continue with extraction methods
     }
-    
+
     // Look for JSON objects in code blocks or plain text
     const jsonPatterns = [
       /```json\s*(\{[\s\S]*?\})\s*```/g,
@@ -323,7 +366,7 @@ export class CCCToMCPCMAdapter {
       /(\{[^{}]*\{[^{}]*\}[^{}]*\})/g, // Nested objects
       /(\{[^{}]+\})/g // Simple objects
     ];
-    
+
     for (const pattern of jsonPatterns) {
       let match;
       while ((match = pattern.exec(text)) !== null) {
@@ -338,7 +381,7 @@ export class CCCToMCPCMAdapter {
         }
       }
     }
-    
+
     return objects;
   }
 
@@ -347,13 +390,13 @@ export class CCCToMCPCMAdapter {
    */
   private getExpectedTool(request: CCCRequest): { function: { name: string; parameters?: Record<string, unknown> } } | null {
     if (!request.tools || request.tools.length === 0) return null;
-    
+
     // If tool_choice specifies a function, use that
     if (request.tool_choice && typeof request.tool_choice === 'object' && 'function' in request.tool_choice) {
       const toolChoice = request.tool_choice as { function: { name: string } };
       return request.tools.find(tool => tool.function.name === toolChoice.function.name) || null;
     }
-    
+
     // Otherwise use the first tool
     return request.tools[0] || null;
   }
@@ -365,22 +408,19 @@ export class CCCToMCPCMAdapter {
     // Get expected parameter names from tool schema
     const expectedParams = expectedTool.function.parameters?.['properties'] as Record<string, unknown> | undefined;
     if (!expectedParams) return true; // If no schema, assume it's valid
-    
+
     const expectedKeys = Object.keys(expectedParams);
     const objKeys = Object.keys(obj);
-    
+
     // Check if at least some expected keys are present
     const hasExpectedKeys = expectedKeys.some(key => objKeys.includes(key));
-    
+
     return hasExpectedKeys;
   }
 }
 
-// Type for MCP Create Message Request (extracted from CreateMessageCallback)
-type MCPCreateMessageRequest = Parameters<CreateMessageCallback>[0];
-
 // Adapt OpenAI Request to MCP Request
-export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRequest {
+export function adaptOpenAIRequestToMCP(request: CCCRequest) {
   // (1) Filter messages and extract SystemMessage
   const systemMessages = request.messages.filter(msg => msg.role === 'system');
   const filteredMessages: Array<{ role: 'user' | 'assistant', content: { type: 'text', text: string } }> = request.messages
@@ -391,21 +431,33 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
     }));
 
   // Convert tool_choice to string for system prompt generation
-  const toolChoiceString = typeof request.tool_choice === 'string' 
-    ? request.tool_choice 
-    : request.tool_choice?.type === 'function' 
-      ? request.tool_choice.function.name 
-    : request.tool_choice?.type === 'tool'
-      ? request.tool_choice.name
-      : 'none';
+  const toolChoiceString = typeof request.tool_choice === 'string'
+    ? request.tool_choice
+    : request.tool_choice?.type === 'function'
+      ? request.tool_choice.function.name
+      : request.tool_choice?.type === 'tool'
+        ? request.tool_choice.name
+        : 'none';
 
   const systemPrompt = [
     ...systemMessages.map(msg => msg.content),
     createSystemPromptFromTools(request.tools || [], toolChoiceString),
   ].join('\n');
 
+  // Define MCPCreateMessageRequest type locally (or import from correct module if available)
+  type MCPCreateMessageRequest = {
+    messages: Array<{ role: 'user' | 'assistant'; content: { type: 'text'; text: string } }>;
+    systemPrompt?: string;
+    includeContext?: 'none' | 'thisServer' | 'allServers';
+    tools?: ToolDefinitions;
+    tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } } | { type: 'tool'; name: string };
+    maxTokens?: number;
+    temperature?: number;
+    stopSequences?: string[];
+  };
+
   // Generate MCPRequest with type-safe approach
-  const mcpRequest: Partial<MCPCreateMessageRequest> = {
+  const mcpRequest: MCPCreateMessageRequest = {
     messages: filteredMessages,
     systemPrompt,
     includeContext: 'none',
@@ -426,7 +478,7 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
     mcpRequest.stopSequences = request.stop;
   }
 
-  return mcpRequest as MCPCreateMessageRequest;
+  return mcpRequest;
 }
 
 
@@ -437,18 +489,7 @@ export function adaptOpenAIRequestToMCP(request: CCCRequest): MCPCreateMessageRe
  * Based on OpenAI Function Calling standard format
  */
 export function createSystemPromptFromTools(
-  tools: Array<{
-    type: 'function';
-    function: {
-      name: string;
-      description: string;
-      parameters: {
-        type: 'object';
-        properties: Record<string, unknown>;
-        required?: string[] | undefined;
-      };
-    };
-  }>, 
+  tools: ToolDefinitions,
   toolChoice: string
 ): string {
   // Handle case with no tools
@@ -468,9 +509,9 @@ You are a helpful assistant that responds using function calls when tools are av
 ${tools.map(tool => `- ${tool.function.name}: ${tool.function.description}`).join('\n')}
 
 ## Function Call Requirements
-${toolChoice && toolChoice !== 'none' && toolChoice !== 'auto' 
-  ? `You MUST call the "${toolChoice}" function for this request.` 
-  : 'You MUST use function calls to respond when appropriate.'}
+${toolChoice && toolChoice !== 'none' && toolChoice !== 'auto'
+      ? `You MUST call the "${toolChoice}" function for this request.`
+      : 'You MUST use function calls to respond when appropriate.'}
 
 ## Function Schemas
 ${tools.map(tool => `
@@ -523,7 +564,7 @@ function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallba
       const mcpMessages = request.messages
         .filter((msg: { role: string }) => msg.role !== 'tool') // Filter out tool messages as MCP doesn't support them
         .map((msg: { role: string; content: { text: string } }) => ({
-          role: msg.role as 'user' | 'assistant',
+          role: (msg.role as 'user' | 'assistant'),
           content: { type: 'text' as const, text: msg.content.text },
         }));
 
@@ -601,14 +642,7 @@ export interface CreateMessageCallback {
     stopSequences?: string[];
     metadata?: Record<string, unknown>;
     modelPreferences?: Record<string, unknown>;
-    tools?: Array<{
-      type: 'function';
-      function: {
-        name: string;
-        description: string;
-        parameters: Record<string, unknown>;
-      };
-    }>;
+    tools?: ToolDefinitions;
     tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string; }; } | { type: 'tool'; name: string; };
   }): Promise<{
     content: { type: 'text'; text: string; };
