@@ -169,31 +169,13 @@ export class SecurityManager {
 
     switch (this.restrictions.security_mode) {
       case 'permissive':
-        // permissive mode: basically allow anything (only check dangerous patterns)
-        const dangerousPatterns = this.detectDangerousPatterns(command);
-        if (dangerousPatterns.length > 0) {
-          throw new SecurityError(
-            `Command contains dangerous patterns: ${dangerousPatterns.join(', ')}`,
-            {
-              command,
-              dangerousPatterns,
-            }
-          );
-        }
+  // permissive mode: legacy dangerous pattern blocking removed.
+  // Intentionally no blocking here; rely on evaluator & downstream validation.
         break;
 
       case 'moderate':
-        // moderate mode: basic security checks
-        const moderateDangerousPatterns = this.detectDangerousPatterns(command);
-        if (moderateDangerousPatterns.length > 0) {
-          throw new SecurityError(
-            `Command contains dangerous patterns: ${moderateDangerousPatterns.join(', ')}`,
-            {
-              command,
-              dangerousPatterns: moderateDangerousPatterns,
-            }
-          );
-        }
+  // moderate mode: legacy dangerous pattern blocking removed.
+  // (Could add lightweight heuristics here in future if needed.)
         break;
 
       case 'enhanced':
@@ -355,79 +337,7 @@ export class SecurityManager {
     }
   }
 
-  // Detect dangerous patterns
-  detectDangerousPatterns(command: string): string[] {
-    const dangerousPatterns = [
-      // Command injection attacks (highest priority)
-      /\$\([^)]*rm[^)]*\)/, // $(rm ...)
-      /\$\([^)]*sudo[^)]*\)/, // $(sudo ...)
-      /\$\([^)]*curl[^)]*\|[^)]*bash[^)]*\)/, // $(curl ... | bash)
-      /\$\([^)]*wget[^)]*\|[^)]*sh[^)]*\)/, // $(wget ... | sh)
-      /\$\([^)]*>\s*\/[^)]*\)/, // $(... > /...)
-      /`[^`]*rm[^`]*`/, // `rm ...`
-      /`[^`]*sudo[^`]*`/, // `sudo ...`
-      /`[^`]*curl[^`]*\|[^`]*bash[^`]*`/, // `curl ... | bash`
-
-      // Destructive file operations
-      /rm\s+-rf\s+\//, // rm -rf /
-      /rm\s+-rf\s+\*/, // rm -rf *
-      />\s*\/dev\/sd[a-z]/, // > /dev/sda
-      /dd\s+.*of=\/dev\//, // dd ... of=/dev/
-      /mkfs/, // filesystem creation
-      /fdisk/, // partition operations
-
-      // Network-based code execution
-      /curl\s+.*\|\s*(bash|sh|zsh|fish)/, // curl | bash
-      /wget\s+.*\|\s*(bash|sh|zsh|fish)/, // wget | sh
-      /fetch\s+.*\|\s*(bash|sh|zsh|fish)/, // fetch | sh
-
-      // Privilege escalation
-      /sudo\s+/, // sudo
-      /su\s+(-\s+)?[a-z]/, // su - user
-      /doas\s+/, // doas (OpenBSD sudo)
-
-      // Writing to system configuration files
-      />\s*\/etc\//, // > /etc/
-      />>\s*\/etc\//, // >> /etc/
-      /tee\s+.*\/etc\//, // tee /etc/
-
-      // Sensitive information access
-      /\/etc\/passwd/, // /etc/passwd
-      /\/etc\/shadow/, // /etc/shadow
-      /\/etc\/group/, // /etc/group
-      /\/proc\/.*\/mem/, // /proc/*/mem
-
-      // Reverse shell and network attacks
-      /nc\s+.*-e/, // netcat with -e
-      /bash\s+-i\s+>&/, // interactive bash redirect
-      /\/dev\/tcp\//, // /dev/tcp/ redirection
-      /telnet\s+.*\|\s*\/bin\//, // telnet | /bin/
-
-      // System modification
-      /chroot/, // chroot
-      /mount\s+/, // mount
-      /umount/, // umount
-      /sysctl\s+-w/, // sysctl write
-
-      // Process and system control
-      /kill\s+-9\s+1/, // kill init
-      /killall\s+init/, // killall init
-      /reboot/, // reboot
-      /shutdown/, // shutdown
-      /halt/, // halt
-      /init\s+0/, // init 0
-    ];
-
-    const detectedPatterns: string[] = [];
-
-    for (const pattern of dangerousPatterns) {
-      if (pattern.test(command)) {
-        detectedPatterns.push(pattern.source);
-      }
-    }
-
-    return detectedPatterns;
-  }
+  // Legacy detectDangerousPatterns removed (Phase-out); rely on LLM & basic safety rules.
 
   auditCommand(command: string, workingDirectory?: string): void {
     // Enhanced Security Modeの場合は従来の危険パターン検出をスキップ
@@ -445,16 +355,7 @@ export class SecurityManager {
       return;
     }
 
-    // Legacy security modes (permissive, moderate, restrictive, custom)
-    const dangerousPatterns = this.detectDangerousPatterns(command);
-
-    if (dangerousPatterns.length > 0) {
-      throw new SecurityError(`Dangerous patterns detected in command`, {
-        command,
-        detectedPatterns: dangerousPatterns,
-        workingDirectory,
-      });
-    }
+  // Legacy dangerous pattern blocking removed. Proceed to command/path validation.
 
     // Additional security checks
     this.validateCommand(command);
@@ -573,16 +474,7 @@ export class SecurityManager {
       };
     }
 
-    // Check dangerous patterns (highest priority)
-    const dangerousPatterns = this.detectDangerousPatterns(trimmedCommand);
-    if (dangerousPatterns.length > 0) {
-      return {
-        classification: 'llm_required',
-        reasoning: 'Contains dangerous patterns',
-        safety_level: 5,
-        dangerous_patterns: dangerousPatterns,
-      };
-    }
+  // (Legacy dangerous pattern shortcut removed – allow classification to fall through to rules/LLM.)
 
     // Check basic safety rules
     for (const rule of this.basicSafetyRules) {

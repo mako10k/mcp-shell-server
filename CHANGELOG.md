@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.5.0] - 2025-08-13
+### Changed
+- Removed legacy hard-block dangerous pattern matcher in security/manager.ts (now rely on LLM + elicitation).
+- Added internal validator-side dynamic criteria adjustment (no public tool).
+- Relaxed system prompt to focus on reckless / careless / intent-deviating prevention.
+### Maintenance
+- Refactored SafetyEvaluationResult into class hierarchy with factory + polymorphic responses.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
