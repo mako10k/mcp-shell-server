@@ -127,6 +127,19 @@ export class ShellTools {
       this.securityManager.auditCommand(params.command, params.working_directory);
       this.securityManager.validateExecutionTime(params.timeout_seconds);
 
+      // foreground_timeout_secondsの最大値チェック
+      if (
+        params.execution_mode === 'foreground' &&
+        typeof params.foreground_timeout_seconds === 'number' &&
+        params.foreground_timeout_seconds > 300
+      ) {
+        throw new MCPShellError(
+          'TIMEOUT_LIMIT_EXCEEDED',
+          `foreground_timeout_seconds (${params.foreground_timeout_seconds}) exceeds the maximum allowed (300 seconds). For timeouts above 300 seconds, use execution_mode 'background' or 'adaptive'.`,
+          'PARAM'
+        );
+      }
+
       const executionOptions: ExecutionOptions = {
         command: params.command,
         executionMode: params.execution_mode,
