@@ -951,21 +951,11 @@ export class EnhancedSafetyEvaluator {
     }
 
     // Use specific question from LLM if provided, otherwise use default message
+    // コマンド部分をshellコードブロックで囲む
+    const shellBlock = `\`\`\`shell\n${command}\n\`\`\``;
     const elicitationMessage = userIntentQuestion 
-      ? `🔐 SECURITY CONFIRMATION REQUIRED
-
-Command: ${command}
-
-${userIntentQuestion}`
-      : `🔐 SECURITY CONFIRMATION REQUIRED
-
-Command: ${command}
-
-This command has been flagged for review. Please provide your intent:
-
-- What are you trying to accomplish?
-- Why is this specific command needed?
-- Are you sure this is what you want to execute?`;
+      ? `🔐 SECURITY CONFIRMATION REQUIRED\n\nCommand:\n${shellBlock}\n\n${userIntentQuestion}`
+      : `🔐 SECURITY CONFIRMATION REQUIRED\n\nCommand:\n${shellBlock}\n\nThis command has been flagged for review. Please provide your intent:\n\n- What are you trying to accomplish?\n- Why is this specific command needed?\n- Are you sure this is what you want to execute?`;
 
     const elicitationSchema: ElicitationSchema = {
       type: 'object',
