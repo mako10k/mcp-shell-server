@@ -57,6 +57,11 @@ export class TerminalManager {
   this.events.setMaxListeners(0); // 0 = 無制限
   }
 
+  // SSE連携等のための読み取り専用の EventEmitter 参照
+  getEventEmitter(): EventEmitter {
+    return this.events;
+  }
+
   async createTerminal(options: TerminalOptions): Promise<TerminalInfo> {
     // ターミナル数の制限チェック
     if (this.terminals.size >= this.maxTerminals) {

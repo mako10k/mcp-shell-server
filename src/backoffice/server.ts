@@ -47,6 +47,12 @@ export class BackofficeServer {
         const url = new URL(req.url, `http://${this.host}:${this.port}`);
         const { pathname, searchParams } = url;
 
+        // Health endpoint for diagnostics
+        if (pathname === '/health') {
+          this.json(res, 200, { status: 'ok', service: 'backoffice', port: this.getListenPort() });
+          return;
+        }
+
   // Note: Most endpoints are GET-only, except remote kill proxy which is POST
 
         if (pathname === '/' || pathname === '/index.html') {
@@ -191,6 +197,15 @@ export class BackofficeServer {
   await closeServer(srv);
     logger.info('Backoffice server stopped', {}, 'backoffice');
     this.server = null;
+  }
+
+  // Expose current listening port (useful when binding with port 0 in tests)
+  getListenPort(): number {
+    const srv = this.server as http.Server | null;
+    if (!srv) return this.port;
+    const addr = srv.address();
+    if (typeof addr === 'object' && addr && typeof addr.port === 'number') return addr.port;
+    return this.port;
   }
 
   // ---------- Handlers ----------
@@ -431,8 +446,7 @@ export class BackofficeServer {
 
     // TerminalManager のイベントに連結（イベント駆動）
     // 端末出力の変化があれば push
-    const anyTm = this.deps.terminalManager as unknown as { events?: import('events').EventEmitter };
-    const ev = anyTm.events;
+  const ev = this.deps.terminalManager.getEventEmitter();
     let heartbeat: NodeJS.Timeout | null = null;
 
     const pushLatest = async () => {
@@ -494,32 +508,60 @@ export class BackofficeServer {
       return;
     }
     this.initSSE(res);
-    const remote = this.getRemoteService();
-    let timer: NodeJS.Timeout | null = null;
+    // Executor の SSE をそのままプロキシする（イベント駆動）
+    const baseUrl = (process.env['EXECUTOR_URL'] || `http://${process.env['EXECUTOR_HOST'] || '127.0.0.1'}:${process.env['EXECUTOR_PORT'] || '4030'}`).replace(/\/$/, '');
+    const url = `${baseUrl}/v1/exec/${encodeURIComponent(id)}/sse`;
+    const token = process.env['EXECUTOR_TOKEN'];
+    const controller = new AbortController();
 
-    const tick = async () => {
-      try {
-        const state = await remote.get(id);
-        this.writeSSE(res, 'state', state);
-        const outputs = await remote.outputs(id);
-        this.writeSSE(res, 'outputs', outputs);
-        if (state.status === 'completed' || state.status === 'failed') {
-          if (timer) clearInterval(timer);
-          // one final comment event and end connection after short delay
-          this.writeSSE(res, 'end', { reason: 'finished' });
-          setTimeout(() => res.end(), 200);
-        }
-      } catch (e) {
-        this.writeSSE(res, 'error', { message: String(e) });
+    try {
+      const init: RequestInit = { method: 'GET', signal: controller.signal };
+      if (token) {
+        init.headers = { Authorization: `Bearer ${token}` } as Record<string, string>;
       }
-    };
+      const resp = await fetch(url, init);
+      if (!resp.ok || !resp.body) {
+        this.writeSSE(res, 'error', { message: `Upstream error HTTP ${resp.status}` });
+        res.end();
+        return;
+      }
 
-    // First push immediately then poll
-    void tick();
-    timer = setInterval(tick, 1000);
-    const clean = () => { if (timer) clearInterval(timer); };
-    req.on('close', clean);
-    req.on('aborted', clean);
+      // Web ReadableStream を逐次読み取りして下流に書き出す
+      const reader = (resp.body as ReadableStream<Uint8Array>).getReader();
+      let closed = false;
+      const pump = async () => {
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (value && value.byteLength > 0) {
+              res.write(Buffer.from(value));
+            }
+          }
+        } catch (e) {
+          // 接続中断などは黙殺して終了
+        } finally {
+          if (!closed) {
+            closed = true;
+            res.end();
+          }
+        }
+      };
+      void pump();
+
+      const clean = () => {
+        if (!closed) {
+          closed = true;
+          try { controller.abort(); } catch {}
+          try { res.end(); } catch {}
+        }
+      };
+      req.on('close', clean);
+      req.on('aborted', clean);
+    } catch (e) {
+      this.writeSSE(res, 'error', { message: String(e) });
+      res.end();
+    }
   }
 
   // ---------- Utils ----------
