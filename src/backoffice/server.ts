@@ -7,6 +7,7 @@ import { TerminalManager } from '../core/terminal-manager.js';
 import { FileManager } from '../core/file-manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { logger } from '../utils/helpers.js';
+import { listenServer, closeServer } from '../utils/server-helpers.js';
 
 interface BackofficeDeps {
   processManager: ProcessManager;
@@ -127,23 +128,20 @@ export class BackofficeServer {
       }
     });
 
-    return new Promise((resolve, reject) => {
-      const srv = this.server as http.Server;
-      srv.listen(this.port, this.host, () => {
+    return listenServer(this.server as http.Server, this.host, this.port)
+      .then(() => {
         logger.info('Backoffice server started', { host: this.host, port: this.port }, 'backoffice');
-        resolve();
-      });
-      srv.on('error', (e) => {
+      })
+      .catch((e) => {
         logger.error('Backoffice server listen error', { error: String(e) }, 'backoffice');
-        reject(e);
+        throw e;
       });
-    });
   }
 
   async stop(): Promise<void> {
-    const srv = this.server;
-    if (!srv) return;
-    await new Promise<void>((resolve) => srv.close(() => resolve()));
+  const srv = this.server;
+  if (!srv) return;
+  await closeServer(srv);
     logger.info('Backoffice server stopped', {}, 'backoffice');
     this.server = null;
   }
