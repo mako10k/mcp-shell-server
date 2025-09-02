@@ -38,6 +38,7 @@ import { TerminalOperateParamsSchema } from './types/quick-schemas.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
 import { MCPShellError } from './utils/errors.js';
+import { BackofficeServer } from './backoffice/server.js';
 
 // Tools can be disabled by specifying a comma-separated list in the
 // MCP_DISABLED_TOOLS environment variable. Disabled tools will not be
@@ -57,6 +58,7 @@ export class MCPShellServer {
   private configManager: ConfigManager;
   private commandHistoryManager: CommandHistoryManager;
   private shellTools: ShellTools;
+  private backoffice?: BackofficeServer;
 
   constructor() {
     this.server = new Server(
@@ -125,6 +127,19 @@ export class MCPShellServer {
     );
 
     this.setupHandlers();
+
+    // Optional Backoffice server
+    if (process.env['BACKOFFICE_ENABLED'] === 'true') {
+      this.backoffice = new BackofficeServer({
+        processManager: this.processManager,
+        terminalManager: this.terminalManager,
+        fileManager: this.fileManager,
+        historyManager: this.commandHistoryManager,
+      });
+      this.backoffice
+        .start()
+        .catch((e) => logger.error('Failed to start Backoffice', { error: String(e) }, 'backoffice'));
+    }
   }
 
   private setupHandlers(): void {
@@ -508,6 +523,13 @@ export class MCPShellServer {
   }
 
   async cleanup(): Promise<void> {
+    if (this.backoffice) {
+      try {
+        await this.backoffice.stop();
+      } catch (e) {
+        logger.warn('Backoffice stop failed', { error: String(e) }, 'backoffice');
+      }
+    }
     this.processManager.cleanup();
     this.terminalManager.cleanup();
     await this.fileManager.cleanup();

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCP Shell Backoffice</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>MCP Shell Backoffice</h1>
+      <nav>
+        <button data-tab="history" class="active">履歴</button>
+        <button data-tab="executions">実行</button>
+        <button data-tab="terminals">ターミナル</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="history" class="tab active">
+        <div class="controls">
+          <input id="history-q" placeholder="コマンド検索" />
+          <button id="history-refresh">更新</button>
+        </div>
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>時刻</th>
+              <th>コマンド</th>
+              <th>要約</th>
+              <th>WD</th>
+              <th>分類</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section id="executions" class="tab">
+        <div class="controls">
+          <input id="exec-q" placeholder="コマンド検索" />
+          <select id="exec-status">
+            <option value="all">all</option>
+            <option value="running">running</option>
+            <option value="completed">completed</option>
+            <option value="failed">failed</option>
+            <option value="timeout">timeout</option>
+          </select>
+          <button id="exec-refresh">更新</button>
+        </div>
+        <table id="exec-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>コマンド</th>
+              <th>状態</th>
+              <th>時間</th>
+              <th>出力ID</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section id="terminals" class="tab">
+        <div class="controls">
+          <select id="term-status">
+            <option value="all">all</option>
+            <option value="active">active</option>
+            <option value="idle">idle</option>
+            <option value="closed">closed</option>
+          </select>
+          <button id="term-refresh">更新</button>
+        </div>
+        <table id="term-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>セッション</th>
+              <th>状態</th>
+              <th>最終活動</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <footer>
+      <small>Local only. No authentication. For development use.</small>
+    </footer>
+
+    <script src="/main.js"></script>
+  </body>
+</html>
