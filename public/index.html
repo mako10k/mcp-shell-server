@@ -14,13 +14,41 @@
         <button data-tab="executions">実行</button>
         <button data-tab="terminals">ターミナル</button>
       </nav>
+      <div class="header-controls">
+        <label><input type="checkbox" id="auto-refresh" /> 自動更新</label>
+      </div>
     </header>
 
     <main>
       <section id="history" class="tab active">
         <div class="controls">
           <input id="history-q" placeholder="コマンド検索" />
+          <input id="history-from" type="datetime-local" title="開始" />
+          <input id="history-to" type="datetime-local" title="終了" />
+          <select id="history-executed" title="実行有無">
+            <option value="">executed: any</option>
+            <option value="true">executed: true</option>
+            <option value="false">executed: false</option>
+          </select>
+          <select id="history-safety" title="安全分類">
+            <option value="">safety: any</option>
+            <option value="basic_safe">basic_safe</option>
+            <option value="llm_required">llm_required</option>
+          </select>
+          <label>page size
+            <select id="history-page-size">
+              <option>10</option>
+              <option selected>20</option>
+              <option>50</option>
+              <option>100</option>
+            </select>
+          </label>
           <button id="history-refresh">更新</button>
+          <div class="pager">
+            <button id="history-prev">◀</button>
+            <span id="history-page-info">1 / 1</span>
+            <button id="history-next">▶</button>
+          </div>
         </div>
         <table id="history-table">
           <thead>
@@ -93,3 +121,26 @@
     <script src="/main.js"></script>
   </body>
 </html>
+        <div id="history-detail" class="detail-panel" hidden>
+          <div class="detail-actions">
+            <button id="history-copy-cmd">コマンドをコピー</button>
+            <button id="history-close-detail">閉じる</button>
+          </div>
+          <pre id="history-detail-pre"></pre>
+        </div>
+        <div id="exec-detail" class="detail-panel" hidden>
+          <div class="detail-actions">
+            <button id="exec-close-detail">閉じる</button>
+          </div>
+          <pre id="exec-detail-pre"></pre>
+          <h4>出力ファイル</h4>
+          <ul id="exec-outputs"></ul>
+        </div>
+        <div id="term-output-panel" class="detail-panel" hidden>
+          <div class="detail-actions">
+            <label><input type="checkbox" id="term-autorefresh" /> 自動更新</label>
+            <button id="term-output-refresh">出力更新</button>
+            <button id="term-output-close">閉じる</button>
+          </div>
+          <pre id="term-output-pre" class="terminal"></pre>
+        </div>

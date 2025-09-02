@@ -42,8 +42,18 @@ Scope: Monitoring dashboard to view command history, execution results, and term
 
 ## UI
 - Single page with three tabs (history, executions, terminals)
-- Lightweight CSS and fetch calls to APIs
-- Auto refresh on page load; manual refresh buttons per tab
+- Filters & Pagination
+  - History: q, executed(true/false), safety, date_from/to, page, page_size
+  - Executions: q, status
+  - Terminals: status
+- Detail Panels
+  - History: JSON詳細＋ワンクリックでコマンドコピー
+  - Executions: 実行詳細JSON＋出力ファイル一覧
+  - Terminals: 出力ビュー（行数指定は固定、ANSI無効）
+- Auto Refresh
+  - ヘッダーの自動更新トグル（3秒間隔）
+  - ターミナル出力パネルにも個別の自動更新トグル
+ - Lightweight CSS and fetch-based UI
 
 ## Wiring
 - `MCPShellServer` constructs `BackofficeServer` when BACKOFFICE_ENABLED=true and starts it.
@@ -51,6 +61,6 @@ Scope: Monitoring dashboard to view command history, execution results, and term
 
 ## Next (Phase 2)
 - Authentication (token/basic), CSRF protection
-- Detail views (execution output preview, history->execution linkage)
-- Streaming/live updates
-- Filters/pagination on UI
+- 履歴→実行へのリンク整備、出力IDからの出力プレビュー
+- ストリーミング/ライブ更新（Server-Sent EventsやWebSocket検討）
+- ページングUIのキー操作、アクセシビリティ改善
