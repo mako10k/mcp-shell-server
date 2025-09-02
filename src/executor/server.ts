@@ -23,6 +23,8 @@ export class ExecutorServer {
   stderr?: string;
   execution_time_ms?: number;
   }> = new Map();
+  // Track running child processes for kill API
+  private processes: Map<string, import('child_process').ChildProcess> = new Map();
 
   constructor(host?: string, port?: number) {
     this.host = host || process.env['EXECUTOR_HOST'] || '127.0.0.1';
@@ -91,10 +93,45 @@ export class ExecutorServer {
         }
 
         if (req.method === 'GET' && pathname.startsWith('/v1/exec/')) {
-          const id = pathname.replace('/v1/exec/', '');
+          const rest = pathname.replace('/v1/exec/', '');
+          const [idRaw, sub] = rest.split('/');
+          const id = idRaw || '';
+          if (!id) return this.json(res, 400, { error: 'Invalid execution id' });
           const item = this.executions.get(id);
           if (!item) return this.json(res, 404, { error: 'Not Found', execution_id: id });
-          return this.json(res, 200, item);
+          if (!sub) {
+            return this.json(res, 200, item);
+          }
+          // Outputs endpoint
+          if (sub === 'outputs') {
+            const out: Record<string, unknown> = { execution_id: id };
+            if (typeof item.stdout === 'string') out['stdout'] = item.stdout;
+            if (typeof item.stderr === 'string') out['stderr'] = item.stderr;
+            return this.json(res, 200, out);
+          }
+          return this.json(res, 404, { error: 'Not Found' });
+        }
+
+        // Kill endpoint
+        if (req.method === 'POST' && pathname.startsWith('/v1/exec/') && pathname.endsWith('/kill')) {
+          const id = pathname.split('/')[3] || '';
+          if (!this.executions.has(id)) return this.json(res, 404, { error: 'Not Found', execution_id: id });
+          const proc = this.processes.get(id);
+          const body = await this.readJson(req, 16 * 1024);
+          const force = !!(body && typeof body === 'object' && 'force' in body && (body as Record<string, unknown>)['force']);
+          const signal = (body && typeof body === 'object' && 'signal' in body)
+            ? String((body as Record<string, unknown>)['signal'])
+            : 'SIGTERM';
+          if (!proc || proc.killed) {
+            return this.json(res, 200, { success: true, message: 'No running process', execution_id: id });
+          }
+          try {
+            const ok = proc.kill(signal as NodeJS.Signals);
+            if (force) setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 1000);
+            return this.json(res, 200, { success: ok, signal_sent: signal, execution_id: id });
+          } catch (e) {
+            return this.json(res, 500, { success: false, error: 'Kill failed', execution_id: id });
+          }
         }
 
         this.json(res, 404, { error: 'Not Found' });
@@ -144,8 +181,9 @@ export class ExecutorServer {
   ): Promise<void> {
     const start = Date.now();
     // Lazy import to avoid top-level dependency if not used
-    const { spawn } = await import('child_process');
-    const child = spawn('sh', ['-c', command], { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  const { spawn } = await import('child_process');
+  const child = spawn('sh', ['-c', command], { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  this.processes.set(executionId, child);
 
     let stdout = '';
     let stderr = '';
@@ -164,8 +202,8 @@ export class ExecutorServer {
       }
     };
 
-    if (child.stdout) child.stdout.on('data', (d) => addChunk('out', d));
-    if (opts.captureStderr && child.stderr) child.stderr.on('data', (d) => addChunk('err', d));
+  if (child.stdout) child.stdout.on('data', (d) => { addChunk('out', d); const rec = this.executions.get(executionId); if (rec) { rec.stdout = stdout; rec.updated_at = new Date().toISOString(); this.executions.set(executionId, rec); } });
+  if (opts.captureStderr && child.stderr) child.stderr.on('data', (d) => { addChunk('err', d); const rec = this.executions.get(executionId); if (rec) { rec.stderr = stderr; rec.updated_at = new Date().toISOString(); this.executions.set(executionId, rec); } });
 
     let killedByTimeout = false;
     const timer = setTimeout(() => {
@@ -193,8 +231,8 @@ export class ExecutorServer {
       this.executions.set(executionId, rec);
     };
 
-    child.on('error', () => finalize('failed'));
-    child.on('exit', (code) => finalize(killedByTimeout ? 'failed' : (code === 0 ? 'completed' : 'failed'), code === null ? undefined : code));
+  child.on('error', () => { finalize('failed'); this.processes.delete(executionId); });
+  child.on('exit', (code) => { finalize(killedByTimeout ? 'failed' : (code === 0 ? 'completed' : 'failed'), code === null ? undefined : code); this.processes.delete(executionId); });
   }
 }
 
