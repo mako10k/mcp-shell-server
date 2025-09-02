@@ -63,6 +63,12 @@ curl -s -X POST http://127.0.0.1:4030/v1/exec \
   -d '{"command":"echo hello","safety_evaluation":{"evaluation_result":"allow","reasoning":"ok"}}' | jq
 
 curl -s http://127.0.0.1:4030/v1/exec/<execution_id> | jq
+
+# fetch outputs (during or after)
+curl -s http://127.0.0.1:4030/v1/exec/<execution_id>/outputs | jq
+
+# send kill (optional)
+curl -s -X POST http://127.0.0.1:4030/v1/exec/<execution_id>/kill -H 'Content-Type: application/json' -d '{"signal":"SIGTERM","force":false}' | jq
 ```
 
 4) Run MCP server with remote backend:
@@ -82,3 +88,18 @@ EXECUTION_BACKEND=remote npm run dev
 4) Wire env switch for process start/get. [Done]
 5) Update docs and backoffice notes. [Done]
 6) Extend executor: outputs, terminals, kill, streaming. [Planned]
+
+## Runtime behavior (Phase 1)
+
+- Autostart: POST /v1/exec accepts and immediately starts the process (status: running)
+- Status transitions: running → completed | failed（タイムアウト/シグナル/非ゼロ終了含む）
+- Outputs: stdout/stderr は実行中も随時メモリに反映（GET /outputs で確認）
+- Timeout: 既定60s（kill SIGTERM → 1s 後に SIGKILL フォロー）
+- Limits: max_output_size（既定5MB）で切り詰め
+- Safety: safety_evaluation を保持し、/v1/exec/:id で参照可能
+
+### Error modes
+- 400: command 未指定／execution_id 無効
+- 403: 非ローカルアクセス
+- 404: 対象なし
+- 500: 内部エラー／kill 失敗
