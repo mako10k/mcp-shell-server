@@ -1,4 +1,5 @@
 import * as pty from 'node-pty';
+import { EventEmitter } from 'events';
 import {
   TerminalInfo,
   ShellType,
@@ -45,11 +46,15 @@ export class TerminalManager {
   private readonly maxTerminals: number;
   private readonly maxOutputLines: number;
   private readonly maxHistoryLines: number;
+  // イベント駆動のSSE連携用: 端末ごとの出力/終了イベントを発火
+  private events = new EventEmitter();
 
   constructor(maxTerminals = 20, maxOutputLines = 10000, maxHistoryLines = 1000) {
     this.maxTerminals = maxTerminals;
     this.maxOutputLines = maxOutputLines;
     this.maxHistoryLines = maxHistoryLines;
+  // 多数のSSEクライアントが同一端末に接続しても警告が出ないように上限を緩める
+  this.events.setMaxListeners(0); // 0 = 無制限
   }
 
   async createTerminal(options: TerminalOptions): Promise<TerminalInfo> {
@@ -164,6 +169,10 @@ export class TerminalManager {
     session.lastActivity = new Date();
     session.info.last_activity = getCurrentTimestamp();
     session.info.status = 'active';
+
+  // 出力イベントを発火（SSEへ伝搬させるため）
+  // 端末IDごとのイベントチャンネル: `terminal:output:<id>`
+  this.events.emit(`terminal:output:${terminalId}`);
   }
 
   private handleTerminalExit(
@@ -180,6 +189,9 @@ export class TerminalManager {
     setTimeout(() => {
       this.terminals.delete(terminalId);
     }, 30000); // 30秒後
+
+  // 終了イベントを発火（SSEへ伝搬）
+  this.events.emit(`terminal:exit:${terminalId}`);
   }
 
   async getTerminal(terminalId: string, updateForegroundProcess = true): Promise<TerminalInfo> {

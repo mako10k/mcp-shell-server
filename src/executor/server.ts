@@ -1,4 +1,5 @@
 import http from 'http';
+import { EventEmitter } from 'events';
 import { URL } from 'url';
 import { randomUUID } from 'crypto';
 import { listenServer, closeServer } from '../utils/server-helpers.js';
@@ -25,6 +26,8 @@ export class ExecutorServer {
   }> = new Map();
   // Track running child processes for kill API
   private processes: Map<string, import('child_process').ChildProcess> = new Map();
+  // 簡易イベント: 実行ごとの出力更新/終了を通知（BackofficeのSSE移行の布石）
+  private events = new EventEmitter();
 
   constructor(host?: string, port?: number) {
     this.host = host || process.env['EXECUTOR_HOST'] || '127.0.0.1';
@@ -232,8 +235,26 @@ export class ExecutorServer {
       }
     };
 
-  if (child.stdout) child.stdout.on('data', (d) => { addChunk('out', d); const rec = this.executions.get(executionId); if (rec) { rec.stdout = stdout; rec.updated_at = new Date().toISOString(); this.executions.set(executionId, rec); } });
-  if (opts.captureStderr && child.stderr) child.stderr.on('data', (d) => { addChunk('err', d); const rec = this.executions.get(executionId); if (rec) { rec.stderr = stderr; rec.updated_at = new Date().toISOString(); this.executions.set(executionId, rec); } });
+  if (child.stdout) child.stdout.on('data', (d) => {
+      addChunk('out', d);
+      const rec = this.executions.get(executionId);
+      if (rec) {
+        rec.stdout = stdout;
+        rec.updated_at = new Date().toISOString();
+        this.executions.set(executionId, rec);
+      }
+      this.events.emit(`exec:output:${executionId}`);
+    });
+  if (opts.captureStderr && child.stderr) child.stderr.on('data', (d) => {
+      addChunk('err', d);
+      const rec = this.executions.get(executionId);
+      if (rec) {
+        rec.stderr = stderr;
+        rec.updated_at = new Date().toISOString();
+        this.executions.set(executionId, rec);
+      }
+      this.events.emit(`exec:output:${executionId}`);
+    });
 
     let killedByTimeout = false;
     const timer = setTimeout(() => {
@@ -261,8 +282,16 @@ export class ExecutorServer {
       this.executions.set(executionId, rec);
     };
 
-  child.on('error', () => { finalize('failed'); this.processes.delete(executionId); });
-  child.on('exit', (code) => { finalize(killedByTimeout ? 'failed' : (code === 0 ? 'completed' : 'failed'), code === null ? undefined : code); this.processes.delete(executionId); });
+  child.on('error', () => {
+      finalize('failed');
+      this.processes.delete(executionId);
+      this.events.emit(`exec:exit:${executionId}`);
+    });
+  child.on('exit', (code) => {
+      finalize(killedByTimeout ? 'failed' : (code === 0 ? 'completed' : 'failed'), code === null ? undefined : code);
+      this.processes.delete(executionId);
+      this.events.emit(`exec:exit:${executionId}`);
+    });
   }
 }
 

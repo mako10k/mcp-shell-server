@@ -407,13 +407,35 @@ export class BackofficeServer {
   private async handleTerminalSSE(res: ServerResponse, id: string, q: URLSearchParams, req: http.IncomingMessage) {
     this.initSSE(res);
     let lastStart: number | undefined = undefined;
-  const lc = q.get('line_count');
-  const lineCount = lc ? parseInt(lc, 10) : 200;
+    const lc = q.get('line_count');
+    const lineCount = lc ? parseInt(lc, 10) : 200;
     const includeAnsi = (q.get('include_ansi') || 'false') === 'true';
     const includeFg = (q.get('include_foreground_process') || 'false') === 'true';
-    let timer: NodeJS.Timeout | null = null;
 
-    const tick = async () => {
+    // 初回スナップショットを送信
+    try {
+      const out = await this.deps.terminalManager.getOutput(
+        id,
+        lastStart,
+        lineCount,
+        includeAnsi,
+        includeFg
+      );
+      this.writeSSE(res, 'terminal_output', out);
+      lastStart = out.next_start_line;
+    } catch (e) {
+      this.writeSSE(res, 'error', { message: 'Terminal not found', id });
+      res.end();
+      return;
+    }
+
+    // TerminalManager のイベントに連結（イベント駆動）
+    // 端末出力の変化があれば push
+    const anyTm = this.deps.terminalManager as unknown as { events?: import('events').EventEmitter };
+    const ev = anyTm.events;
+    let heartbeat: NodeJS.Timeout | null = null;
+
+    const pushLatest = async () => {
       try {
         const out = await this.deps.terminalManager.getOutput(
           id,
@@ -422,21 +444,48 @@ export class BackofficeServer {
           includeAnsi,
           includeFg
         );
-        this.writeSSE(res, 'terminal_output', out);
-        lastStart = out.next_start_line;
+        // 変化が無い場合は送らない（心拍は別で送る）
+        if (out.line_count > 0) {
+          this.writeSSE(res, 'terminal_output', out);
+          lastStart = out.next_start_line;
+        }
       } catch (e) {
         this.writeSSE(res, 'error', { message: 'Terminal not found', id });
-        if (timer) clearInterval(timer);
+        cleanup();
         res.end();
       }
     };
 
-    // First push immediately then poll
-    void tick();
-    timer = setInterval(tick, 1000);
-    const clean = () => { if (timer) clearInterval(timer); };
-    req.on('close', clean);
-    req.on('aborted', clean);
+    const onData = () => { void pushLatest(); };
+    const onExit = () => {
+      // 最後のスナップショット送信（可能なら）
+      void pushLatest().finally(() => {
+        this.writeSSE(res, 'end', { reason: 'terminal_closed' });
+        cleanup();
+        res.end();
+      });
+    };
+
+    const cleanup = () => {
+      if (ev) {
+        ev.removeListener(`terminal:output:${id}`, onData);
+        ev.removeListener(`terminal:exit:${id}`, onExit);
+      }
+      if (heartbeat) clearInterval(heartbeat);
+    };
+
+    if (ev) {
+      ev.on(`terminal:output:${id}`, onData);
+      ev.on(`terminal:exit:${id}`, onExit);
+    }
+
+    // アイドル時はハートビート（10秒間隔）
+    heartbeat = setInterval(() => {
+      this.writeSSE(res, 'heartbeat', { t: Date.now() });
+    }, 10000);
+
+    req.on('close', cleanup);
+    req.on('aborted', cleanup);
   }
 
   private async handleRemoteExecSSE(res: ServerResponse, id: string, req: http.IncomingMessage) {
