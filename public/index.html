@@ -136,6 +136,19 @@
           <h4>出力ファイル</h4>
           <ul id="exec-outputs"></ul>
         </div>
+        <div id="remote-exec-detail" class="detail-panel" hidden>
+          <div class="detail-actions">
+            <button id="remote-exec-kill">Kill</button>
+            <button id="remote-exec-close">閉じる</button>
+          </div>
+          <pre id="remote-exec-pre"></pre>
+          <h4>ライブ出力</h4>
+          <div class="controls">
+            <label><input type="checkbox" id="remote-exec-autorefresh" /> 自動更新</label>
+            <button id="remote-exec-refresh">更新</button>
+          </div>
+          <pre id="remote-exec-out" class="terminal"></pre>
+        </div>
         <div id="term-output-panel" class="detail-panel" hidden>
           <div class="detail-actions">
             <label><input type="checkbox" id="term-autorefresh" /> 自動更新</label>

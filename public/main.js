@@ -128,6 +128,7 @@
       tr.addEventListener("click", async () => {
         state.selectedExecId = tr.dataset.id;
         await showExecDetail(state.selectedExecId);
+        await showRemoteExec(state.selectedExecId); // try remote panel as well when enabled
       });
     });
   }
@@ -158,6 +159,71 @@
     } catch (err) {
       pre.textContent = String(err);
     }
+  }
+
+  // Remote executor panel (when EXECUTION_BACKEND=remote and proxy is available)
+  async function showRemoteExec(id) {
+    const panel = $("#remote-exec-detail");
+    if (!panel) return; // old build without remote panel
+    const pre = $("#remote-exec-pre");
+    const out = $("#remote-exec-out");
+    const btnRefresh = $("#remote-exec-refresh");
+    const btnKill = $("#remote-exec-kill");
+    const btnClose = $("#remote-exec-close");
+    const auto = $("#remote-exec-autorefresh");
+    let timer = null;
+
+    async function refreshState() {
+      try {
+        const res = await fetch(`/api/remote-exec/${encodeURIComponent(id)}`);
+        if (!res.ok) {
+          // Hide panel if not available
+          panel.hidden = true;
+          return;
+        }
+        const data = await res.json();
+        pre.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        pre.textContent = String(e);
+      }
+    }
+    async function refreshOutputs() {
+      try {
+        const res = await fetch(`/api/remote-exec/${encodeURIComponent(id)}/outputs`);
+        if (!res.ok) {
+          out.textContent = 'outputs unavailable';
+          return;
+        }
+        const data = await res.json();
+        let text = '';
+        if (typeof data.stdout === 'string') text += data.stdout;
+        if (typeof data.stderr === 'string') text += (text ? "\n" : "") + `--- STDERR ---\n` + data.stderr;
+        out.textContent = text.trimEnd();
+        out.scrollTop = out.scrollHeight;
+      } catch (e) {
+        out.textContent = String(e);
+      }
+    }
+
+    function startAuto() {
+      if (timer) clearInterval(timer);
+      timer = setInterval(async () => { await refreshState(); await refreshOutputs(); }, 2000);
+    }
+    function stopAuto() { if (timer) { clearInterval(timer); timer = null; } }
+
+    btnRefresh.onclick = async () => { await refreshState(); await refreshOutputs(); };
+    btnKill.onclick = async () => {
+      try {
+        await fetch(`/api/remote-exec/${encodeURIComponent(id)}/kill`, { method: 'POST' });
+        await refreshState();
+      } catch {}
+    };
+    btnClose.onclick = () => { panel.hidden = true; stopAuto(); };
+    auto.onchange = () => { if (auto.checked) startAuto(); else stopAuto(); };
+
+    panel.hidden = false;
+    await refreshState();
+    await refreshOutputs();
   }
 
   // Terminals

@@ -8,6 +8,7 @@ import { FileManager } from '../core/file-manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { logger } from '../utils/helpers.js';
 import { listenServer, closeServer } from '../utils/server-helpers.js';
+import { RemoteProcessService } from '../core/remote-process-service.js';
 
 interface BackofficeDeps {
   processManager: ProcessManager;
@@ -46,10 +47,7 @@ export class BackofficeServer {
         const url = new URL(req.url, `http://${this.host}:${this.port}`);
         const { pathname, searchParams } = url;
 
-        if (req.method !== 'GET') {
-          this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
-          return;
-        }
+  // Note: Most endpoints are GET-only, except remote kill proxy which is POST
 
         if (pathname === '/' || pathname === '/index.html') {
           await this.serveStatic(res, 'index.html', 'text/html; charset=utf-8');
@@ -70,6 +68,10 @@ export class BackofficeServer {
           const scope = parts[1];
           switch (scope) {
             case 'history': {
+              if (req.method !== 'GET') {
+                this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
+                return;
+              }
               if (parts.length === 2) {
                 await this.handleHistoryList(res, searchParams);
                 return;
@@ -83,6 +85,10 @@ export class BackofficeServer {
               return;
             }
             case 'executions': {
+              if (req.method !== 'GET') {
+                this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
+                return;
+              }
               if (parts.length === 2) {
                 await this.handleExecutionsList(res, searchParams);
                 return;
@@ -100,6 +106,10 @@ export class BackofficeServer {
               return;
             }
             case 'terminals': {
+              if (req.method !== 'GET') {
+                this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
+                return;
+              }
               if (parts.length === 2) {
                 await this.handleTerminalsList(res, searchParams);
                 return;
@@ -114,6 +124,34 @@ export class BackofficeServer {
                 return;
               }
               await this.handleTerminalGet(res, id);
+              return;
+            }
+            case 'remote-exec': {
+              // Proxy to external executor backend when EXECUTION_BACKEND=remote
+              if (parts.length < 3) {
+                this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Missing execution id' } });
+                return;
+              }
+              const id = parts[2] || '';
+              const action = parts[3] || '';
+              if (action === 'kill') {
+                if (req.method !== 'POST') {
+                  this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'POST required' } });
+                  return;
+                }
+                await this.handleRemoteExecKill(res, id, searchParams);
+                return;
+              }
+              // GET /api/remote-exec/:id and /api/remote-exec/:id/outputs
+              if (req.method !== 'GET') {
+                this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
+                return;
+              }
+              if (action === 'outputs') {
+                await this.handleRemoteExecOutputs(res, id);
+                return;
+              }
+              await this.handleRemoteExecGet(res, id);
               return;
             }
             default:
@@ -279,6 +317,62 @@ export class BackofficeServer {
       this.json(res, 200, result);
     } catch (e) {
       this.json(res, 404, { error: { code: 'NOT_FOUND', message: 'Terminal not found' } });
+    }
+  }
+
+  // ---------- Remote Executor Proxies ----------
+  private isRemoteBackend(): boolean {
+    return (process.env['EXECUTION_BACKEND'] || '').toLowerCase() === 'remote';
+  }
+
+  private getRemoteService(): RemoteProcessService {
+    return new RemoteProcessService();
+  }
+
+  private async handleRemoteExecGet(res: ServerResponse, id: string) {
+    if (!this.isRemoteBackend()) {
+      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
+      return;
+    }
+    try {
+      const remote = this.getRemoteService();
+      const data = await remote.get(id);
+      this.json(res, 200, data);
+    } catch (e) {
+      this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
+    }
+  }
+
+  private async handleRemoteExecOutputs(res: ServerResponse, id: string) {
+    if (!this.isRemoteBackend()) {
+      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
+      return;
+    }
+    try {
+      const remote = this.getRemoteService();
+      const data = await remote.outputs(id);
+      this.json(res, 200, data);
+    } catch (e) {
+      this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
+    }
+  }
+
+  private async handleRemoteExecKill(res: ServerResponse, id: string, q: URLSearchParams) {
+    if (!this.isRemoteBackend()) {
+      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
+      return;
+    }
+    try {
+      const remote = this.getRemoteService();
+      const force = (q.get('force') || 'false') === 'true';
+      const sig = q.get('signal');
+      const req: import('../core/remote-process-service.js').RemoteKillRequest = { };
+      if (force) (req as Record<string, unknown>)['force'] = true;
+      if (sig) (req as Record<string, unknown>)['signal'] = sig;
+      const data = await remote.kill(id, req);
+      this.json(res, 200, data);
+    } catch (e) {
+      this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
     }
   }
 
