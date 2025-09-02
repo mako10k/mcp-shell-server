@@ -10,6 +10,14 @@ export class ExecutorServer {
   private readonly host: string;
   private readonly port: number;
   private readonly startedAt: number = Date.now();
+  // Minimal in-memory execution store for Phase 1
+  private executions: Map<string, {
+    execution_id: string;
+    command: string | undefined;
+    status: 'accepted' | 'queued' | 'running' | 'completed' | 'failed';
+    created_at: string;
+    updated_at: string;
+  }> = new Map();
 
   constructor(host?: string, port?: number) {
     this.host = host || process.env['EXECUTOR_HOST'] || '127.0.0.1';
@@ -41,12 +49,26 @@ export class ExecutorServer {
           const execution_id = (body && typeof body === 'object' && 'execution_id' in body)
             ? String((body as Record<string, unknown>)['execution_id'])
             : randomUUID();
-          // Skeleton: just accept and return id for now
+          const cmd = (body && typeof body === 'object' && 'command' in body)
+            ? String((body as Record<string, unknown>)['command'])
+            : undefined;
+          const now = new Date().toISOString();
+          // Minimal: store as accepted (queueing placeholder)
+          this.executions.set(execution_id, {
+            execution_id,
+            command: cmd,
+            status: 'accepted',
+            created_at: now,
+            updated_at: now,
+          });
           return this.json(res, 202, { execution_id, status: 'accepted' });
         }
 
         if (req.method === 'GET' && pathname.startsWith('/v1/exec/')) {
-          return this.json(res, 501, { error: 'Not Implemented' });
+          const id = pathname.replace('/v1/exec/', '');
+          const item = this.executions.get(id);
+          if (!item) return this.json(res, 404, { error: 'Not Found', execution_id: id });
+          return this.json(res, 200, item);
         }
 
         this.json(res, 404, { error: 'Not Found' });

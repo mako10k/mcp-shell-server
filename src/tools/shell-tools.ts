@@ -57,6 +57,7 @@ import {
 } from '../types/schemas.js';
 import { TerminalOperateParams } from '../types/quick-schemas.js';
 import { ProcessManager, ExecutionOptions } from '../core/process-manager.js';
+import { RemoteProcessService } from '../core/remote-process-service.js';
 import { TerminalManager } from '../core/terminal-manager.js';
 import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
@@ -77,6 +78,11 @@ export class ShellTools {
     private securityManager: SecurityManager,
     private historyManager: CommandHistoryManager
   ) {}
+
+  // Simple backend switch: local (default) or remote
+  private isRemoteBackend(): boolean {
+    return (process.env['EXECUTION_BACKEND'] || '').toLowerCase() === 'remote';
+  }
 
   // Shell Operations
   async executeShell(params: ShellExecuteParams) {
@@ -176,23 +182,60 @@ export class ShellTools {
         executionOptions.terminalDimensions = params.terminal_dimensions;
       }
 
-      const executionInfo = await this.processManager.executeCommand(executionOptions);
+      let executionInfo: {
+        execution_id: string;
+        command: string;
+        status: string;
+        working_directory: string;
+        created_at: string;
+        started_at: string;
+        stdout?: string;
+        stderr?: string;
+        execution_time_ms?: number;
+        exit_code?: number;
+      } | import('../types/index.js').ExecutionInfo;
+      if (this.isRemoteBackend()) {
+        // Minimal remote start: map subset of fields
+        const remote = new RemoteProcessService();
+        const req: import('../core/remote-process-service.js').RemoteExecStartRequest = {
+          command: executionOptions.command,
+          timeout_seconds: executionOptions.timeoutSeconds,
+          capture_stderr: executionOptions.captureStderr,
+          max_output_size: executionOptions.maxOutputSize,
+        };
+        if (executionOptions.workingDirectory !== undefined) {
+          req.working_directory = executionOptions.workingDirectory;
+        }
+        const startRes = await remote.start(req);
+        executionInfo = {
+          execution_id: startRes.execution_id,
+          command: executionOptions.command,
+          status: startRes.status,
+          working_directory: executionOptions.workingDirectory || this.processManager.getDefaultWorkingDirectory(),
+          created_at: new Date().toISOString(),
+          started_at: new Date().toISOString(),
+        };
+      } else {
+        executionInfo = await this.processManager.executeCommand(executionOptions);
+      }
 
       // Add command to history
       try {
         const safetyClassification = this.securityManager.analyzeCommandSafety(params.command);
+        const baseWorkingDir = params.working_directory || this.processManager.getDefaultWorkingDirectory();
+        const outputSize = (executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0);
+        const durationMs = executionInfo.execution_time_ms ?? 0;
+        const exitCode = executionInfo.exit_code ?? 0;
         await this.historyManager.addHistoryEntry({
           command: params.command,
-          working_directory:
-            params.working_directory || this.processManager.getDefaultWorkingDirectory(),
+          working_directory: baseWorkingDir,
           was_executed: true,
           resubmission_count: 0,
           safety_classification: safetyClassification.classification,
           execution_status: executionInfo.status,
-          output_summary: `Exit code: ${executionInfo.exit_code}, Duration: ${executionInfo.execution_time_ms}ms, Output size: ${(executionInfo.stdout?.length || 0) + (executionInfo.stderr?.length || 0)} bytes`,
+          output_summary: `Exit code: ${exitCode}, Duration: ${durationMs}ms, Output size: ${outputSize} bytes`,
         });
       } catch (historyError) {
-        // Log history error but don't fail the execution
         console.warn('Failed to add command to history:', historyError);
       }
 
@@ -210,15 +253,20 @@ export class ShellTools {
 
   async getExecution(params: ShellGetExecutionParams) {
     try {
-      const executionInfo = this.processManager.getExecution(params.execution_id);
-      if (!executionInfo) {
-        throw new MCPShellError(
-          'RESOURCE_001',
-          `Execution with ID ${params.execution_id} not found`,
-          'RESOURCE'
-        );
+      if (this.isRemoteBackend()) {
+        const remote = new RemoteProcessService();
+        return await remote.get(params.execution_id);
+      } else {
+        const executionInfo = this.processManager.getExecution(params.execution_id);
+        if (!executionInfo) {
+          throw new MCPShellError(
+            'RESOURCE_001',
+            `Execution with ID ${params.execution_id} not found`,
+            'RESOURCE'
+          );
+        }
+        return executionInfo;
       }
-      return executionInfo;
     } catch (error) {
       throw MCPShellError.fromError(error);
     }
