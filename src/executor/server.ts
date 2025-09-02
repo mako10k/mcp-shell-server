@@ -51,7 +51,7 @@ export class ExecutorServer {
           });
         }
 
-        if (req.method === 'POST' && pathname === '/v1/exec') {
+  if (req.method === 'POST' && pathname === '/v1/exec') {
           const body = await this.readJson(req, 64 * 1024);
           const execution_id = (body && typeof body === 'object' && 'execution_id' in body)
             ? String((body as Record<string, unknown>)['execution_id'])
@@ -76,6 +76,9 @@ export class ExecutorServer {
           const safety = (body && typeof body === 'object' && 'safety_evaluation' in body)
             ? (body as Record<string, unknown>)['safety_evaluation']
             : undefined;
+          const inputData = (body && typeof body === 'object' && 'input_data' in body && typeof (body as Record<string, unknown>)['input_data'] === 'string')
+            ? String((body as Record<string, unknown>)['input_data'])
+            : undefined;
           // Minimal: store as accepted (queueing placeholder)
           this.executions.set(execution_id, {
             execution_id,
@@ -86,7 +89,9 @@ export class ExecutorServer {
             safety_evaluation: safety,
           });
           // Start execution asynchronously
-          this.runCommand(execution_id, cmd, { cwd, timeoutSeconds, captureStderr, maxOutputSize }).catch(() => {
+          const runOpts: { cwd: string; timeoutSeconds: number; captureStderr: boolean; maxOutputSize: number; inputData?: string } = { cwd, timeoutSeconds, captureStderr, maxOutputSize };
+          if (typeof inputData === 'string') (runOpts as Record<string, unknown>)['inputData'] = inputData;
+          this.runCommand(execution_id, cmd, runOpts).catch(() => {
             // swallow
           });
           return this.json(res, 202, { execution_id, status: 'running' });
@@ -177,13 +182,38 @@ export class ExecutorServer {
   private async runCommand(
     executionId: string,
     command: string,
-    opts: { cwd: string; timeoutSeconds: number; captureStderr: boolean; maxOutputSize: number }
+    opts: { cwd: string; timeoutSeconds: number; captureStderr: boolean; maxOutputSize: number; inputData?: string }
   ): Promise<void> {
     const start = Date.now();
     // Lazy import to avoid top-level dependency if not used
   const { spawn } = await import('child_process');
-  const child = spawn('sh', ['-c', command], { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('sh', ['-c', command], { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
   this.processes.set(executionId, child);
+
+    // Fail-fast, backpressure-aware stdin write if provided
+    if (opts.inputData && child.stdin) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const onErr = (err: unknown) => reject(err instanceof Error ? err : new Error(String(err)));
+          child.stdin.once('error', onErr);
+          const endSafely = () => {
+            try { child.stdin.end(); } catch { /* stream may already be closed */ }
+            resolve();
+          };
+          const ok = child.stdin.write(opts.inputData, (err?: Error | null) => {
+            if (err) return onErr(err);
+            endSafely();
+          });
+          if (!ok) {
+            // Handle backpressure: wait for drain then end
+            child.stdin.once('drain', endSafely);
+          }
+        });
+      } catch (e) {
+        // Input write failed: terminate process promptly (fail fast)
+        try { child.kill('SIGTERM'); } catch {}
+      }
+    }
 
     let stdout = '';
     let stderr = '';

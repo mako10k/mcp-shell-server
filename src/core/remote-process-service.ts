@@ -8,6 +8,8 @@ export interface RemoteExecStartRequest {
   capture_stderr?: boolean;
   max_output_size?: number;
   safety_evaluation?: unknown;
+  input_data?: string;
+  input_output_id?: string;
 }
 
 export interface RemoteExecStartResponse {
