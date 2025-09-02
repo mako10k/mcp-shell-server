@@ -29,6 +29,32 @@
   });
 
   // History
+  async function loadDashboard() {
+    try {
+      const res = await fetch('/api/dashboard');
+      const data = await res.json();
+      $('#dash-history').textContent = JSON.stringify({
+        total_entries: data?.history?.total_entries,
+        with_evaluation: data?.history?.with_evaluation,
+        executed_true: data?.history?.executed_true,
+        last_5: (data?.history?.last_5 || []).map(e => ({ ts: e.timestamp, cmd: e.command, status: e.execution_status }))
+      }, null, 2);
+      $('#dash-exec').textContent = JSON.stringify({
+        running_count: data?.executions?.running_count,
+        recent: (data?.executions?.recent || []).slice(0,5).map(e => ({ id: e.execution_id, cmd: e.command, st: e.status }))
+      }, null, 2);
+      $('#dash-term').textContent = JSON.stringify(data?.terminals || {}, null, 2);
+      $('#dash-files').textContent = JSON.stringify(data?.files || {}, null, 2);
+      const tails = (data?.executions?.running_output_tails || []).map(t => {
+        const head = `${t.execution_id} ${t.status} ${t.command}`;
+        const body = t.output_tail ? `\n--- tail ---\n${t.output_tail.trimEnd()}` : '';
+        return `${head}${body}`;
+      }).join('\n\n');
+      $('#dash-running-tails').textContent = tails || '(no running processes)';
+    } catch (e) {
+      $('#dash-history').textContent = String(e);
+    }
+  }
   async function loadHistory(page = state.history.page) {
     const q = encodeURIComponent($("#history-q").value || "");
     const executed = $("#history-executed").value;
@@ -238,6 +264,10 @@
 
   $("#term-refresh").addEventListener("click", loadTerminals);
 
+  // Dashboard refresh
+  const dashBtn = document.querySelector('#dash-refresh');
+  if (dashBtn) dashBtn.addEventListener('click', loadDashboard);
+
   async function showTerminalOutput(id) {
     const panel = $("#term-output-panel");
     const pre = $("#term-output-pre");
@@ -272,6 +302,7 @@
   loadHistory();
   loadExecutions();
   loadTerminals();
+  loadDashboard();
 
   // Global auto refresh loop
   (async () => {
@@ -280,6 +311,7 @@
         loadHistory(state.history.page);
         loadExecutions();
         loadTerminals();
+  loadDashboard();
       }
       await sleep(3000);
     }
