@@ -106,6 +106,7 @@ export class BackofficeServer {
               return;
             }
             case 'terminals': {
+              // GET only for terminals APIs (including SSE)
               if (req.method !== 'GET') {
                 this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
                 return;
@@ -117,6 +118,10 @@ export class BackofficeServer {
               const id = parts[2];
               if (!id) {
                 this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Missing terminal id' } });
+                return;
+              }
+              if (parts[3] === 'sse') {
+                await this.handleTerminalSSE(res, id, searchParams, req);
                 return;
               }
               if (parts[3] === 'output') {
@@ -145,6 +150,10 @@ export class BackofficeServer {
               // GET /api/remote-exec/:id and /api/remote-exec/:id/outputs
               if (req.method !== 'GET') {
                 this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
+                return;
+              }
+              if (action === 'sse') {
+                await this.handleRemoteExecSSE(res, id, req);
                 return;
               }
               if (action === 'outputs') {
@@ -374,6 +383,94 @@ export class BackofficeServer {
     } catch (e) {
       this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
     }
+  }
+
+  // ---------- SSE Handlers ----------
+  private initSSE(res: ServerResponse) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+  }
+
+  private writeSSE(res: ServerResponse, event: string, data: unknown) {
+    const payload = typeof data === 'string' ? data : JSON.stringify(data);
+    res.write(`event: ${event}\n`);
+    // split by newlines to follow SSE spec
+    const lines = String(payload).split(/\r?\n/);
+    for (const line of lines) {
+      res.write(`data: ${line}\n`);
+    }
+    res.write('\n');
+  }
+
+  private async handleTerminalSSE(res: ServerResponse, id: string, q: URLSearchParams, req: http.IncomingMessage) {
+    this.initSSE(res);
+    let lastStart: number | undefined = undefined;
+  const lc = q.get('line_count');
+  const lineCount = lc ? parseInt(lc, 10) : 200;
+    const includeAnsi = (q.get('include_ansi') || 'false') === 'true';
+    const includeFg = (q.get('include_foreground_process') || 'false') === 'true';
+    let timer: NodeJS.Timeout | null = null;
+
+    const tick = async () => {
+      try {
+        const out = await this.deps.terminalManager.getOutput(
+          id,
+          lastStart,
+          lineCount,
+          includeAnsi,
+          includeFg
+        );
+        this.writeSSE(res, 'terminal_output', out);
+        lastStart = out.next_start_line;
+      } catch (e) {
+        this.writeSSE(res, 'error', { message: 'Terminal not found', id });
+        if (timer) clearInterval(timer);
+        res.end();
+      }
+    };
+
+    // First push immediately then poll
+    void tick();
+    timer = setInterval(tick, 1000);
+    const clean = () => { if (timer) clearInterval(timer); };
+    req.on('close', clean);
+    req.on('aborted', clean);
+  }
+
+  private async handleRemoteExecSSE(res: ServerResponse, id: string, req: http.IncomingMessage) {
+    if (!this.isRemoteBackend()) {
+      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
+      return;
+    }
+    this.initSSE(res);
+    const remote = this.getRemoteService();
+    let timer: NodeJS.Timeout | null = null;
+
+    const tick = async () => {
+      try {
+        const state = await remote.get(id);
+        this.writeSSE(res, 'state', state);
+        const outputs = await remote.outputs(id);
+        this.writeSSE(res, 'outputs', outputs);
+        if (state.status === 'completed' || state.status === 'failed') {
+          if (timer) clearInterval(timer);
+          // one final comment event and end connection after short delay
+          this.writeSSE(res, 'end', { reason: 'finished' });
+          setTimeout(() => res.end(), 200);
+        }
+      } catch (e) {
+        this.writeSSE(res, 'error', { message: String(e) });
+      }
+    };
+
+    // First push immediately then poll
+    void tick();
+    timer = setInterval(tick, 1000);
+    const clean = () => { if (timer) clearInterval(timer); };
+    req.on('close', clean);
+    req.on('aborted', clean);
   }
 
   // ---------- Utils ----------

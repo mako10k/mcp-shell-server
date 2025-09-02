@@ -171,59 +171,42 @@
     const btnKill = $("#remote-exec-kill");
     const btnClose = $("#remote-exec-close");
     const auto = $("#remote-exec-autorefresh");
-    let timer = null;
-
-    async function refreshState() {
+    let es = null;
+    function openSSE() {
       try {
-        const res = await fetch(`/api/remote-exec/${encodeURIComponent(id)}`);
-        if (!res.ok) {
-          // Hide panel if not available
-          panel.hidden = true;
-          return;
-        }
-        const data = await res.json();
-        pre.textContent = JSON.stringify(data, null, 2);
+        es = new EventSource(`/api/remote-exec/${encodeURIComponent(id)}/sse`);
+        es.addEventListener('state', (ev) => {
+          try { pre.textContent = JSON.stringify(JSON.parse(ev.data), null, 2); } catch {}
+        });
+        es.addEventListener('outputs', (ev) => {
+          try {
+            const data = JSON.parse(ev.data);
+            let text = '';
+            if (typeof data.stdout === 'string') text += data.stdout;
+            if (typeof data.stderr === 'string') text += (text ? "\n" : "") + `--- STDERR ---\n` + data.stderr;
+            out.textContent = text.trimEnd();
+            out.scrollTop = out.scrollHeight;
+          } catch {}
+        });
+        es.addEventListener('end', () => { closeSSE(); });
+        es.addEventListener('error', () => { /* noop */ });
       } catch (e) {
         pre.textContent = String(e);
       }
     }
-    async function refreshOutputs() {
-      try {
-        const res = await fetch(`/api/remote-exec/${encodeURIComponent(id)}/outputs`);
-        if (!res.ok) {
-          out.textContent = 'outputs unavailable';
-          return;
-        }
-        const data = await res.json();
-        let text = '';
-        if (typeof data.stdout === 'string') text += data.stdout;
-        if (typeof data.stderr === 'string') text += (text ? "\n" : "") + `--- STDERR ---\n` + data.stderr;
-        out.textContent = text.trimEnd();
-        out.scrollTop = out.scrollHeight;
-      } catch (e) {
-        out.textContent = String(e);
-      }
-    }
-
-    function startAuto() {
-      if (timer) clearInterval(timer);
-      timer = setInterval(async () => { await refreshState(); await refreshOutputs(); }, 2000);
-    }
-    function stopAuto() { if (timer) { clearInterval(timer); timer = null; } }
-
-    btnRefresh.onclick = async () => { await refreshState(); await refreshOutputs(); };
+    function closeSSE() { if (es) { es.close(); es = null; } }
+    btnRefresh.onclick = () => { closeSSE(); openSSE(); };
     btnKill.onclick = async () => {
       try {
         await fetch(`/api/remote-exec/${encodeURIComponent(id)}/kill`, { method: 'POST' });
-        await refreshState();
+        // state will refresh via SSE
       } catch {}
     };
-    btnClose.onclick = () => { panel.hidden = true; stopAuto(); };
-    auto.onchange = () => { if (auto.checked) startAuto(); else stopAuto(); };
+    btnClose.onclick = () => { panel.hidden = true; closeSSE(); };
+    auto.onchange = () => { if (auto.checked) openSSE(); else closeSSE(); };
 
     panel.hidden = false;
-    await refreshState();
-    await refreshOutputs();
+    openSSE();
   }
 
   // Terminals
@@ -262,28 +245,27 @@
     const btnClose = $("#term-output-close");
     const auto = $("#term-autorefresh");
     panel.hidden = false;
-    async function refreshOnce() {
+    let es = null;
+    function openSSE() {
       try {
-        const res = await fetch(`/api/terminals/${encodeURIComponent(id)}/output?line_count=300&include_ansi=false`);
-        const data = await res.json();
-        pre.textContent = (data.output || "").trimEnd();
-        pre.scrollTop = pre.scrollHeight;
+        es = new EventSource(`/api/terminals/${encodeURIComponent(id)}/sse?line_count=300&include_ansi=false`);
+        es.addEventListener('terminal_output', (ev) => {
+          try {
+            const data = JSON.parse(ev.data);
+            pre.textContent = (data.output || "").trimEnd();
+            pre.scrollTop = pre.scrollHeight;
+          } catch {}
+        });
+        es.addEventListener('error', () => {/* ignore */});
       } catch (e) {
         pre.textContent = String(e);
       }
     }
-    btnRefresh.onclick = refreshOnce;
-    btnClose.onclick = () => { panel.hidden = true; auto.checked = false; stopTimers(); };
-    auto.onchange = () => { if (auto.checked) startAuto(); else stopTimers(); };
-    await refreshOnce();
-    function startAuto() {
-      const t = setInterval(refreshOnce, 2000);
-      state.timers.add(t);
-    }
-    function stopTimers() {
-      for (const t of state.timers) clearInterval(t);
-      state.timers.clear();
-    }
+    function closeSSE() { if (es) { es.close(); es = null; } }
+    btnRefresh.onclick = () => { closeSSE(); openSSE(); };
+    btnClose.onclick = () => { panel.hidden = true; auto.checked = false; closeSSE(); };
+    auto.onchange = () => { if (auto.checked) openSSE(); else closeSSE(); };
+    openSSE();
   }
 
   // Auto refresh on load
