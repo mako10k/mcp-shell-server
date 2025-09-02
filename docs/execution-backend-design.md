@@ -28,6 +28,8 @@ This document proposes splitting command execution and terminal operations into 
 - POST /v1/exec → { execution_id, status: 'accepted' } (implemented)
 - POST /v1/exec accepts optional safety_evaluation (validator result from MCP) and stores it.
 - GET /v1/exec/:id → returns minimal state { execution_id, command?, status, created_at, updated_at, safety_evaluation? }
+- GET /v1/exec/:id/outputs → { execution_id, stdout?, stderr? }
+- POST /v1/exec/:id/kill → { success, execution_id, signal_sent?, message? }
 - Future: outputs, terminals, kill, stream.
 
 ## Env & Ports
@@ -36,7 +38,7 @@ This document proposes splitting command execution and terminal operations into 
 
 ## Frontend Integration (Phase 1 minimal)
 - Added RemoteHttpClient and RemoteProcessService (start/get).
-- ShellTools switches to remote when EXECUTION_BACKEND=remote for shell_execute/get_execution.
+- ShellTools switches to remote when EXECUTION_BACKEND=remote for shell_execute/get_execution. RemoteProcessService also supports outputs/kill for diagnostics.
 - Next: remote adapters for terminal/file and full parity.
 
 ## How to run (local dev)

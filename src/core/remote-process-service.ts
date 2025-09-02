@@ -26,6 +26,25 @@ export interface RemoteExecState {
   safety_evaluation?: unknown;
 }
 
+export interface RemoteExecOutputs {
+  execution_id: string;
+  stdout?: string;
+  stderr?: string;
+}
+
+export interface RemoteKillRequest {
+  signal?: string; // e.g., 'SIGTERM' (default)
+  force?: boolean; // if true, send SIGKILL after a short delay
+}
+
+export interface RemoteKillResponse {
+  success: boolean;
+  execution_id: string;
+  signal_sent?: string;
+  message?: string;
+  error?: string;
+}
+
 export class RemoteProcessService {
   constructor(private client = new RemoteHttpClient()) {}
 
@@ -35,5 +54,13 @@ export class RemoteProcessService {
 
   get(id: string): Promise<RemoteExecState> {
     return this.client.get(`/v1/exec/${encodeURIComponent(id)}`);
+  }
+
+  outputs(id: string): Promise<RemoteExecOutputs> {
+    return this.client.get(`/v1/exec/${encodeURIComponent(id)}/outputs`);
+  }
+
+  kill(id: string, req?: RemoteKillRequest): Promise<RemoteKillResponse> {
+    return this.client.post(`/v1/exec/${encodeURIComponent(id)}/kill`, req ?? {});
   }
 }
