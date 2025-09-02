@@ -7,6 +7,7 @@ export interface RemoteExecStartRequest {
   timeout_seconds?: number;
   capture_stderr?: boolean;
   max_output_size?: number;
+  safety_evaluation?: unknown;
 }
 
 export interface RemoteExecStartResponse {

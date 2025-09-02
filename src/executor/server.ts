@@ -17,6 +17,7 @@ export class ExecutorServer {
     status: 'accepted' | 'queued' | 'running' | 'completed' | 'failed';
     created_at: string;
     updated_at: string;
+  safety_evaluation?: unknown;
   }> = new Map();
 
   constructor(host?: string, port?: number) {
@@ -53,6 +54,9 @@ export class ExecutorServer {
             ? String((body as Record<string, unknown>)['command'])
             : undefined;
           const now = new Date().toISOString();
+          const safety = (body && typeof body === 'object' && 'safety_evaluation' in body)
+            ? (body as Record<string, unknown>)['safety_evaluation']
+            : undefined;
           // Minimal: store as accepted (queueing placeholder)
           this.executions.set(execution_id, {
             execution_id,
@@ -60,6 +64,7 @@ export class ExecutorServer {
             status: 'accepted',
             created_at: now,
             updated_at: now,
+            safety_evaluation: safety,
           });
           return this.json(res, 202, { execution_id, status: 'accepted' });
         }

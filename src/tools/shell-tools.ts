@@ -206,6 +206,9 @@ export class ShellTools {
         if (executionOptions.workingDirectory !== undefined) {
           req.working_directory = executionOptions.workingDirectory;
         }
+        if (safetyEvaluation) {
+          req.safety_evaluation = safetyEvaluation.generateToolResponse();
+        }
         const startRes = await remote.start(req);
         executionInfo = {
           execution_id: startRes.execution_id,

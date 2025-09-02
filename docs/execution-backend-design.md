@@ -25,25 +25,58 @@ This document proposes splitting command execution and terminal operations into 
 
 ## Backend API (initial minimal)
 - GET /health → { status: 'ok', uptime_s, version }
-- POST /v1/exec → { execution_id, status: 'accepted' } (skeleton)
-- GET /v1/exec/:id → 501 Not Implemented (placeholder)
+- POST /v1/exec → { execution_id, status: 'accepted' } (implemented)
+- POST /v1/exec accepts optional safety_evaluation (validator result from MCP) and stores it.
+- GET /v1/exec/:id → returns minimal state { execution_id, command?, status, created_at, updated_at, safety_evaluation? }
 - Future: outputs, terminals, kill, stream.
 
 ## Env & Ports
 - EXECUTOR_PORT=4030 (default), EXECUTOR_HOST=127.0.0.1
-- EXECUTION_BACKEND=local|remote (planned; default local)
+- EXECUTION_BACKEND=local|remote (available; default local). When 'remote', ShellTools delegates shell_execute/process_get_execution via RemoteProcessService.
 
-## Frontend Integration (planned)
-- Add Remote*Service adapters implementing process/terminal/file service interfaces.
-- Inject local or remote implementation based on env.
+## Frontend Integration (Phase 1 minimal)
+- Added RemoteHttpClient and RemoteProcessService (start/get).
+- ShellTools switches to remote when EXECUTION_BACKEND=remote for shell_execute/get_execution.
+- Next: remote adapters for terminal/file and full parity.
+
+## How to run (local dev)
+
+1) Start executor (localhost-only):
+
+```bash
+npm run executor:dev
+```
+
+2) Verify health:
+
+```bash
+curl -s http://127.0.0.1:4030/health | jq
+```
+
+3) Try minimal exec:
+
+```bash
+curl -s -X POST http://127.0.0.1:4030/v1/exec \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"echo hello","safety_evaluation":{"evaluation_result":"allow","reasoning":"ok"}}' | jq
+
+curl -s http://127.0.0.1:4030/v1/exec/<execution_id> | jq
+```
+
+4) Run MCP server with remote backend:
+
+```bash
+EXECUTION_BACKEND=remote npm run dev
+```
 
 ## Security
 - Localhost bind only in Phase 1, token header in Phase 1.5.
 - Size/timeout limits enforced both sides.
 
 ## Tasks (Phase 1 Skeleton)
-1) Add executor skeleton server with /health and POST /v1/exec.
-2) Add shared types (zod later).
-3) Add remote client stubs (next step).
-4) Wire env switch (next step).
-5) Update docs and backoffice notes.
+1) Add executor skeleton server with /health and POST /v1/exec. [Done]
+2) Add shared types (zod later). [Pending]
+3) Add remote client stubs. [Done]
+4) Wire env switch for process start/get. [Done]
+5) Update docs and backoffice notes. [Done]
+6) Extend executor: outputs, terminals, kill, streaming. [Planned]
