@@ -117,6 +117,10 @@ export class ExecutorServer {
             if (typeof item.stderr === 'string') out['stderr'] = item.stderr;
             return this.json(res, 200, out);
           }
+          // SSE endpoint for live updates
+          if (sub === 'sse') {
+            return this.handleExecSSE(res, id, req);
+          }
           return this.json(res, 404, { error: 'Not Found' });
         }
 
@@ -162,6 +166,73 @@ export class ExecutorServer {
     res.statusCode = status;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(typeof data === 'string' ? data : JSON.stringify(data));
+  }
+
+  private initSSE(res: http.ServerResponse) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+  }
+
+  private writeSSE(res: http.ServerResponse, event: string, data: unknown) {
+    const payload = typeof data === 'string' ? data : JSON.stringify(data);
+    res.write(`event: ${event}\n`);
+    for (const line of String(payload).split(/\r?\n/)) {
+      res.write(`data: ${line}\n`);
+    }
+    res.write('\n');
+  }
+
+  private async handleExecSSE(res: http.ServerResponse, id: string, req: http.IncomingMessage) {
+    this.initSSE(res);
+    const item = this.executions.get(id);
+    if (!item) {
+      this.writeSSE(res, 'error', { message: 'Not Found', execution_id: id });
+      res.end();
+      return;
+    }
+
+    // 初期スナップショット
+    this.writeSSE(res, 'state', item);
+    const out: Record<string, unknown> = { execution_id: id };
+    if (typeof item.stdout === 'string') out['stdout'] = item.stdout;
+    if (typeof item.stderr === 'string') out['stderr'] = item.stderr;
+    this.writeSSE(res, 'outputs', out);
+
+    const onOutput = () => {
+      const current = this.executions.get(id);
+      if (!current) return;
+      this.writeSSE(res, 'state', current);
+      const o: Record<string, unknown> = { execution_id: id };
+      if (typeof current.stdout === 'string') o['stdout'] = current.stdout;
+      if (typeof current.stderr === 'string') o['stderr'] = current.stderr;
+      this.writeSSE(res, 'outputs', o);
+    };
+    const onExit = () => {
+      const current = this.executions.get(id);
+      if (current) this.writeSSE(res, 'state', current);
+      this.writeSSE(res, 'end', { reason: 'finished' });
+      cleanup();
+      res.end();
+    };
+
+    const cleanup = () => {
+      this.events.removeListener(`exec:output:${id}`, onOutput);
+      this.events.removeListener(`exec:exit:${id}`, onExit);
+      if (heartbeat) clearInterval(heartbeat);
+    };
+
+    this.events.on(`exec:output:${id}`, onOutput);
+    this.events.on(`exec:exit:${id}`, onExit);
+
+    // ハートビート
+    const heartbeat = setInterval(() => {
+      this.writeSSE(res, 'heartbeat', { t: Date.now() });
+    }, 10000);
+
+    req.on('close', cleanup);
+    req.on('aborted', cleanup);
   }
 
   private async readJson(req: http.IncomingMessage, maxSize = 65536): Promise<Json> {
