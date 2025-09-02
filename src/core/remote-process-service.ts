@@ -12,7 +12,18 @@ export interface RemoteExecStartRequest {
 
 export interface RemoteExecStartResponse {
   execution_id: string;
-  status: string;
+  status: RemoteExecStatus;
+}
+
+export type RemoteExecStatus = 'accepted' | 'queued' | 'running' | 'completed' | 'failed';
+
+export interface RemoteExecState {
+  execution_id: string;
+  command?: string;
+  status: RemoteExecStatus;
+  created_at: string;
+  updated_at: string;
+  safety_evaluation?: unknown;
 }
 
 export class RemoteProcessService {
@@ -22,7 +33,7 @@ export class RemoteProcessService {
     return this.client.post('/v1/exec', req);
   }
 
-  get(id: string): Promise<unknown> {
+  get(id: string): Promise<RemoteExecState> {
     return this.client.get(`/v1/exec/${encodeURIComponent(id)}`);
   }
 }

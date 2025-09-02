@@ -18,6 +18,10 @@ export class ExecutorServer {
     created_at: string;
     updated_at: string;
   safety_evaluation?: unknown;
+  exit_code?: number;
+  stdout?: string;
+  stderr?: string;
+  execution_time_ms?: number;
   }> = new Map();
 
   constructor(host?: string, port?: number) {
@@ -53,6 +57,19 @@ export class ExecutorServer {
           const cmd = (body && typeof body === 'object' && 'command' in body)
             ? String((body as Record<string, unknown>)['command'])
             : undefined;
+          if (!cmd || cmd.trim().length === 0) {
+            return this.json(res, 400, { error: 'command is required' });
+          }
+          const cwd = (body && typeof body === 'object' && 'working_directory' in body && typeof (body as Record<string, unknown>)['working_directory'] === 'string')
+            ? String((body as Record<string, unknown>)['working_directory'])
+            : process.cwd();
+          const timeoutSeconds = (body && typeof body === 'object' && 'timeout_seconds' in body && typeof (body as Record<string, unknown>)['timeout_seconds'] === 'number')
+            ? Number((body as Record<string, unknown>)['timeout_seconds'])
+            : 60;
+          const captureStderr = !body || typeof body !== 'object' || !('capture_stderr' in body) || Boolean((body as Record<string, unknown>)['capture_stderr']);
+          const maxOutputSize = (body && typeof body === 'object' && 'max_output_size' in body && typeof (body as Record<string, unknown>)['max_output_size'] === 'number')
+            ? Math.max(1024, Number((body as Record<string, unknown>)['max_output_size']))
+            : 5 * 1024 * 1024; // 5MB
           const now = new Date().toISOString();
           const safety = (body && typeof body === 'object' && 'safety_evaluation' in body)
             ? (body as Record<string, unknown>)['safety_evaluation']
@@ -61,12 +78,16 @@ export class ExecutorServer {
           this.executions.set(execution_id, {
             execution_id,
             command: cmd,
-            status: 'accepted',
+            status: 'running',
             created_at: now,
             updated_at: now,
             safety_evaluation: safety,
           });
-          return this.json(res, 202, { execution_id, status: 'accepted' });
+          // Start execution asynchronously
+          this.runCommand(execution_id, cmd, { cwd, timeoutSeconds, captureStderr, maxOutputSize }).catch(() => {
+            // swallow
+          });
+          return this.json(res, 202, { execution_id, status: 'running' });
         }
 
         if (req.method === 'GET' && pathname.startsWith('/v1/exec/')) {
@@ -114,6 +135,66 @@ export class ExecutorServer {
 
   private isLocalAddress(addr: string): boolean {
     return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1' || !addr;
+  }
+
+  private async runCommand(
+    executionId: string,
+    command: string,
+    opts: { cwd: string; timeoutSeconds: number; captureStderr: boolean; maxOutputSize: number }
+  ): Promise<void> {
+    const start = Date.now();
+    // Lazy import to avoid top-level dependency if not used
+    const { spawn } = await import('child_process');
+    const child = spawn('sh', ['-c', command], { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let stdout = '';
+    let stderr = '';
+    const addChunk = (src: 'out' | 'err', chunk: Buffer | string) => {
+      const str = Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : String(chunk);
+      if (src === 'out') {
+        if (stdout.length < opts.maxOutputSize) {
+          const remain = opts.maxOutputSize - stdout.length;
+          stdout += str.slice(0, Math.max(0, remain));
+        }
+      } else {
+        if (stderr.length < opts.maxOutputSize) {
+          const remain = opts.maxOutputSize - stderr.length;
+          stderr += str.slice(0, Math.max(0, remain));
+        }
+      }
+    };
+
+    if (child.stdout) child.stdout.on('data', (d) => addChunk('out', d));
+    if (opts.captureStderr && child.stderr) child.stderr.on('data', (d) => addChunk('err', d));
+
+    let killedByTimeout = false;
+    const timer = setTimeout(() => {
+      killedByTimeout = true;
+      try { child.kill('SIGTERM'); } catch {}
+      setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1000);
+    }, Math.max(1, opts.timeoutSeconds) * 1000);
+
+    const finalize = (status: 'completed' | 'failed', exitCode?: number) => {
+      clearTimeout(timer);
+      const rec = this.executions.get(executionId);
+      if (!rec) return;
+      rec.status = status;
+      if (typeof exitCode === 'number') {
+        rec.exit_code = exitCode;
+      } else {
+        // exactOptionalPropertyTypes: optional props should be omitted, not set to undefined
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete (rec as Record<string, unknown>)['exit_code'];
+      }
+      rec.stdout = stdout;
+      if (opts.captureStderr) rec.stderr = stderr;
+      rec.execution_time_ms = Date.now() - start;
+      rec.updated_at = new Date().toISOString();
+      this.executions.set(executionId, rec);
+    };
+
+    child.on('error', () => finalize('failed'));
+    child.on('exit', (code) => finalize(killedByTimeout ? 'failed' : (code === 0 ? 'completed' : 'failed'), code === null ? undefined : code));
   }
 }
 
