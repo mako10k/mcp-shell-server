@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.6.1] - 2025-09-22
+### Added
+- CLI: Implemented `--help` and `--version` flags for `mcp-shell-server` entry point.
+- README: Documented CLI usage and user-level installation notes.
+
+### Fixed/Improved
+- Ensure STDOUT remains clean during normal MCP operation; help/version exit early without starting server.
+
 ## [2.5.0] - 2025-08-13
 ### Changed
 - Removed legacy hard-block dangerous pattern matcher in security/manager.ts (now rely on LLM + elicitation).
