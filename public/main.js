@@ -311,7 +311,7 @@
         loadHistory(state.history.page);
         loadExecutions();
         loadTerminals();
-  loadDashboard();
+        loadDashboard();
       }
       await sleep(3000);
     }
