@@ -55,7 +55,13 @@ export const ShellExecuteParamsSchema = z
       .max(3600)
       .default(60)
       .describe(
-        'Global timeout (1-3600s). Per execution_mode: foreground → waits up to this limit; no auto background switch (partial result may be returned if return_partial_on_timeout=true). background/detached → hard cap for process runtime enforced by server; client does not wait. adaptive → overall cap including initial foreground phase (see foreground_timeout_seconds). For long-running tasks (>300s), prefer background or adaptive.'
+        'Global timeout (1-3600s).\n'
+        + 'Per execution_mode:\n'
+        + '• foreground: Waits up to this limit. No automatic background switch. If exceeded: returns partial output when return_partial_on_timeout=true, otherwise times out.\n'
+        + '• background: Client returns immediately; server enforces this as a hard runtime cap (the process is terminated when exceeded).\n'
+        + '• detached: Fire-and-forget; same hard cap is enforced server-side (outputs/monitoring availability may be limited depending on implementation).\n'
+        + '• adaptive: Overall cap including the initial foreground phase (see foreground_timeout_seconds). foreground_timeout_seconds must be ≤ timeout_seconds.\n'
+        + 'Guidance: For long-running tasks (>300s), prefer background or adaptive.'
       ),
     foreground_timeout_seconds: z
       .number()
@@ -64,7 +70,11 @@ export const ShellExecuteParamsSchema = z
       .max(300)
       .default(15)
       .describe(
-        'Initial foreground phase timeout for adaptive mode (1-300s). In foreground mode this value is not used for background switching and must be ≤300 if provided; for timeouts >300s use background/adaptive. In background/detached it is ignored.'
+        'Initial foreground window for adaptive mode (1-300s).\n'
+        + 'Behavior by execution_mode:\n'
+        + '• adaptive: Duration to remain in foreground before automatically switching to background if the command is still running. Must be ≤ timeout_seconds.\n'
+        + '• foreground: Does not trigger background switching (value is effectively unused for switching). Use background/adaptive for >300s scenarios.\n'
+        + '• background/detached: Ignored.'
       ),
     return_partial_on_timeout: z
       .boolean()
