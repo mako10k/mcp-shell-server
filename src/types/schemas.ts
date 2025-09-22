@@ -55,7 +55,7 @@ export const ShellExecuteParamsSchema = z
       .max(3600)
       .default(60)
       .describe(
-        'Maximum time in seconds to wait for foreground execution before switching to background or failing. Range: 1-3600 seconds.'
+        'Global timeout (1-3600s). Per execution_mode: foreground → waits up to this limit; no auto background switch (partial result may be returned if return_partial_on_timeout=true). background/detached → hard cap for process runtime enforced by server; client does not wait. adaptive → overall cap including initial foreground phase (see foreground_timeout_seconds). For long-running tasks (>300s), prefer background or adaptive.'
       ),
     foreground_timeout_seconds: z
       .number()
@@ -64,7 +64,7 @@ export const ShellExecuteParamsSchema = z
       .max(300)
       .default(15)
       .describe(
-        'For adaptive mode: timeout in seconds for the initial foreground phase before switching to background execution. Range: 1-300 seconds (maximum 300). If you need a longer timeout, use execution_mode "background" or "adaptive". Values above 300 will be rejected.'
+        'Initial foreground phase timeout for adaptive mode (1-300s). In foreground mode this value is not used for background switching and must be ≤300 if provided; for timeouts >300s use background/adaptive. In background/detached it is ignored.'
       ),
     return_partial_on_timeout: z
       .boolean()
@@ -113,6 +113,14 @@ export const ShellExecuteParamsSchema = z
       ),
   })
   .strict()
+  // Cross-field validations for timeout relationships
+  .refine(
+    (data) => data.execution_mode !== 'adaptive' || (data.foreground_timeout_seconds ?? 15) <= (data.timeout_seconds ?? 60),
+    {
+      message: 'foreground_timeout_seconds must be less than or equal to timeout_seconds in adaptive mode.',
+      path: ['foreground_timeout_seconds'],
+    }
+  )
   .refine((data) => !(data.input_data && data.input_output_id), {
     message: 'input_data and input_output_id cannot be specified simultaneously.',
     path: ['input_data', 'input_output_id'],
