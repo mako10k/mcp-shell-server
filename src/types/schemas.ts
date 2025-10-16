@@ -55,13 +55,13 @@ export const ShellExecuteParamsSchema = z
       .max(3600)
       .default(60)
       .describe(
-        'Global timeout (1-3600s).\n'
-        + 'Per execution_mode:\n'
-        + '• foreground: Waits up to this limit. No automatic background switch. If exceeded: returns partial output when return_partial_on_timeout=true, otherwise times out.\n'
-        + '• background: Client returns immediately; server enforces this as a hard runtime cap (the process is terminated when exceeded).\n'
-        + '• detached: Fire-and-forget; same hard cap is enforced server-side (outputs/monitoring availability may be limited depending on implementation).\n'
-        + '• adaptive: Overall cap including the initial foreground phase (see foreground_timeout_seconds). foreground_timeout_seconds must be ≤ timeout_seconds.\n'
-        + 'Guidance: For long-running tasks (>300s), prefer background or adaptive.'
+        'Global timeout (1-3600s). Default: 60s.\n'
+        + 'Per execution_mode (effective limits before execution starts):\n'
+        + '• foreground: Schema allows 1-3600s, but the default security policy caps runs at 300s. Setting timeout_seconds above 300s raises TIMEOUT_LIMIT_EXCEEDED unless max_execution_time is increased via security_set_restrictions.\n'
+        + '• background: 1-3600s. Intended for >300s runs; still subject to the same security cap (300s by default) unless raised.\n'
+        + '• detached: 1-3600s. Shares the security cap behavior with background.\n'
+        + '• adaptive: 1-3600s total cap. The initial foreground phase also respects foreground_timeout_seconds (≤300s) and the security cap.\n'
+        + 'Guidance: For long-running tasks (>300s), raise max_execution_time or use background/adaptive modes.'
       ),
     foreground_timeout_seconds: z
       .number()
