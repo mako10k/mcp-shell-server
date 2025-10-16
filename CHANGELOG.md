@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.6.2] - 2025-10-16
+### Fixed/Improved
+- Enhanced LLM validator feedback so malformed tool-call JSON is surfaced and retried instead of failing the command execution flow.
+
 ## [2.6.1] - 2025-09-22
 ### Added
 - CLI: Implemented `--help` and `--version` flags for `mcp-shell-server` entry point.

@@ -59,6 +59,69 @@ interface ToolCall {
   };
 }
 
+class ToolArgumentParseError extends Error {
+  public readonly toolName: string | undefined;
+  public readonly rawArgsPreview: string;
+  public readonly details: {
+    reason: string;
+    missingFields?: string[];
+    receivedKeys?: string[];
+    repairAttempts?: string[];
+    finalError?: string;
+    originalError?: string;
+  };
+
+  constructor(
+    toolName: string | undefined,
+    rawArgs: string,
+    reason: string,
+    details: {
+      missingFields?: string[];
+      receivedKeys?: string[];
+      repairAttempts?: string[];
+      finalError?: string;
+      originalError?: string;
+    } = {}
+  ) {
+    super(`Tool argument parsing failed${toolName ? ` for ${toolName}` : ''}: ${reason}`);
+    this.name = 'ToolArgumentParseError';
+    this.toolName = toolName;
+    this.rawArgsPreview = rawArgs.length > 500 ? `${rawArgs.slice(0, 500)}…` : rawArgs;
+    this.details = { reason, ...details };
+  }
+
+  buildFeedbackMessage(): string {
+    const lines: string[] = [
+      'VALIDATOR_FEEDBACK: Tool call arguments could not be parsed by the validator.',
+      `Tool: ${this.toolName ?? 'unknown'}`,
+      `Issue: ${this.details.reason}`,
+      `Raw arguments preview (truncated): ${this.rawArgsPreview || '<empty>'}`,
+    ];
+
+    if (this.details.missingFields && this.details.missingFields.length > 0) {
+      lines.push(`Missing fields: ${this.details.missingFields.join(', ')}`);
+    }
+    if (this.details.receivedKeys && this.details.receivedKeys.length > 0) {
+      lines.push(`Received keys: ${this.details.receivedKeys.join(', ')}`);
+    }
+    if (this.details.originalError) {
+      lines.push(`Parser error: ${this.details.originalError}`);
+    }
+    if (this.details.repairAttempts && this.details.repairAttempts.length > 0) {
+      lines.push(`Repair strategies tried: ${this.details.repairAttempts.length}`);
+    }
+    if (this.details.finalError) {
+      lines.push(`Repair final error: ${this.details.finalError}`);
+    }
+
+    lines.push(
+      'Please resend the tool call with valid JSON that matches the schema. Use double quotes for strings and escape any embedded quotes.'
+    );
+
+    return lines.join('\n');
+  }
+}
+
 // LLM evaluation result (using simplified structure)
 // Enhanced LLM evaluation result interface that supports new function-based tools
 // Base interface with common fields
@@ -523,8 +586,33 @@ export class EnhancedSafetyEvaluator {
           };
         }
         maxIteration--;
-        
-        const llmResult = await this.callLLMForEvaluationWithMessages(messages, promptContext.command, forceUserConfirm);
+
+        let llmResult: LLMEvaluationResult;
+        try {
+          llmResult = await this.callLLMForEvaluationWithMessages(
+            messages,
+            promptContext.command,
+            forceUserConfirm
+          );
+        } catch (error) {
+          if (error instanceof ToolArgumentParseError) {
+            logger.warn('Tool argument parse error encountered - requesting corrected response', {
+              toolName: error.toolName,
+              reason: error.details.reason,
+            });
+
+            messages.push({
+              role: 'user',
+              content: error.buildFeedbackMessage(),
+              timestamp: getCurrentTimestamp(),
+              type: 'history',
+            });
+
+            continue;
+          }
+
+          throw error;
+        }
 
         // ToolHandler pattern with early returns - clean architecture
         switch (llmResult.evaluation_result) {
@@ -746,31 +834,185 @@ export class EnhancedSafetyEvaluator {
                   result = repairResult.value;
                   logger.info(`JSON repair successful for content tool_calls after ${repairResult.repairAttempts?.length || 0} attempts`);
                 } else {
-                  throw new Error(`JSON parse and repair failed for content tool_calls. Original error: ${parseError}. Repair attempts: ${repairResult.repairAttempts?.length || 0}. Final error: ${repairResult.finalError}`);
+                  const errorDetails: {
+                    originalError: string;
+                    repairAttempts?: string[];
+                    finalError?: string;
+                  } = {
+                    originalError: parseError instanceof Error ? parseError.message : String(parseError),
+                  };
+
+                  if (repairResult.repairAttempts && repairResult.repairAttempts.length > 0) {
+                    errorDetails.repairAttempts = repairResult.repairAttempts;
+                  }
+                  if (repairResult.finalError) {
+                    errorDetails.finalError = repairResult.finalError;
+                  }
+
+                  throw new ToolArgumentParseError(
+                    toolCall?.function?.name,
+                    rawArgs,
+                    'JSON parsing failed for tool arguments',
+                    errorDetails
+                  );
                 }
               }
               
+              if (!result || typeof result !== 'object') {
+                throw new ToolArgumentParseError(
+                  toolCall?.function?.name,
+                  rawArgs,
+                  'Tool arguments must be a JSON object'
+                );
+              }
+
+              const typedResult = result as Record<string, unknown>;
+
               // Validate required fields
               const missingFields = [];
-              if (!result.evaluation_result) missingFields.push('evaluation_result');
-              if (!result.reasoning) missingFields.push('reasoning');
-              
+              if (!typedResult['evaluation_result']) missingFields.push('evaluation_result');
+              if (!typedResult['reasoning']) missingFields.push('reasoning');
+
               if (missingFields.length === 0) {
-                // Expand $COMMAND variable in reasoning before returning
-                const expandedReasoning = this.expandCommandVariable(result.reasoning, command);
-                
-                return {
-                  evaluation_result: result.evaluation_result,
-                  reasoning: expandedReasoning,
-                  requires_additional_context: result.requires_additional_context || {
-                    command_history_depth: 0,
-                    execution_results_count: 0,
-                    user_intent_search_keywords: null,
-                    user_intent_question: null
-                  },
-                  suggested_alternatives: result.suggested_alternatives || []
-                };
+                const evaluationResultRaw = typedResult['evaluation_result'];
+                const validResults = new Set([
+                  'allow',
+                  'deny',
+                  'add_more_history',
+                  'user_confirm',
+                  'ai_assistant_confirm',
+                ]);
+
+                if (typeof evaluationResultRaw !== 'string' || !validResults.has(evaluationResultRaw)) {
+                  throw new ToolArgumentParseError(
+                    toolCall?.function?.name,
+                    rawArgs,
+                    `Invalid evaluation_result value: ${String(evaluationResultRaw)}`,
+                    {
+                      receivedKeys: Object.keys(typedResult),
+                    }
+                  );
+                }
+
+                const reasoningValue = typedResult['reasoning'];
+                const expandedReasoning = this.expandCommandVariable(
+                  typeof reasoningValue === 'string' ? reasoningValue : String(reasoningValue ?? ''),
+                  command
+                );
+
+                switch (evaluationResultRaw) {
+                  case 'allow':
+                    return {
+                      evaluation_result: 'allow',
+                      reasoning: expandedReasoning,
+                      suggested_alternatives: Array.isArray(typedResult['suggested_alternatives'])
+                        ? (typedResult['suggested_alternatives'] as string[])
+                        : [],
+                    };
+                  case 'deny':
+                    return {
+                      evaluation_result: 'deny',
+                      reasoning: expandedReasoning,
+                      suggested_alternatives: Array.isArray(typedResult['suggested_alternatives'])
+                        ? (typedResult['suggested_alternatives'] as string[])
+                        : [],
+                    };
+                  case 'add_more_history': {
+                    const historyDepth = typeof typedResult['command_history_depth'] === 'number'
+                      ? (typedResult['command_history_depth'] as number)
+                      : 0;
+                    const resultsCount = typeof typedResult['execution_results_count'] === 'number'
+                      ? (typedResult['execution_results_count'] as number)
+                      : 0;
+                    const keywords = Array.isArray(typedResult['user_intent_search_keywords'])
+                      ? (typedResult['user_intent_search_keywords'] as unknown[]).filter((keyword): keyword is string => typeof keyword === 'string')
+                      : [];
+
+                    return {
+                      evaluation_result: 'add_more_history',
+                      reasoning: expandedReasoning,
+                      command_history_depth: historyDepth,
+                      execution_results_count: resultsCount,
+                      user_intent_search_keywords: keywords,
+                      suggested_alternatives: [],
+                    };
+                  }
+                  case 'user_confirm': {
+                    const confirmationQuestion = typeof typedResult['confirmation_question'] === 'string'
+                      ? (typedResult['confirmation_question'] as string)
+                      : 'Do you want to proceed?';
+
+                    return {
+                      evaluation_result: 'user_confirm',
+                      reasoning: expandedReasoning,
+                      confirmation_question: confirmationQuestion,
+                      suggested_alternatives: [],
+                    };
+                  }
+                  case 'ai_assistant_confirm': {
+                    const nextActionRaw = typedResult['next_action'];
+                    if (!nextActionRaw || typeof nextActionRaw !== 'object') {
+                      throw new ToolArgumentParseError(
+                        toolCall?.function?.name,
+                        rawArgs,
+                        'next_action is required for ai_assistant_confirm results',
+                        {
+                          receivedKeys: Object.keys(typedResult),
+                        }
+                      );
+                    }
+
+                    const nextActionObj = nextActionRaw as Record<string, unknown>;
+                    const instruction = typeof nextActionObj['instruction'] === 'string'
+                      ? (nextActionObj['instruction'] as string)
+                      : 'Gather required information';
+                    const method = typeof nextActionObj['method'] === 'string'
+                      ? (nextActionObj['method'] as string)
+                      : 'Execute provided commands';
+                    const expectedOutcome = typeof nextActionObj['expected_outcome'] === 'string'
+                      ? (nextActionObj['expected_outcome'] as string)
+                      : 'Information for security evaluation';
+                    const executableCommands = Array.isArray(nextActionObj['executable_commands'])
+                      ? (nextActionObj['executable_commands'] as unknown[]).filter((cmd): cmd is string => typeof cmd === 'string')
+                      : undefined;
+
+                    return {
+                      evaluation_result: 'ai_assistant_confirm',
+                      reasoning: expandedReasoning,
+                      ...(typeof typedResult['assistant_request_message'] === 'string'
+                        ? { assistant_request_message: typedResult['assistant_request_message'] as string }
+                        : {}),
+                      next_action: {
+                        instruction,
+                        method,
+                        expected_outcome: expectedOutcome,
+                        ...(executableCommands && executableCommands.length > 0
+                          ? { executable_commands: executableCommands }
+                          : {}),
+                      },
+                      suggested_alternatives: Array.isArray(typedResult['suggested_alternatives'])
+                        ? (typedResult['suggested_alternatives'] as string[])
+                        : [],
+                    };
+                  }
+                  default:
+                    throw new ToolArgumentParseError(
+                      toolCall?.function?.name,
+                      rawArgs,
+                      `Unsupported evaluation_result value: ${String(evaluationResultRaw)}`
+                    );
+                }
               }
+
+              throw new ToolArgumentParseError(
+                toolCall?.function?.name,
+                rawArgs,
+                `Missing required fields: ${missingFields.join(', ')}`,
+                {
+                  missingFields,
+                  receivedKeys: Object.keys(typedResult),
+                }
+              );
             }
           }
         } catch (contentParseError) {
@@ -788,6 +1030,14 @@ export class EnhancedSafetyEvaluator {
 
       throw new Error('No valid tool call in response - Function Calling is required');
     } catch (error) {
+      if (error instanceof ToolArgumentParseError) {
+        logger.warn('Tool argument parse error propagated from LLM response', {
+          toolName: error.toolName,
+          reason: error.details.reason,
+        });
+        throw error;
+      }
+
       // NO FALLBACK - Function Call must succeed
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error('=== Exception Caught in LLM Evaluation (Messages) ===');
@@ -1268,35 +1518,68 @@ export class EnhancedSafetyEvaluator {
    */
   private async parseToolArguments(toolCall: ToolCall, requiredFields: string[]): Promise<Record<string, unknown>> {
     const rawArgs = toolCall.function.arguments;
-    let result;
-    
+    let parsedValue: unknown;
+
     try {
-      result = JSON.parse(rawArgs);
+      parsedValue = JSON.parse(rawArgs);
     } catch (parseError) {
-      // Try JSON repair as fallback
-      logger.warn(`JSON parse failed, attempting repair. Error: ${parseError}. Raw: ${rawArgs.substring(0, 200)}...`);
-      
+      logger.warn(`JSON parse failed, attempting repair. Error: ${parseError instanceof Error ? parseError.message : String(parseError)}. Raw: ${rawArgs.substring(0, 200)}...`);
+
       const repairResult = repairAndParseJson(rawArgs);
       if (repairResult.success) {
-        result = repairResult.value;
+        parsedValue = repairResult.value;
         logger.info(`JSON repair successful after ${repairResult.repairAttempts?.length || 0} attempts`);
       } else {
-        throw new Error(`JSON parse and repair failed. Original error: ${parseError}. Repair attempts: ${repairResult.repairAttempts?.length || 0}. Final error: ${repairResult.finalError}`);
+        const errorDetails: {
+          originalError: string;
+          repairAttempts?: string[];
+          finalError?: string;
+        } = {
+          originalError: parseError instanceof Error ? parseError.message : String(parseError),
+        };
+
+        if (repairResult.repairAttempts && repairResult.repairAttempts.length > 0) {
+          errorDetails.repairAttempts = repairResult.repairAttempts;
+        }
+        if (repairResult.finalError) {
+          errorDetails.finalError = repairResult.finalError;
+        }
+
+        throw new ToolArgumentParseError(
+          toolCall.function?.name,
+          rawArgs,
+          'JSON parsing failed for tool arguments',
+          errorDetails
+        );
       }
     }
-    
-    // Validate required fields
-    const missingFields = [];
-    for (const field of requiredFields) {
-      if (!result[field]) {
-        missingFields.push(field);
-      }
+
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      throw new ToolArgumentParseError(
+        toolCall.function?.name,
+        rawArgs,
+        'Tool arguments must be a JSON object',
+        {
+          receivedKeys: Array.isArray(parsedValue) ? parsedValue.map((_, idx) => idx.toString()) : [],
+        }
+      );
     }
-    
+
+    const result = parsedValue as Record<string, unknown>;
+    const missingFields = requiredFields.filter((field) => !(field in result));
+
     if (missingFields.length > 0) {
-      throw new Error(`Tool call missing required fields: ${missingFields.join(', ')}. Received: ${Object.keys(result).join(', ')}`);
+      throw new ToolArgumentParseError(
+        toolCall.function?.name,
+        rawArgs,
+        `Missing required fields: ${missingFields.join(', ')}`,
+        {
+          missingFields,
+          receivedKeys: Object.keys(result),
+        }
+      );
     }
-    
+
     return result;
   }
 
