@@ -8,7 +8,7 @@
     "strict": true,
     "sourceMap": true,
     "esModuleInterop": true,
-    "types": ["vscode"]
+    "types": ["vscode", "node"]
   },
   "include": ["src/**/*"]
 }

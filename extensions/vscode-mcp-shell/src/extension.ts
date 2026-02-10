@@ -36,14 +36,16 @@ export function activate(context: vscode.ExtensionContext) {
         return [];
       }
 
-      const server = new vscode.McpStdioServerDefinition({
-        label: SERVER_LABEL,
-        command: process.execPath,
-        args: [serverEntry],
-        cwd: getWorkspaceCwd() ?? context.extensionPath,
-        env: {},
-        version: SERVER_VERSION
-      });
+      const server = new vscode.McpStdioServerDefinition(
+        SERVER_LABEL,
+        process.execPath,
+        [serverEntry],
+        {},
+        SERVER_VERSION
+      );
+
+      const workspaceCwd = getWorkspaceCwd() ?? context.extensionPath;
+      server.cwd = vscode.Uri.file(workspaceCwd);
 
       return [server];
     }
