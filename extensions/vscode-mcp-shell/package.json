@@ -1,0 +1,37 @@
+{
+  "name": "mcp-shell-server-vscode",
+  "displayName": "MCP Shell Server",
+  "description": "VS Code extension that registers MCP Shell Server as an MCP server.",
+  "version": "0.0.1",
+  "publisher": "mako10k",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "mcp-shell-server.provider",
+        "label": "MCP Shell Server"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . -w"
+  },
+  "dependencies": {
+    "@mako10k/mcp-shell-server": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.5.0"
+  }
+}
