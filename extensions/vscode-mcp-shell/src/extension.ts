@@ -218,49 +218,29 @@ async function dispatchToolCall(
     case 'shell_execute':
       return shellTools.executeShellValidated(params ?? {});
     case 'process_get_execution':
-      return shellTools.getExecution(
-        (params ?? {}) as Parameters<ShellToolsApi['getExecution']>[0]
-      );
+      return shellTools.getExecutionValidated(params ?? {});
     case 'shell_set_default_workdir':
-      return shellTools.setDefaultWorkingDirectory(
-        (params ?? {}) as Parameters<ShellToolsApi['setDefaultWorkingDirectory']>[0]
-      );
+      return shellTools.setDefaultWorkingDirectoryValidated(params ?? {});
     case 'list_execution_outputs':
-      return shellTools.listFiles((params ?? {}) as Parameters<ShellToolsApi['listFiles']>[0]);
+      return shellTools.listFilesValidated(params ?? {});
     case 'read_execution_output':
-      return shellTools.readFile((params ?? {}) as Parameters<ShellToolsApi['readFile']>[0]);
+      return shellTools.readFileValidated(params ?? {});
     case 'delete_execution_outputs':
-      return shellTools.deleteFiles(
-        (params ?? {}) as Parameters<ShellToolsApi['deleteFiles']>[0]
-      );
+      return shellTools.deleteFilesValidated(params ?? {});
     case 'get_cleanup_suggestions':
-      return shellTools.getCleanupSuggestions(
-        params as Parameters<ShellToolsApi['getCleanupSuggestions']>[0]
-      );
+      return shellTools.getCleanupSuggestionsValidated(params ?? {});
     case 'perform_auto_cleanup':
-      return shellTools.performAutoCleanup(
-        params as Parameters<ShellToolsApi['performAutoCleanup']>[0]
-      );
+      return shellTools.performAutoCleanupValidated(params ?? {});
     case 'terminal_operate':
-      return shellTools.terminalOperate(
-        (params ?? {}) as Parameters<ShellToolsApi['terminalOperate']>[0]
-      );
+      return shellTools.terminalOperateValidated(params ?? {});
     case 'terminal_list':
-      return shellTools.listTerminals(
-        (params ?? {}) as Parameters<ShellToolsApi['listTerminals']>[0]
-      );
+      return shellTools.listTerminalsValidated(params ?? {});
     case 'terminal_get_info':
-      return shellTools.getTerminal(
-        (params ?? {}) as Parameters<ShellToolsApi['getTerminal']>[0]
-      );
+      return shellTools.getTerminalValidated(params ?? {});
     case 'terminal_close':
-      return shellTools.closeTerminal(
-        (params ?? {}) as Parameters<ShellToolsApi['closeTerminal']>[0]
-      );
+      return shellTools.closeTerminalValidated(params ?? {});
     case 'command_history_query':
-      return shellTools.queryCommandHistory(
-        (params ?? {}) as Parameters<ShellToolsApi['queryCommandHistory']>[0]
-      );
+      return shellTools.queryCommandHistoryValidated(params ?? {});
     default:
       throw new Error(`Unsupported tool: ${toolName}`);
   }

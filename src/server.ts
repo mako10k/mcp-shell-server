@@ -246,54 +246,46 @@ export class MCPShellServer {
           }
 
           case 'process_get_execution': {
-            const params = ShellGetExecutionParamsSchema.parse(args);
-            const result = await this.shellTools.getExecution(params);
+            const result = await this.shellTools.getExecutionValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'shell_set_default_workdir': {
-            const params = ShellSetDefaultWorkdirParamsSchema.parse(args);
-            const result = await this.shellTools.setDefaultWorkingDirectory(params);
+            const result = await this.shellTools.setDefaultWorkingDirectoryValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           // Output File Operations  
           case 'list_execution_outputs': {
-            const params = FileListParamsSchema.parse(args);
-            const result = await this.shellTools.listFiles(params);
+            const result = await this.shellTools.listFilesValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'read_execution_output': {
-            const params = FileReadParamsSchema.parse(args);
-            const result = await this.shellTools.readFile(params);
+            const result = await this.shellTools.readFileValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'delete_execution_outputs': {
-            const params = FileDeleteParamsSchema.parse(args);
-            const result = await this.shellTools.deleteFiles(params);
+            const result = await this.shellTools.deleteFilesValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           // Issue #15: クリーンアップ機能のハンドラー
           case 'get_cleanup_suggestions': {
-            const params = CleanupSuggestionsParamsSchema.parse(args);
-            const result = await this.shellTools.getCleanupSuggestions(params);
+            const result = await this.shellTools.getCleanupSuggestionsValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'perform_auto_cleanup': {
-            const params = AutoCleanupParamsSchema.parse(args);
-            const result = await this.shellTools.performAutoCleanup(params);
+            const result = await this.shellTools.performAutoCleanupValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           // Terminal Management
           // Terminal Management - Unified Operations
           case 'terminal_operate': {
-            const params = TerminalOperateParamsSchema.parse(args);
-            const result = await this.shellTools.terminalOperate(params);
+            const result = await this.shellTools.terminalOperateValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
@@ -320,27 +312,23 @@ export class MCPShellServer {
 
           // Essential terminal operations that remain individual
           case 'terminal_list': {
-            const params = TerminalListParamsSchema.parse(args);
-            const result = await this.shellTools.listTerminals(params);
+            const result = await this.shellTools.listTerminalsValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'terminal_get_info': {
-            const params = TerminalGetParamsSchema.parse(args);
-            const result = await this.shellTools.getTerminal(params);
+            const result = await this.shellTools.getTerminalValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'terminal_close': {
-            const params = TerminalCloseParamsSchema.parse(args);
-            const result = await this.shellTools.closeTerminal(params);
+            const result = await this.shellTools.closeTerminalValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           // Command History Operations
           case 'command_history_query': {
-            const params = CommandHistoryQueryParamsSchema.parse(args);
-            const result = await this.shellTools.queryCommandHistory(params);
+            const result = await this.shellTools.queryCommandHistoryValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
