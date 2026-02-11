@@ -44,7 +44,7 @@ function getServerEntry(context: vscode.ExtensionContext): string {
 let runtimePromise: Promise<ShellToolRuntime> | undefined;
 
 function createVSCodeMessageCallback(): CreateMessageCallback {
-  return async (request) => {
+  return async (request: Parameters<CreateMessageCallback>[0]) => {
     const models = await vscode.lm.selectChatModels({});
     const model = models[0];
     if (!model) {
@@ -53,14 +53,20 @@ function createVSCodeMessageCallback(): CreateMessageCallback {
 
     const messages: vscode.LanguageModelChatMessage[] = [];
     if (request.systemPrompt) {
-      messages.push(new vscode.LanguageModelChatMessage('system', request.systemPrompt));
+      messages.push(
+        vscode.LanguageModelChatMessage.User(`[system]\n${request.systemPrompt}`)
+      );
     }
 
     for (const message of request.messages) {
       if (message.role === 'tool') {
         continue;
       }
-      messages.push(new vscode.LanguageModelChatMessage(message.role, message.content.text));
+      if (message.role === 'user') {
+        messages.push(vscode.LanguageModelChatMessage.User(message.content.text));
+        continue;
+      }
+      messages.push(vscode.LanguageModelChatMessage.Assistant(message.content.text));
     }
 
     const response = await model.sendRequest(messages, {
