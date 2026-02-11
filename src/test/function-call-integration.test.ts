@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { EnhancedSafetyEvaluator } from '../security/enhanced-evaluator.js';
 import { SecurityManager } from '../security/manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
@@ -14,11 +15,15 @@ describe('Function Call Integration Tests', () => {
   let securityManager: SecurityManager;
   let historyManager: CommandHistoryManager;
   let evaluator: EnhancedSafetyEvaluator;
+  let mockServer: Server;
 
   beforeEach(() => {
     securityManager = new SecurityManager();
     historyManager = new CommandHistoryManager(DEFAULT_ENHANCED_SECURITY_CONFIG);
-    evaluator = new EnhancedSafetyEvaluator(securityManager, historyManager);
+    mockServer = {
+      createMessage: vi.fn().mockResolvedValue({ content: { text: '' } })
+    } as unknown as Server;
+    evaluator = new EnhancedSafetyEvaluator(securityManager, historyManager, mockServer);
   });
 
   afterEach(() => {
@@ -68,7 +73,7 @@ describe('Function Call Integration Tests', () => {
       
       if (result.success && result.result) {
         const evaluation = result.result as SimplifiedLLMEvaluationResult;
-        expect(evaluation.evaluation_result).toMatch(/^(ALLOW|DENY|NEED_MORE_HISTORY|NEED_USER_CONFIRM|NEED_ASSISTANT_CONFIRM)$/);
+        expect(evaluation.evaluation_result).toMatch(/^(allow|deny|add_more_history|user_confirm|ai_assistant_confirm)$/);
         expect(typeof evaluation.reasoning).toBe('string');
         expect(Array.isArray(evaluation.suggested_alternatives)).toBe(true);
       }
@@ -88,7 +93,7 @@ describe('Function Call Integration Tests', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
-      expect(result.error).toContain('Unknown function');
+      expect(result.error).toContain('No handler found');
     });
 
     test('should handle malformed function call arguments', async () => {
@@ -141,7 +146,7 @@ describe('Function Call Integration Tests', () => {
       
       if (result.success && result.result) {
         const evaluation = result.result as SimplifiedLLMEvaluationResult;
-        expect(evaluation.evaluation_result).toMatch(/^(ALLOW|DENY|NEED_MORE_HISTORY|NEED_USER_CONFIRM|NEED_ASSISTANT_CONFIRM)$/);
+        expect(evaluation.evaluation_result).toMatch(/^(allow|deny|add_more_history|user_confirm|ai_assistant_confirm)$/);
         expect(typeof evaluation.reasoning).toBe('string');
       }
     });
