@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.7.1] - 2026-02-11
+### Fixed
+- Apply Zod defaults consistently for extension and MCP tool calls via validated wrappers.
+- Add VS Code elicitation fallback when running in Language Model tool mode.
+
 ## [2.7.0] - 2026-02-11
 ### Fixed
 - Include the tool runtime export in the published package to support VS Code tool integration.
