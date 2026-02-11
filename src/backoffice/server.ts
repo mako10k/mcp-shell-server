@@ -9,6 +9,7 @@ import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { logger } from '../utils/helpers.js';
 import { listenServer, closeServer } from '../utils/server-helpers.js';
 import { RemoteProcessService } from '../core/remote-process-service.js';
+import { startHeartbeat } from '../utils/sse.js';
 
 interface BackofficeDeps {
   processManager: ProcessManager;
@@ -30,7 +31,7 @@ export class BackofficeServer {
     if (this.server) return Promise.resolve();
 
     this.server = http.createServer(async (req, res) => {
-      try {
+        try {
         // Localhost only
         const remote = req.socket.remoteAddress || '';
         if (!this.isLocalAddress(remote)) {
@@ -363,6 +364,28 @@ export class BackofficeServer {
     return new RemoteProcessService();
   }
 
+  private ensureRemoteBackend(res: ServerResponse): boolean {
+    if (!this.isRemoteBackend()) {
+      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
+      return false;
+    }
+    return true;
+  }
+
+  private async handleRemoteRequest<T>(
+    res: ServerResponse,
+    action: (remote: RemoteProcessService) => Promise<T>
+  ): Promise<void> {
+    if (!this.ensureRemoteBackend(res)) return;
+    try {
+      const remote = this.getRemoteService();
+      const data = await action(remote);
+      this.json(res, 200, data);
+    } catch (e) {
+      this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
+    }
+  }
+
   // ---------- Dashboard Handler ----------
   private async handleDashboard(res: ServerResponse) {
     try {
@@ -426,38 +449,15 @@ export class BackofficeServer {
   }
 
   private async handleRemoteExecGet(res: ServerResponse, id: string) {
-    if (!this.isRemoteBackend()) {
-      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
-      return;
-    }
-    try {
-      const remote = this.getRemoteService();
-      const data = await remote.get(id);
-      this.json(res, 200, data);
-    } catch (e) {
-      this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
-    }
+    await this.handleRemoteRequest(res, (remote) => remote.get(id));
   }
 
   private async handleRemoteExecOutputs(res: ServerResponse, id: string) {
-    if (!this.isRemoteBackend()) {
-      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
-      return;
-    }
-    try {
-      const remote = this.getRemoteService();
-      const data = await remote.outputs(id);
-      this.json(res, 200, data);
-    } catch (e) {
-      this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
-    }
+    await this.handleRemoteRequest(res, (remote) => remote.outputs(id));
   }
 
   private async handleRemoteExecKill(res: ServerResponse, id: string, q: URLSearchParams) {
-    if (!this.isRemoteBackend()) {
-      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
-      return;
-    }
+    if (!this.ensureRemoteBackend(res)) return;
     try {
       const remote = this.getRemoteService();
       const force = (q.get('force') || 'false') === 'true';
@@ -566,19 +566,14 @@ export class BackofficeServer {
     }
 
     // アイドル時はハートビート（10秒間隔）
-    heartbeat = setInterval(() => {
-      this.writeSSE(res, 'heartbeat', { t: Date.now() });
-    }, 10000);
+    heartbeat = startHeartbeat((event, data) => this.writeSSE(res, event, data));
 
     req.on('close', cleanup);
     req.on('aborted', cleanup);
   }
 
   private async handleRemoteExecSSE(res: ServerResponse, id: string, req: http.IncomingMessage) {
-    if (!this.isRemoteBackend()) {
-      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
-      return;
-    }
+    if (!this.ensureRemoteBackend(res)) return;
     this.initSSE(res);
     // Executor の SSE をそのままプロキシする（イベント駆動）
     const baseUrl = (process.env['EXECUTOR_URL'] || `http://${process.env['EXECUTOR_HOST'] || '127.0.0.1'}:${process.env['EXECUTOR_PORT'] || '4030'}`).replace(/\/$/, '');

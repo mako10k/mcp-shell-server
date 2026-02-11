@@ -16,6 +16,13 @@ export const ToolCallSchema = z.object({
   })
 });
 
+export const ToolChoiceSchema = z.union([
+  z.literal('auto'),
+  z.literal('none'),
+  z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
+  z.object({ type: z.literal('tool'), name: z.string() })
+]);
+
 export const CreateMessageRequestSchema = z.object({
   messages: z.array(z.object({
     role: z.enum(['user', 'assistant', 'tool']),
@@ -37,12 +44,7 @@ export const CreateMessageRequestSchema = z.object({
       parameters: z.record(z.unknown())
     })
   })).optional(),
-  tool_choice: z.union([
-    z.literal('auto'),
-    z.literal('none'),
-    z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
-    z.object({ type: z.literal('tool'), name: z.string() })
-  ]).optional()
+  tool_choice: ToolChoiceSchema.optional()
 });
 
 export const CreateMessageResponseSchema = z.object({

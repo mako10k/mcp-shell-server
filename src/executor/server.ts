@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { URL } from 'url';
 import { randomUUID } from 'crypto';
 import { listenServer, closeServer } from '../utils/server-helpers.js';
+import { startHeartbeat } from '../utils/sse.js';
 
 type Json = Record<string, unknown> | Array<unknown> | string | number | boolean | null;
 
@@ -193,12 +194,12 @@ export class ExecutorServer {
       return;
     }
 
-    // 初期スナップショット
-    this.writeSSE(res, 'state', item);
-    const out: Record<string, unknown> = { execution_id: id };
-    if (typeof item.stdout === 'string') out['stdout'] = item.stdout;
-    if (typeof item.stderr === 'string') out['stderr'] = item.stderr;
-    this.writeSSE(res, 'outputs', out);
+        // 初期スナップショット
+        this.writeSSE(res, 'state', item);
+        const out: Record<string, unknown> = { execution_id: id };
+        if (typeof item.stdout === 'string') out['stdout'] = item.stdout;
+        if (typeof item.stderr === 'string') out['stderr'] = item.stderr;
+        this.writeSSE(res, 'outputs', out);
 
     const onOutput = () => {
       const current = this.executions.get(id);
@@ -227,9 +228,7 @@ export class ExecutorServer {
     this.events.on(`exec:exit:${id}`, onExit);
 
     // ハートビート
-    const heartbeat = setInterval(() => {
-      this.writeSSE(res, 'heartbeat', { t: Date.now() });
-    }, 10000);
+    const heartbeat = startHeartbeat((event, data) => this.writeSSE(res, event, data));
 
     req.on('close', cleanup);
     req.on('aborted', cleanup);

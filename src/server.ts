@@ -382,6 +382,21 @@ export class MCPShellServer {
     return { commandPreview, outputSizeStr };
   }
 
+  private async notifyClient(level: 'info' | 'error' | 'warning', message: string): Promise<void> {
+    try {
+      await this.server.notification({
+        method: 'notifications/message',
+        params: {
+          level,
+          data: message
+        }
+      });
+    } catch (error) {
+      const prefix = level === 'warning' ? 'WARN' : level.toUpperCase();
+      console.error(`[${prefix}] ${message}`);
+    }
+  }
+
   // バックグラウンドプロセス終了時の通知メソッド
   private async notifyBackgroundProcessComplete(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
     const { commandPreview, outputSizeStr } = this.getProcessNotificationInfo(executionInfo);
@@ -397,18 +412,7 @@ export class MCPShellServer {
     }, 'background-process');
     
     // MCPクライアントに通知を送信
-    try {
-      await this.server.notification({
-        method: 'notifications/message',
-        params: {
-          level: 'info',
-          data: message
-        }
-      });
-    } catch (error) {
-      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
-      console.error(`[INFO] ${message}`);
-    }
+    await this.notifyClient('info', message);
   }
 
   private async notifyBackgroundProcessError(executionId: string, executionInfo: ExecutionInfo, error?: Error): Promise<void> {
@@ -426,18 +430,7 @@ export class MCPShellServer {
     }, 'background-process');
     
     // MCPクライアントに通知を送信
-    try {
-      await this.server.notification({
-        method: 'notifications/message',
-        params: {
-          level: 'error',
-          data: message
-        }
-      });
-    } catch (notificationError) {
-      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
-      console.error(`[ERROR] ${message}`);
-    }
+    await this.notifyClient('error', message);
   }
 
   private async notifyBackgroundProcessTimeout(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
@@ -454,18 +447,7 @@ export class MCPShellServer {
     }, 'background-process');
     
     // MCPクライアントに通知を送信
-    try {
-      await this.server.notification({
-        method: 'notifications/message',
-        params: {
-          level: 'warning',
-          data: message
-        }
-      });
-    } catch (error) {
-      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
-      console.error(`[WARN] ${message}`);
-    }
+    await this.notifyClient('warning', message);
   }
 
   async run(): Promise<void> {
