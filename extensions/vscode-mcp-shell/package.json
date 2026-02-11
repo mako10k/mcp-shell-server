@@ -1,8 +1,8 @@
 {
   "name": "mcp-shell-server-vscode",
-  "displayName": "MCP Shell Server",
-  "description": "VS Code extension that registers MCP Shell Server as an MCP server.",
-  "version": "0.1.1",
+  "displayName": "Safe Shell Runner",
+  "description": "VS Code extension that registers MCP Shell Server as Safe Shell Runner.",
+  "version": "0.2.0",
   "publisher": "mako10k",
   "license": "MIT",
   "repository": {
@@ -387,7 +387,7 @@
     "watch": "tsc -p . -w"
   },
   "dependencies": {
-    "@mako10k/mcp-shell-server": "file:../../mako10k-mcp-shell-server-2.7.0-local2.tgz"
+    "@mako10k/mcp-shell-server": "^2.7.1"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
