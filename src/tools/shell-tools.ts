@@ -33,6 +33,7 @@ export interface TerminalOutputResponse {
 }
 import {
   ShellExecuteParams,
+  ShellExecuteParamsSchema,
   ShellGetExecutionParams,
   ShellSetDefaultWorkdirParams,
   ProcessListParams,
@@ -85,6 +86,11 @@ export class ShellTools {
   }
 
   // Shell Operations
+  async executeShellValidated(rawParams: unknown) {
+    const params = ShellExecuteParamsSchema.parse(rawParams);
+    return this.executeShell(params);
+  }
+
   async executeShell(params: ShellExecuteParams) {
     try {
       // Enhanced security evaluation (if enabled)

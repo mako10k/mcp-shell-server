@@ -218,8 +218,7 @@ export class MCPShellServer {
           // Shell Operations
           case 'shell_execute': {
             try {
-              const params = ShellExecuteParamsSchema.parse(args);
-              const result = await this.shellTools.executeShell(params);
+              const result = await this.shellTools.executeShellValidated(args);
               return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
             } catch (e) {
               if (e instanceof ZodError) {

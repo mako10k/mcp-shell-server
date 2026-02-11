@@ -216,9 +216,7 @@ async function dispatchToolCall(
 ): Promise<unknown> {
   switch (toolName) {
     case 'shell_execute':
-      return shellTools.executeShell(
-        (params ?? {}) as Parameters<ShellToolsApi['executeShell']>[0]
-      );
+      return shellTools.executeShellValidated(params ?? {});
     case 'process_get_execution':
       return shellTools.getExecution(
         (params ?? {}) as Parameters<ShellToolsApi['getExecution']>[0]
