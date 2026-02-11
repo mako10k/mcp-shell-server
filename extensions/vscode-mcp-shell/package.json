@@ -387,7 +387,7 @@
     "watch": "tsc -p . -w"
   },
   "dependencies": {
-    "@mako10k/mcp-shell-server": "file:../../mako10k-mcp-shell-server-2.7.0.tgz"
+    "@mako10k/mcp-shell-server": "file:../../mako10k-mcp-shell-server-2.7.0-local.tgz"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

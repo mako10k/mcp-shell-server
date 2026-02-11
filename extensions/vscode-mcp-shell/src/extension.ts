@@ -91,7 +91,7 @@ function createVSCodeMessageCallback(): CreateMessageCallback {
 }
 
 function createVSCodeElicitationHandler(): ElicitationHandler {
-  return async (request) => {
+  return async (request: Parameters<ElicitationHandler>[0]) => {
     const selection = await vscode.window.showWarningMessage(
       request.message,
       { modal: true },
