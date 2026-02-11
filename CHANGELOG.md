@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.7.0] - 2026-02-11
+### Fixed
+- Include the tool runtime export in the published package to support VS Code tool integration.
+
 ## [2.5.0] - 2025-08-13
 ### Changed
 - Removed legacy hard-block dangerous pattern matcher in security/manager.ts (now rely on LLM + elicitation).

@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import type { ShellToolRuntime } from '@mako10k/mcp-shell-server/tool-runtime';
 
 const PROVIDER_ID = 'mcp-shell-server.provider';
 const SERVER_LABEL = 'MCP Shell Server';
-const SERVER_VERSION = '2.5.1';
+const SERVER_VERSION = '2.7.0';
 const TOOL_NAMES = [
   'shell_execute',
   'process_get_execution',
@@ -25,26 +26,7 @@ type ToolName = (typeof TOOL_NAMES)[number];
 
 type ToolParams = Record<string, unknown>;
 
-type ShellToolsApi = {
-  executeShell: (params: ToolParams) => Promise<unknown>;
-  getExecution: (params: ToolParams) => Promise<unknown>;
-  setDefaultWorkingDirectory: (params: ToolParams) => Promise<unknown>;
-  listFiles: (params: ToolParams) => Promise<unknown>;
-  readFile: (params: ToolParams) => Promise<unknown>;
-  deleteFiles: (params: ToolParams) => Promise<unknown>;
-  getCleanupSuggestions: (params?: ToolParams) => Promise<unknown>;
-  performAutoCleanup: (params?: ToolParams) => Promise<unknown>;
-  terminalOperate: (params: ToolParams) => Promise<unknown>;
-  listTerminals: (params: ToolParams) => Promise<unknown>;
-  getTerminal: (params: ToolParams) => Promise<unknown>;
-  closeTerminal: (params: ToolParams) => Promise<unknown>;
-  queryCommandHistory: (params: ToolParams) => Promise<unknown>;
-};
-
-type ShellToolRuntime = {
-  shellTools: ShellToolsApi;
-  cleanup: () => Promise<void>;
-};
+type ShellToolsApi = ShellToolRuntime['shellTools'];
 
 function getWorkspaceCwd(): string | undefined {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -95,7 +77,7 @@ class DirectShellTool implements vscode.LanguageModelTool<ToolParams> {
 
   async prepareInvocation(
     options: vscode.LanguageModelToolInvocationPrepareOptions<ToolParams>
-  ): Promise<vscode.LanguageModelToolInvocationPrepareResult> {
+  ): Promise<vscode.PreparedToolInvocation> {
     const message = buildConfirmationMessage(this.toolName, options.input);
 
     return {
@@ -156,31 +138,53 @@ async function dispatchToolCall(
 ): Promise<unknown> {
   switch (toolName) {
     case 'shell_execute':
-      return shellTools.executeShell(params ?? {});
+      return shellTools.executeShell(
+        (params ?? {}) as Parameters<ShellToolsApi['executeShell']>[0]
+      );
     case 'process_get_execution':
-      return shellTools.getExecution(params ?? {});
+      return shellTools.getExecution(
+        (params ?? {}) as Parameters<ShellToolsApi['getExecution']>[0]
+      );
     case 'shell_set_default_workdir':
-      return shellTools.setDefaultWorkingDirectory(params ?? {});
+      return shellTools.setDefaultWorkingDirectory(
+        (params ?? {}) as Parameters<ShellToolsApi['setDefaultWorkingDirectory']>[0]
+      );
     case 'list_execution_outputs':
-      return shellTools.listFiles(params ?? {});
+      return shellTools.listFiles((params ?? {}) as Parameters<ShellToolsApi['listFiles']>[0]);
     case 'read_execution_output':
-      return shellTools.readFile(params ?? {});
+      return shellTools.readFile((params ?? {}) as Parameters<ShellToolsApi['readFile']>[0]);
     case 'delete_execution_outputs':
-      return shellTools.deleteFiles(params ?? {});
+      return shellTools.deleteFiles(
+        (params ?? {}) as Parameters<ShellToolsApi['deleteFiles']>[0]
+      );
     case 'get_cleanup_suggestions':
-      return shellTools.getCleanupSuggestions(params);
+      return shellTools.getCleanupSuggestions(
+        params as Parameters<ShellToolsApi['getCleanupSuggestions']>[0]
+      );
     case 'perform_auto_cleanup':
-      return shellTools.performAutoCleanup(params);
+      return shellTools.performAutoCleanup(
+        params as Parameters<ShellToolsApi['performAutoCleanup']>[0]
+      );
     case 'terminal_operate':
-      return shellTools.terminalOperate(params ?? {});
+      return shellTools.terminalOperate(
+        (params ?? {}) as Parameters<ShellToolsApi['terminalOperate']>[0]
+      );
     case 'terminal_list':
-      return shellTools.listTerminals(params ?? {});
+      return shellTools.listTerminals(
+        (params ?? {}) as Parameters<ShellToolsApi['listTerminals']>[0]
+      );
     case 'terminal_get_info':
-      return shellTools.getTerminal(params ?? {});
+      return shellTools.getTerminal(
+        (params ?? {}) as Parameters<ShellToolsApi['getTerminal']>[0]
+      );
     case 'terminal_close':
-      return shellTools.closeTerminal(params ?? {});
+      return shellTools.closeTerminal(
+        (params ?? {}) as Parameters<ShellToolsApi['closeTerminal']>[0]
+      );
     case 'command_history_query':
-      return shellTools.queryCommandHistory(params ?? {});
+      return shellTools.queryCommandHistory(
+        (params ?? {}) as Parameters<ShellToolsApi['queryCommandHistory']>[0]
+      );
     default:
       throw new Error(`Unsupported tool: ${toolName}`);
   }

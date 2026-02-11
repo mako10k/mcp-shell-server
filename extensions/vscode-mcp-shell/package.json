@@ -2,7 +2,7 @@
   "name": "mcp-shell-server-vscode",
   "displayName": "MCP Shell Server",
   "description": "VS Code extension that registers MCP Shell Server as an MCP server.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "mako10k",
   "license": "MIT",
   "repository": {
@@ -10,7 +10,7 @@
     "url": "https://github.com/mako10k/mcp-shell-server.git"
   },
   "engines": {
-    "vscode": "^1.96.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other"
@@ -323,14 +323,14 @@
   },
   "scripts": {
     "build": "tsc -p .",
-    "package": "npx -y @vscode/vsce package",
+    "package": "npm run build && npx -y @vscode/vsce package",
     "watch": "tsc -p . -w"
   },
   "dependencies": {
-    "@mako10k/mcp-shell-server": "^2.5.1"
+    "@mako10k/mcp-shell-server": "^2.7.0"
   },
   "devDependencies": {
-    "@types/vscode": "^1.96.0",
+    "@types/vscode": "^1.101.0",
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0"
   }
