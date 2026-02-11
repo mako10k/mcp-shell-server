@@ -5,7 +5,23 @@ import * as vscode from 'vscode';
 const PROVIDER_ID = 'mcp-shell-server.provider';
 const SERVER_LABEL = 'MCP Shell Server';
 const SERVER_VERSION = '2.5.1';
-const TOOL_SHELL_EXECUTE = 'shell_execute';
+const TOOL_NAMES = [
+  'shell_execute',
+  'process_get_execution',
+  'shell_set_default_workdir',
+  'list_execution_outputs',
+  'read_execution_output',
+  'delete_execution_outputs',
+  'get_cleanup_suggestions',
+  'perform_auto_cleanup',
+  'terminal_operate',
+  'terminal_list',
+  'terminal_get_info',
+  'terminal_close',
+  'command_history_query'
+] as const;
+
+type ToolName = (typeof TOOL_NAMES)[number];
 
 type McpClient = {
   connect: (transport: unknown) => Promise<void>;
@@ -16,10 +32,7 @@ type McpClient = {
   close?: () => Promise<void> | void;
 };
 
-type ShellExecuteParams = {
-  command: string;
-  [key: string]: unknown;
-};
+type ToolParams = Record<string, unknown>;
 
 function getWorkspaceCwd(): string | undefined {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -70,31 +83,29 @@ async function createMcpClient(
   return client;
 }
 
-class ShellExecuteTool implements vscode.LanguageModelTool<ShellExecuteParams> {
+class McpBridgeTool implements vscode.LanguageModelTool<ToolParams> {
   constructor(
     private context: vscode.ExtensionContext,
-    private output: vscode.OutputChannel
+    private output: vscode.OutputChannel,
+    private toolName: ToolName
   ) {}
 
   async prepareInvocation(
-    options: vscode.LanguageModelToolInvocationPrepareOptions<ShellExecuteParams>
+    options: vscode.LanguageModelToolInvocationPrepareOptions<ToolParams>
   ): Promise<vscode.LanguageModelToolInvocationPrepareResult> {
-    const command = options.input?.command?.trim();
-    const message = command
-      ? new vscode.MarkdownString(`Run the following command?\n\n\`\`\`\n${command}\n\`\`\``)
-      : new vscode.MarkdownString('Run a shell command?');
+    const message = buildConfirmationMessage(this.toolName, options.input);
 
     return {
-      invocationMessage: 'Executing shell command via MCP Shell Server',
+      invocationMessage: `Executing ${this.toolName} via MCP Shell Server`,
       confirmationMessages: {
-        title: 'Shell Execute',
+        title: `MCP Shell Server: ${this.toolName}`,
         message
       }
     };
   }
 
   async invoke(
-    options: vscode.LanguageModelToolInvocationOptions<ShellExecuteParams>,
+    options: vscode.LanguageModelToolInvocationOptions<ToolParams>,
     _token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelToolResult> {
     const client = await createMcpClient(this.context, this.output);
@@ -102,7 +113,7 @@ class ShellExecuteTool implements vscode.LanguageModelTool<ShellExecuteParams> {
       const result = await client.request({
         method: 'tools/call',
         params: {
-          name: TOOL_SHELL_EXECUTE,
+          name: this.toolName,
           arguments: options.input
         }
       });
@@ -116,6 +127,35 @@ class ShellExecuteTool implements vscode.LanguageModelTool<ShellExecuteParams> {
       }
     }
   }
+}
+
+function buildConfirmationMessage(toolName: ToolName, input?: ToolParams): vscode.MarkdownString {
+  if (!input) {
+    return new vscode.MarkdownString('Run MCP Shell Server tool?');
+  }
+
+  if (toolName === 'shell_execute') {
+    const command = typeof input.command === 'string' ? input.command.trim() : '';
+    return command
+      ? new vscode.MarkdownString(`Run the following command?\n\n\`\`\`\n${command}\n\`\`\``)
+      : new vscode.MarkdownString('Run a shell command?');
+  }
+
+  if (toolName === 'terminal_operate') {
+    const command = typeof input.command === 'string' ? input.command.trim() : '';
+    const text = command ? `Terminal command: ${command}` : 'Operate a terminal session?';
+    return new vscode.MarkdownString(text);
+  }
+
+  if (toolName === 'delete_execution_outputs') {
+    return new vscode.MarkdownString('Delete execution output files?');
+  }
+
+  if (toolName === 'perform_auto_cleanup') {
+    return new vscode.MarkdownString('Perform automatic cleanup of execution outputs?');
+  }
+
+  return new vscode.MarkdownString(`Run ${toolName}?`);
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -148,10 +188,11 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   const registration = vscode.lm.registerMcpServerDefinitionProvider(PROVIDER_ID, provider);
-  const shellExecuteTool = new ShellExecuteTool(context, output);
-  const toolRegistration = vscode.lm.registerTool(TOOL_SHELL_EXECUTE, shellExecuteTool);
+  const toolRegistrations = TOOL_NAMES.map((toolName) =>
+    vscode.lm.registerTool(toolName, new McpBridgeTool(context, output, toolName))
+  );
 
-  context.subscriptions.push(output, registration, toolRegistration);
+  context.subscriptions.push(output, registration, ...toolRegistrations);
 }
 
 export function deactivate() {
