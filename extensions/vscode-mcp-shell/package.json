@@ -380,10 +380,11 @@
   "scripts": {
     "build": "tsc -p .",
     "package": "npm run build && npx -y @vscode/vsce package",
+    "package:release": "npm run build && npm prune --omit=dev && npx -y @vscode/vsce package",
     "watch": "tsc -p . -w"
   },
   "dependencies": {
-    "@mako10k/mcp-shell-server": "file:../../mako10k-mcp-shell-server-2.7.0.tgz"
+    "@mako10k/mcp-shell-server": "^2.7.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
