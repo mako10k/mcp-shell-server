@@ -53,6 +53,16 @@ export class BackofficeServer {
           return;
         }
 
+        // Dashboard snapshot API
+        if (pathname === '/api/dashboard') {
+          if (req.method !== 'GET') {
+            this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
+            return;
+          }
+          await this.handleDashboard(res);
+          return;
+        }
+
   // Note: Most endpoints are GET-only, except remote kill proxy which is POST
 
         if (pathname === '/' || pathname === '/index.html') {
@@ -351,6 +361,68 @@ export class BackofficeServer {
 
   private getRemoteService(): RemoteProcessService {
     return new RemoteProcessService();
+  }
+
+  // ---------- Dashboard Handler ----------
+  private async handleDashboard(res: ServerResponse) {
+    try {
+      // History summary
+  const history = this.deps.historyManager.searchHistory({ limit: 200 });
+  const totalHistory = history.length;
+  const withEval = history.filter((h) => Boolean(h.safety_classification) || Boolean(h.llm_evaluation_result)).length;
+  const executedTrue = history.filter((h) => h.was_executed === true).length;
+
+      // Process stats
+      const runningExec = this.deps.processManager.listExecutions({ status: 'running', limit: 50 }).executions;
+      const recentExec = this.deps.processManager.listExecutions({ limit: 20 }).executions
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      // Terminals
+      const terms = this.deps.terminalManager.listTerminals({ limit: 100 });
+
+      // File/output stats (sizes)
+      const fileStats = this.deps.fileManager.getUsageStats();
+
+      // Latest outputs summary for currently running commands (tail)
+      const recentRunningSummaries = await Promise.all(runningExec.slice(0, 10).map(async (e) => {
+        const summary: { execution_id: string; command: string; status: string; output_tail?: string } = {
+          execution_id: e.execution_id,
+          command: e.command,
+          status: e.status,
+        };
+        const outId = e.output_id;
+        if (outId) {
+          try {
+            const read = await this.deps.fileManager.readFile(outId, Math.max(0, (await (async () => {
+              const info = this.deps.fileManager.getFile(outId);
+              return Math.max(0, info.size - 4096);
+            })())), 4096);
+            summary.output_tail = read.content;
+          } catch {}
+        }
+        return summary;
+      }));
+
+      this.json(res, 200, {
+        timestamp: new Date().toISOString(),
+        history: {
+          total_entries: totalHistory,
+          with_evaluation: withEval,
+          executed_true: executedTrue,
+          last_5: history.slice(0, 5),
+        },
+        executions: {
+          running_count: runningExec.length,
+          running: runningExec,
+          recent: recentExec.slice(0, 10),
+          running_output_tails: recentRunningSummaries,
+        },
+        terminals: terms,
+        files: fileStats,
+      });
+    } catch (e) {
+      this.json(res, 500, { error: { code: 'INTERNAL', message: String(e) } });
+    }
   }
 
   private async handleRemoteExecGet(res: ServerResponse, id: string) {

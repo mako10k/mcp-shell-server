@@ -20,12 +20,24 @@ Choose your preferred installation method:
 npm install -g @mako10k/mcp-shell-server
 ```
 
+After installation, verify the CLI:
+```bash
+mcp-shell-server --version
+mcp-shell-server --help
+```
+
 #### Local Development Installation
 ```bash
 git clone https://github.com/mako10k/mcp-shell-server.git
 cd mcp-shell-server
 npm install
 npm run build
+```
+
+You can also link locally for user-level usage without sudo:
+```bash
+npm link
+mcp-shell-server --help
 ```
 
 ### Configuration for Popular MCP Clients
@@ -330,6 +342,19 @@ await client.request({
 ```bash
 npm start
 ```
+
+### CLI Usage
+
+```bash
+mcp-shell-server --help
+mcp-shell-server --version
+```
+
+The server supports various environment variables (see sections below), such as:
+- `BACKOFFICE_ENABLED`, `BACKOFFICE_PORT`
+- `EXECUTION_BACKEND` and `EXECUTOR_*` for remote executor
+- `MCP_SHELL_DEFAULT_WORKDIR`, `MCP_SHELL_ALLOWED_WORKDIRS`
+- `MCP_DISABLED_TOOLS`, `LOG_LEVEL`
 
 ### Development
 
