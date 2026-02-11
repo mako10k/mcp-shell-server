@@ -55,7 +55,9 @@
               "description": "Shell command to execute."
             }
           },
-          "required": ["command"],
+          "required": [
+            "command"
+          ],
           "additionalProperties": true
         }
       },
@@ -74,7 +76,9 @@
               "description": "Execution ID returned by shell_execute."
             }
           },
-          "required": ["execution_id"],
+          "required": [
+            "execution_id"
+          ],
           "additionalProperties": true
         }
       },
@@ -93,7 +97,9 @@
               "description": "Absolute path to set as default working directory."
             }
           },
-          "required": ["working_directory"],
+          "required": [
+            "working_directory"
+          ],
           "additionalProperties": true
         }
       },
@@ -154,7 +160,9 @@
               "description": "Text encoding."
             }
           },
-          "required": ["output_id"],
+          "required": [
+            "output_id"
+          ],
           "additionalProperties": true
         }
       },
@@ -170,7 +178,9 @@
           "properties": {
             "output_ids": {
               "type": "array",
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "description": "List of output IDs to delete."
             },
             "confirm": {
@@ -178,7 +188,10 @@
               "description": "Must be true to proceed with deletion."
             }
           },
-          "required": ["output_ids", "confirm"],
+          "required": [
+            "output_ids",
+            "confirm"
+          ],
           "additionalProperties": true
         }
       },
@@ -244,10 +257,22 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "terminal_id": { "type": "string", "description": "Existing terminal ID." },
-            "command": { "type": "string", "description": "Command to run when creating a terminal." },
-            "input": { "type": "string", "description": "Input to send to terminal." },
-            "execute": { "type": "boolean", "description": "Send Enter after input." }
+            "terminal_id": {
+              "type": "string",
+              "description": "Existing terminal ID."
+            },
+            "command": {
+              "type": "string",
+              "description": "Command to run when creating a terminal."
+            },
+            "input": {
+              "type": "string",
+              "description": "Input to send to terminal."
+            },
+            "execute": {
+              "type": "boolean",
+              "description": "Send Enter after input."
+            }
           },
           "additionalProperties": true
         }
@@ -262,9 +287,18 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "session_name_pattern": { "type": "string", "description": "Filter by session name." },
-            "status_filter": { "type": "string", "description": "Filter by status." },
-            "limit": { "type": "integer", "description": "Maximum number of sessions." }
+            "session_name_pattern": {
+              "type": "string",
+              "description": "Filter by session name."
+            },
+            "status_filter": {
+              "type": "string",
+              "description": "Filter by status."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum number of sessions."
+            }
           },
           "additionalProperties": true
         }
@@ -279,9 +313,14 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "terminal_id": { "type": "string", "description": "Terminal ID." }
+            "terminal_id": {
+              "type": "string",
+              "description": "Terminal ID."
+            }
           },
-          "required": ["terminal_id"],
+          "required": [
+            "terminal_id"
+          ],
           "additionalProperties": true
         }
       },
@@ -295,10 +334,18 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "terminal_id": { "type": "string", "description": "Terminal ID." },
-            "save_history": { "type": "boolean", "description": "Save terminal history." }
+            "terminal_id": {
+              "type": "string",
+              "description": "Terminal ID."
+            },
+            "save_history": {
+              "type": "boolean",
+              "description": "Save terminal history."
+            }
           },
-          "required": ["terminal_id"],
+          "required": [
+            "terminal_id"
+          ],
           "additionalProperties": true
         }
       },
@@ -312,9 +359,18 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "page": { "type": "integer", "description": "Page number." },
-            "page_size": { "type": "integer", "description": "Entries per page." },
-            "query": { "type": "string", "description": "Search term." }
+            "page": {
+              "type": "integer",
+              "description": "Page number."
+            },
+            "page_size": {
+              "type": "integer",
+              "description": "Entries per page."
+            },
+            "query": {
+              "type": "string",
+              "description": "Search term."
+            }
           },
           "additionalProperties": true
         }
@@ -327,11 +383,11 @@
     "watch": "tsc -p . -w"
   },
   "dependencies": {
-    "@mako10k/mcp-shell-server": "^2.7.0"
+    "@mako10k/mcp-shell-server": "file:../../mako10k-mcp-shell-server-2.7.0.tgz"
   },
   "devDependencies": {
-    "@types/vscode": "^1.101.0",
     "@types/node": "^20.14.0",
+    "@types/vscode": "^1.101.0",
     "typescript": "^5.5.0"
   }
 }
