@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { createShellToolRuntime, type ShellToolRuntime } from '@mako10k/mcp-shell-server/tool-runtime';
+import { createShellToolRuntime, type ShellToolRuntime, type CreateMessageCallback } from '@mako10k/mcp-shell-server/tool-runtime';
 
 const PROVIDER_ID = 'mcp-shell-server.provider';
 const SERVER_LABEL = 'MCP Shell Server';
@@ -43,6 +43,42 @@ function getServerEntry(context: vscode.ExtensionContext): string {
 
 let runtimePromise: Promise<ShellToolRuntime> | undefined;
 
+function createVSCodeMessageCallback(): CreateMessageCallback {
+  return async (request) => {
+    const models = await vscode.lm.selectChatModels({});
+    const model = models[0];
+    if (!model) {
+      throw new Error('No VS Code language model is available for enhanced evaluation.');
+    }
+
+    const messages: vscode.LanguageModelChatMessage[] = [];
+    if (request.systemPrompt) {
+      messages.push(new vscode.LanguageModelChatMessage('system', request.systemPrompt));
+    }
+
+    for (const message of request.messages) {
+      if (message.role === 'tool') {
+        continue;
+      }
+      messages.push(new vscode.LanguageModelChatMessage(message.role, message.content.text));
+    }
+
+    const response = await model.sendRequest(messages, {
+      justification: 'Run MCP Shell Server enhanced safety evaluation via VS Code language model.'
+    });
+
+    let text = '';
+    for await (const part of response.text) {
+      text += part;
+    }
+
+    return {
+      content: { type: 'text', text },
+      model: model.id
+    };
+  };
+}
+
 async function getRuntime(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel
@@ -57,7 +93,11 @@ async function getRuntime(
       }
 
       const workspaceCwd = getWorkspaceCwd();
-      return createShellToolRuntime({ defaultWorkingDirectory: workspaceCwd });
+      return createShellToolRuntime({
+        defaultWorkingDirectory: workspaceCwd,
+        createMessage: createVSCodeMessageCallback(),
+        enhancedConfigOverrides: { elicitation_enabled: false }
+      });
     })();
   }
 

@@ -114,8 +114,12 @@ type CCCResponse = z.infer<typeof CCCResponseSchema>;
 export class CCCToMCPCMAdapter {
   private createMessage: CreateMessageCallback;
 
-  constructor(server: Server) {
-    this.createMessage = createMessageCallbackFromMCPServer(server);
+  constructor(createMessage: CreateMessageCallback) {
+    this.createMessage = createMessage;
+  }
+
+  static fromMCPServer(server: Server): CCCToMCPCMAdapter {
+    return new CCCToMCPCMAdapter(createMessageCallbackFromMCPServer(server));
   }
 
   // Update chatCompletion to handle optional properties explicitly
@@ -542,7 +546,7 @@ Make function calls as needed to fulfill the user's request.`;
 /**
  * Create a CreateMessageCallback from an MCP Server instance
  */
-function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
+export function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
   return async (request: Parameters<CreateMessageCallback>[0]) => {
     try {
       // Convert request to MCP format

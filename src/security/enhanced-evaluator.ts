@@ -23,7 +23,7 @@ import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 // Structured Output imports (minimal usage for fallback only)
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
-import { CCCToMCPCMAdapter } from './chat-completion-adapter.js';
+import { CCCToMCPCMAdapter, CreateMessageCallback } from './chat-completion-adapter.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 // Elicitation interfaces (based on mcp-confirm implementation)
@@ -187,13 +187,14 @@ export class EnhancedSafetyEvaluator {
   private promptGenerator: SecurityLLMPromptGenerator;
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
-  private mcpServer: Server;
+  private mcpServer: Server | undefined;
   private functionCallHandlers: FunctionCallHandlerRegistry;
 
   constructor(
     securityManager: SecurityManager,
     historyManager: CommandHistoryManager,
-    mcpServer: Server
+    createMessage: CreateMessageCallback,
+    mcpServer?: Server
   ) {
     this.securityManager = securityManager;
     this.historyManager = historyManager;
@@ -207,7 +208,7 @@ export class EnhancedSafetyEvaluator {
     this.promptGenerator = generator;
 
     // Initialize chatAdapter with generated callback
-    this.chatAdapter = new CCCToMCPCMAdapter(mcpServer);
+    this.chatAdapter = new CCCToMCPCMAdapter(createMessage);
   }
 
   /**

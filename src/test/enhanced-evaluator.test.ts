@@ -1,15 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { EnhancedSafetyEvaluator } from '../../src/security/enhanced-evaluator.js';
 import { SecurityManager } from '../../src/security/manager.js';
 import { CommandHistoryManager } from '../../src/core/enhanced-history-manager.js';
 import { DEFAULT_ENHANCED_SECURITY_CONFIG, SimplifiedLLMEvaluationResult } from '../../src/types/enhanced-security.js';
 
-function createMockServer(): Server {
-  return {
-    createMessage: vi.fn().mockResolvedValue({ content: { text: '' } })
-  } as unknown as Server;
-}
+const createMessage = vi.fn().mockResolvedValue({ content: { type: 'text', text: '' } });
 
 describe('EnhancedSafetyEvaluator', () => {
   let securityManager: SecurityManager;
@@ -19,7 +14,7 @@ describe('EnhancedSafetyEvaluator', () => {
   beforeEach(() => {
     securityManager = new SecurityManager();
     historyManager = new CommandHistoryManager(DEFAULT_ENHANCED_SECURITY_CONFIG);
-    evaluator = new EnhancedSafetyEvaluator(securityManager, historyManager, createMockServer());
+    evaluator = new EnhancedSafetyEvaluator(securityManager, historyManager, createMessage);
   });
 
   afterEach(() => {

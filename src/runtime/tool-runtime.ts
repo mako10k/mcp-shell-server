@@ -6,9 +6,13 @@ import { TerminalManager } from '../core/terminal-manager.js';
 import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
 import { SecurityManager } from '../security/manager.js';
+import type { CreateMessageCallback } from '../security/chat-completion-adapter.js';
+import type { EnhancedSecurityConfig } from '../types/enhanced-security.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { ShellTools } from '../tools/shell-tools.js';
 import { logger } from '../utils/helpers.js';
+
+export type { CreateMessageCallback } from '../security/chat-completion-adapter.js';
 
 export type ShellToolRuntime = {
   processManager: ProcessManager;
@@ -23,6 +27,8 @@ export type ShellToolRuntime = {
 
 export type ShellToolRuntimeOptions = {
   server?: Server;
+  createMessage?: CreateMessageCallback;
+  enhancedConfigOverrides?: Partial<EnhancedSecurityConfig>;
   outputDir?: string;
   maxConcurrentProcesses?: number;
   defaultWorkingDirectory?: string;
@@ -41,14 +47,16 @@ export function createShellToolRuntime(options: ShellToolRuntimeOptions = {}): S
   const enhancedConfig = configManager.getEnhancedSecurityConfig();
   const commandHistoryManager = new CommandHistoryManager(enhancedConfig);
   const securityManager = new SecurityManager();
+  if (options.enhancedConfigOverrides) {
+    securityManager.setEnhancedConfig(options.enhancedConfigOverrides);
+  }
 
   if (securityManager.isEnhancedModeEnabled()) {
-    if (!options.server) {
-      throw new Error(
-        'Enhanced security mode requires LLM server connection but no server was provided.'
-      );
-    }
-    securityManager.initializeEnhancedEvaluator(commandHistoryManager, options.server);
+    securityManager.initializeEnhancedEvaluator(
+      commandHistoryManager,
+      options.server,
+      options.createMessage
+    );
   }
 
   commandHistoryManager.loadHistory().catch((error) => {

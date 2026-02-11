@@ -9,6 +9,7 @@ import {
 import { SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
+import { createMessageCallbackFromMCPServer, type CreateMessageCallback } from './chat-completion-adapter.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
@@ -504,21 +505,33 @@ export class SecurityManager {
   /**
    * Initialize Enhanced Safety Evaluator
    */
-  initializeEnhancedEvaluator(historyManager: CommandHistoryManager, server?: Server): void {
-    if (this.enhancedConfig.enhanced_mode_enabled) {
-      this.historyManager = historyManager;
+  initializeEnhancedEvaluator(
+    historyManager: CommandHistoryManager,
+    server?: Server,
+    createMessage?: CreateMessageCallback
+  ): void {
+    if (!this.enhancedConfig.enhanced_mode_enabled) {
+      return;
+    }
 
-      // Enhanced mode requires LLM evaluation capability
+    this.historyManager = historyManager;
+
+    if (!createMessage) {
       if (!server) {
         throw new Error(
-          'Enhanced security mode requires LLM server connection but server is not available. Enhanced mode cannot function without LLM evaluation capability.'
+          'Enhanced security mode requires an LLM provider but no server or LanguageModel adapter was provided.'
         );
       }
+      createMessage = createMessageCallbackFromMCPServer(server);
+    }
 
-      // Create enhanced evaluator with server for automatic createMessage setup
-      this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager, server);
+    if (!server) {
+      this.setEnhancedConfig({ elicitation_enabled: false });
+    }
 
-      // Set up MCP server reference for elicitation (proper MCP protocol)
+    this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager, createMessage, server);
+
+    if (server) {
       this.enhancedEvaluator.setMCPServer(server);
     }
   }

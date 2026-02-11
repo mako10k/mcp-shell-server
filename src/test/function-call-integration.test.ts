@@ -1,5 +1,4 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { EnhancedSafetyEvaluator } from '../security/enhanced-evaluator.js';
 import { SecurityManager } from '../security/manager.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
@@ -15,15 +14,13 @@ describe('Function Call Integration Tests', () => {
   let securityManager: SecurityManager;
   let historyManager: CommandHistoryManager;
   let evaluator: EnhancedSafetyEvaluator;
-  let mockServer: Server;
+  let createMessage: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     securityManager = new SecurityManager();
     historyManager = new CommandHistoryManager(DEFAULT_ENHANCED_SECURITY_CONFIG);
-    mockServer = {
-      createMessage: vi.fn().mockResolvedValue({ content: { text: '' } })
-    } as unknown as Server;
-    evaluator = new EnhancedSafetyEvaluator(securityManager, historyManager, mockServer);
+    createMessage = vi.fn().mockResolvedValue({ content: { type: 'text', text: '' } });
+    evaluator = new EnhancedSafetyEvaluator(securityManager, historyManager, createMessage);
   });
 
   afterEach(() => {
