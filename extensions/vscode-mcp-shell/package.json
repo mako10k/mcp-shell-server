@@ -2,7 +2,7 @@
   "name": "mcp-shell-server-vscode",
   "displayName": "MCP Shell Server",
   "description": "VS Code extension that registers MCP Shell Server as an MCP server.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "mako10k",
   "license": "MIT",
   "repository": {
@@ -378,15 +378,19 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p .",
+    "build": "npm run typecheck && npm run bundle:extension && npm run bundle:server",
+    "bundle:extension": "esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --sourcemap --outfile=dist/extension.js --external:vscode --external:node-pty",
+    "bundle:server": "esbuild node_modules/@mako10k/mcp-shell-server/dist/index.js --bundle --platform=node --target=node18 --format=cjs --sourcemap --outfile=dist/mcp-shell-server.js --external:node-pty",
     "package": "npm run build && npx -y @vscode/vsce package",
-    "package:release": "npm run build && npm prune --omit=dev && npx -y @vscode/vsce package",
+    "package:release": "npm install --include=dev && npm run build && npm prune --omit=dev && npx -y @vscode/vsce package",
+    "typecheck": "tsc -p . --noEmit",
     "watch": "tsc -p . -w"
   },
   "dependencies": {
     "@mako10k/mcp-shell-server": "^2.7.0"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.101.0",
     "typescript": "^5.5.0"

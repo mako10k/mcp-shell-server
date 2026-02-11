@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import type { ShellToolRuntime } from '@mako10k/mcp-shell-server/tool-runtime';
+import { createShellToolRuntime, type ShellToolRuntime } from '@mako10k/mcp-shell-server/tool-runtime';
 
 const PROVIDER_ID = 'mcp-shell-server.provider';
 const SERVER_LABEL = 'MCP Shell Server';
@@ -36,11 +36,8 @@ function getWorkspaceCwd(): string | undefined {
 function getServerEntry(context: vscode.ExtensionContext): string {
   return path.join(
     context.extensionPath,
-    'node_modules',
-    '@mako10k',
-    'mcp-shell-server',
     'dist',
-    'index.js'
+    'mcp-shell-server.js'
   );
 }
 
@@ -59,7 +56,6 @@ async function getRuntime(
         throw new Error(message);
       }
 
-      const { createShellToolRuntime } = await import('@mako10k/mcp-shell-server/tool-runtime');
       const workspaceCwd = getWorkspaceCwd();
       return createShellToolRuntime({ defaultWorkingDirectory: workspaceCwd });
     })();
