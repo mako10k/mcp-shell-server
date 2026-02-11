@@ -1,5 +1,5 @@
-import { 
-  CommandHistoryEntry, 
+import {
+  CommandHistoryEntry,
   SimplifiedLLMEvaluationResult,
   FunctionCallHandlerRegistry,
   FunctionCallContext,
@@ -15,6 +15,11 @@ import {
   SafetyEvaluationResultFactory,
   ElicitationResult
 } from '../types/index.js';
+import type {
+  ElicitationSchema,
+  ElicitationResponse,
+  ElicitationHandler
+} from './evaluator-types.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { getCurrentTimestamp, generateId, logger } from '../utils/helpers.js';
 import { repairAndParseJson } from '../utils/json-repair.js';
@@ -25,29 +30,6 @@ import { ElicitResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { SecurityLLMPromptGenerator } from './security-llm-prompt-generator.js';
 import { CCCToMCPCMAdapter, CreateMessageCallback } from './chat-completion-adapter.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-
-// Elicitation interfaces (based on mcp-confirm implementation)
-interface ElicitationSchema {
-  type: 'object';
-  properties: Record<
-    string,
-    {
-      type: string;
-      title?: string;
-      description?: string;
-      minimum?: number;
-      maximum?: number;
-      enum?: string[];
-      [key: string]: unknown;
-    }
-  >;
-  required?: string[];
-}
-
-interface ElicitationResponse {
-  action: 'accept' | 'decline' | 'cancel';
-  content?: Record<string, unknown>;
-}
 
 // Tool call interface for OpenAI API compatibility
 interface ToolCall {
@@ -188,17 +170,20 @@ export class EnhancedSafetyEvaluator {
   private securityManager: SecurityManager;
   private historyManager: CommandHistoryManager;
   private mcpServer: Server | undefined;
+  private elicitationHandler: ElicitationHandler | undefined;
   private functionCallHandlers: FunctionCallHandlerRegistry;
 
   constructor(
     securityManager: SecurityManager,
     historyManager: CommandHistoryManager,
     createMessage: CreateMessageCallback,
-    mcpServer?: Server
+    mcpServer?: Server,
+    elicitationHandler?: ElicitationHandler
   ) {
     this.securityManager = securityManager;
     this.historyManager = historyManager;
     this.mcpServer = mcpServer;
+    this.elicitationHandler = elicitationHandler;
 
     // Initialize Function Call handler registry
     this.functionCallHandlers = this.initializeFunctionCallHandlers();
@@ -1197,8 +1182,9 @@ export class EnhancedSafetyEvaluator {
       return { userIntent: null, elicitationResponse: null };
     }
 
-    if (!this.mcpServer) {
-      throw new Error('MCP server not available for elicitation');
+    const mcpServer = this.mcpServer;
+    if (!this.elicitationHandler && !mcpServer) {
+      throw new Error('No elicitation handler or MCP server available for elicitation');
     }
 
     // Use specific question from LLM if provided, otherwise use default message
@@ -1229,17 +1215,24 @@ export class EnhancedSafetyEvaluator {
     const timestamp = getCurrentTimestamp();
 
     try {
-      const requestPayload = {
-        method: 'elicitation/create',
-        params: {
-          message: elicitationMessage,
-          requestedSchema: elicitationSchema,
-          timeoutMs: 180000,
-          level: 'question',
-        },
+      const elicitationRequest = {
+        message: elicitationMessage,
+        requestedSchema: elicitationSchema,
+        timeoutMs: 180000,
+        level: 'question',
       };
 
-      const response = await this.mcpServer.request(requestPayload, ElicitResultSchema);
+      let response: unknown;
+      if (this.elicitationHandler) {
+        response = await this.elicitationHandler(elicitationRequest);
+      } else if (mcpServer) {
+        response = await mcpServer.request(
+          { method: 'elicitation/create', params: elicitationRequest },
+          ElicitResultSchema
+        );
+      } else {
+        throw new Error('MCP server not available for elicitation');
+      }
       const endTime = Date.now();
       const duration = endTime - startTime;
 

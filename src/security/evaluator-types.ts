@@ -145,6 +145,13 @@ export type CreateMessageResponse = z.infer<typeof CreateMessageResponseSchema>;
 export type ElicitationProperty = z.infer<typeof ElicitationPropertySchema>;
 export type ElicitationSchema = z.infer<typeof ElicitationSchemaSchema>;
 export type ElicitationResponse = z.infer<typeof ElicitationResponseSchema>;
+export type ElicitationRequest = {
+  message: string;
+  requestedSchema: ElicitationSchema;
+  timeoutMs: number;
+  level: 'question' | 'warning' | 'info' | string;
+};
+export type ElicitationHandler = (request: ElicitationRequest) => Promise<ElicitationResponse>;
 export type RequiresAdditionalContext = z.infer<typeof RequiresAdditionalContextSchema>;
 export type LLMEvaluationResult = z.infer<typeof LLMEvaluationResultSchema>;
 export type UserIntentData = z.infer<typeof UserIntentDataSchema>;

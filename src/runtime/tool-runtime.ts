@@ -7,12 +7,14 @@ import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
 import { SecurityManager } from '../security/manager.js';
 import type { CreateMessageCallback } from '../security/chat-completion-adapter.js';
+import type { ElicitationHandler } from '../security/evaluator-types.js';
 import type { EnhancedSecurityConfig } from '../types/enhanced-security.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { ShellTools } from '../tools/shell-tools.js';
 import { logger } from '../utils/helpers.js';
 
 export type { CreateMessageCallback } from '../security/chat-completion-adapter.js';
+export type { ElicitationHandler } from '../security/evaluator-types.js';
 
 export type ShellToolRuntime = {
   processManager: ProcessManager;
@@ -28,6 +30,7 @@ export type ShellToolRuntime = {
 export type ShellToolRuntimeOptions = {
   server?: Server;
   createMessage?: CreateMessageCallback;
+  elicitationHandler?: ElicitationHandler;
   enhancedConfigOverrides?: Partial<EnhancedSecurityConfig>;
   outputDir?: string;
   maxConcurrentProcesses?: number;
@@ -55,7 +58,8 @@ export function createShellToolRuntime(options: ShellToolRuntimeOptions = {}): S
     securityManager.initializeEnhancedEvaluator(
       commandHistoryManager,
       options.server,
-      options.createMessage
+      options.createMessage,
+      options.elicitationHandler
     );
   }
 

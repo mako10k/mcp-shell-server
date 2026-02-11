@@ -10,6 +10,7 @@ import { SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 import { createMessageCallbackFromMCPServer, type CreateMessageCallback } from './chat-completion-adapter.js';
+import type { ElicitationHandler } from './evaluator-types.js';
 import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
@@ -508,7 +509,8 @@ export class SecurityManager {
   initializeEnhancedEvaluator(
     historyManager: CommandHistoryManager,
     server?: Server,
-    createMessage?: CreateMessageCallback
+    createMessage?: CreateMessageCallback,
+    elicitationHandler?: ElicitationHandler
   ): void {
     if (!this.enhancedConfig.enhanced_mode_enabled) {
       return;
@@ -525,11 +527,17 @@ export class SecurityManager {
       createMessage = createMessageCallbackFromMCPServer(server);
     }
 
-    if (!server) {
+    if (!server && !elicitationHandler) {
       this.setEnhancedConfig({ elicitation_enabled: false });
     }
 
-    this.enhancedEvaluator = new EnhancedSafetyEvaluator(this, historyManager, createMessage, server);
+    this.enhancedEvaluator = new EnhancedSafetyEvaluator(
+      this,
+      historyManager,
+      createMessage,
+      server,
+      elicitationHandler
+    );
 
     if (server) {
       this.enhancedEvaluator.setMCPServer(server);

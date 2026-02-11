@@ -1,7 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { createShellToolRuntime, type ShellToolRuntime, type CreateMessageCallback } from '@mako10k/mcp-shell-server/tool-runtime';
+import {
+  createShellToolRuntime,
+  type ShellToolRuntime,
+  type CreateMessageCallback,
+  type ElicitationHandler
+} from '@mako10k/mcp-shell-server/tool-runtime';
 
 const PROVIDER_ID = 'mcp-shell-server.provider';
 const SERVER_LABEL = 'MCP Shell Server';
@@ -85,6 +90,37 @@ function createVSCodeMessageCallback(): CreateMessageCallback {
   };
 }
 
+function createVSCodeElicitationHandler(): ElicitationHandler {
+  return async (request) => {
+    const selection = await vscode.window.showWarningMessage(
+      request.message,
+      { modal: true },
+      'Run',
+      'Do not run',
+      'Cancel'
+    );
+
+    if (!selection || selection === 'Cancel') {
+      return { action: 'cancel' };
+    }
+
+    const confirmed = selection === 'Run';
+    const reason = await vscode.window.showInputBox({
+      prompt: confirmed
+        ? 'Why do you need to run this command? (optional)'
+        : 'Why are you declining this command? (optional)'
+    });
+
+    return {
+      action: 'accept',
+      content: {
+        confirmed,
+        reason: reason ?? ''
+      }
+    };
+  };
+}
+
 async function getRuntime(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel
@@ -102,7 +138,7 @@ async function getRuntime(
       return createShellToolRuntime({
         defaultWorkingDirectory: workspaceCwd,
         createMessage: createVSCodeMessageCallback(),
-        enhancedConfigOverrides: { elicitation_enabled: false }
+        elicitationHandler: createVSCodeElicitationHandler()
       });
     })();
   }
