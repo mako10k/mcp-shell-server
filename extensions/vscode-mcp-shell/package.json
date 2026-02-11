@@ -327,8 +327,7 @@
     "watch": "tsc -p . -w"
   },
   "dependencies": {
-    "@mako10k/mcp-shell-server": "^2.5.1",
-    "@modelcontextprotocol/sdk": "^1.17.2"
+    "@mako10k/mcp-shell-server": "^2.5.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.96.0",

@@ -12,12 +12,11 @@ import { ProcessManager } from './core/process-manager.js';
 import { TerminalManager } from './core/terminal-manager.js';
 import { FileManager } from './core/file-manager.js';
 import { MonitoringManager } from './core/monitoring-manager.js';
-import { SecurityManager } from './security/manager.js';
-import { ConfigManager } from './core/config-manager.js';
 import { CommandHistoryManager } from './core/enhanced-history-manager.js';
 import { ShellTools } from './tools/shell-tools.js';
 import { logger } from './utils/helpers.js';
 import { ExecutionInfo } from './types/index.js';
+import { createShellToolRuntime } from './runtime/tool-runtime.js';
 
 import {
   ShellExecuteParamsSchema,
@@ -54,8 +53,6 @@ export class MCPShellServer {
   private terminalManager: TerminalManager;
   private fileManager: FileManager;
   private monitoringManager: MonitoringManager;
-  private securityManager: SecurityManager;
-  private configManager: ConfigManager;
   private commandHistoryManager: CommandHistoryManager;
   private shellTools: ShellTools;
   private backoffice?: BackofficeServer;
@@ -75,33 +72,13 @@ export class MCPShellServer {
       }
     );
 
-    // マネージャーの初期化（FileManagerを最初に初期化）
-    this.fileManager = new FileManager();
-    this.configManager = new ConfigManager();
-    this.processManager = new ProcessManager(50, '/tmp/mcp-shell-outputs', this.fileManager);
-    this.terminalManager = new TerminalManager();
-    this.monitoringManager = new MonitoringManager();
-    
-    // Enhanced security configを取得してCommandHistoryManagerを初期化
-    const enhancedConfig = this.configManager.getEnhancedSecurityConfig();
-    this.commandHistoryManager = new CommandHistoryManager(enhancedConfig);
-    
-    // SecurityManagerを先に作成（後でEnhancedSafetyEvaluatorを初期化）
-    this.securityManager = new SecurityManager();
-    
-    // EnhancedSafetyEvaluatorを初期化
-    this.securityManager.initializeEnhancedEvaluator(this.commandHistoryManager, this.server);
-    
-    // Load existing command history
-    this.commandHistoryManager.loadHistory().catch(error => {
-      console.warn('Failed to load command history:', error);
-    });
-
-    // Initialize Enhanced Safety Evaluator in SecurityManager with MCP server instance
-    this.securityManager.initializeEnhancedEvaluator(this.commandHistoryManager, this.server);
-
-    // ProcessManagerにTerminalManagerの参照を設定
-    this.processManager.setTerminalManager(this.terminalManager);
+    const runtime = createShellToolRuntime({ server: this.server });
+    this.fileManager = runtime.fileManager;
+    this.processManager = runtime.processManager;
+    this.terminalManager = runtime.terminalManager;
+    this.monitoringManager = runtime.monitoringManager;
+    this.commandHistoryManager = runtime.commandHistoryManager;
+    this.shellTools = runtime.shellTools;
 
     // バックグラウンドプロセス終了時のコールバックを設定
     this.processManager.setBackgroundProcessCallbacks({
@@ -115,16 +92,6 @@ export class MCPShellServer {
         await this.notifyBackgroundProcessTimeout(executionId, executionInfo);
       }
     });
-
-    // ツールハンドラーの初期化
-    this.shellTools = new ShellTools(
-      this.processManager,
-      this.terminalManager,
-      this.fileManager,
-      this.monitoringManager,
-      this.securityManager,
-      this.commandHistoryManager
-    );
 
     this.setupHandlers();
 

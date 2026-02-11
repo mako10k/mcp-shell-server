@@ -23,16 +23,28 @@ const TOOL_NAMES = [
 
 type ToolName = (typeof TOOL_NAMES)[number];
 
-type McpClient = {
-  connect: (transport: unknown) => Promise<void>;
-  request: (request: {
-    method: string;
-    params: { name: string; arguments: Record<string, unknown> };
-  }) => Promise<unknown>;
-  close?: () => Promise<void> | void;
+type ToolParams = Record<string, unknown>;
+
+type ShellToolsApi = {
+  executeShell: (params: ToolParams) => Promise<unknown>;
+  getExecution: (params: ToolParams) => Promise<unknown>;
+  setDefaultWorkingDirectory: (params: ToolParams) => Promise<unknown>;
+  listFiles: (params: ToolParams) => Promise<unknown>;
+  readFile: (params: ToolParams) => Promise<unknown>;
+  deleteFiles: (params: ToolParams) => Promise<unknown>;
+  getCleanupSuggestions: (params?: ToolParams) => Promise<unknown>;
+  performAutoCleanup: (params?: ToolParams) => Promise<unknown>;
+  terminalOperate: (params: ToolParams) => Promise<unknown>;
+  listTerminals: (params: ToolParams) => Promise<unknown>;
+  getTerminal: (params: ToolParams) => Promise<unknown>;
+  closeTerminal: (params: ToolParams) => Promise<unknown>;
+  queryCommandHistory: (params: ToolParams) => Promise<unknown>;
 };
 
-type ToolParams = Record<string, unknown>;
+type ShellToolRuntime = {
+  shellTools: ShellToolsApi;
+  cleanup: () => Promise<void>;
+};
 
 function getWorkspaceCwd(): string | undefined {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -50,40 +62,31 @@ function getServerEntry(context: vscode.ExtensionContext): string {
   );
 }
 
-async function createMcpClient(
+let runtimePromise: Promise<ShellToolRuntime> | undefined;
+
+async function getRuntime(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel
-): Promise<McpClient> {
-  const serverEntry = getServerEntry(context);
-  if (!fs.existsSync(serverEntry)) {
-    const message = `MCP Shell Server entry not found at ${serverEntry}`;
-    output.appendLine(message);
-    throw new Error(message);
+): Promise<ShellToolRuntime> {
+  if (!runtimePromise) {
+    runtimePromise = (async () => {
+      const serverEntry = getServerEntry(context);
+      if (!fs.existsSync(serverEntry)) {
+        const message = `MCP Shell Server entry not found at ${serverEntry}`;
+        output.appendLine(message);
+        throw new Error(message);
+      }
+
+      const { createShellToolRuntime } = await import('@mako10k/mcp-shell-server/tool-runtime');
+      const workspaceCwd = getWorkspaceCwd();
+      return createShellToolRuntime({ defaultWorkingDirectory: workspaceCwd });
+    })();
   }
 
-  const [{ Client }, { StdioClientTransport }] = await Promise.all([
-    import('@modelcontextprotocol/sdk/client/index.js'),
-    import('@modelcontextprotocol/sdk/client/stdio.js')
-  ]);
-
-  const workspaceCwd = getWorkspaceCwd() ?? context.extensionPath;
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [serverEntry],
-    env: process.env,
-    cwd: workspaceCwd
-  });
-
-  const client = new Client(
-    { name: 'vscode-mcp-shell-tools', version: SERVER_VERSION },
-    { capabilities: {} }
-  ) as McpClient;
-
-  await client.connect(transport);
-  return client;
+  return runtimePromise;
 }
 
-class McpBridgeTool implements vscode.LanguageModelTool<ToolParams> {
+class DirectShellTool implements vscode.LanguageModelTool<ToolParams> {
   constructor(
     private context: vscode.ExtensionContext,
     private output: vscode.OutputChannel,
@@ -108,24 +111,12 @@ class McpBridgeTool implements vscode.LanguageModelTool<ToolParams> {
     options: vscode.LanguageModelToolInvocationOptions<ToolParams>,
     _token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelToolResult> {
-    const client = await createMcpClient(this.context, this.output);
-    try {
-      const result = await client.request({
-        method: 'tools/call',
-        params: {
-          name: this.toolName,
-          arguments: options.input
-        }
-      });
+    const runtime = await getRuntime(this.context, this.output);
+    const result = await dispatchToolCall(runtime.shellTools, this.toolName, options.input);
 
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(JSON.stringify(result))
-      ]);
-    } finally {
-      if (client.close) {
-        await client.close();
-      }
-    }
+    return new vscode.LanguageModelToolResult([
+      new vscode.LanguageModelTextPart(JSON.stringify(result))
+    ]);
   }
 }
 
@@ -156,6 +147,43 @@ function buildConfirmationMessage(toolName: ToolName, input?: ToolParams): vscod
   }
 
   return new vscode.MarkdownString(`Run ${toolName}?`);
+}
+
+async function dispatchToolCall(
+  shellTools: ShellToolsApi,
+  toolName: ToolName,
+  params?: ToolParams
+): Promise<unknown> {
+  switch (toolName) {
+    case 'shell_execute':
+      return shellTools.executeShell(params ?? {});
+    case 'process_get_execution':
+      return shellTools.getExecution(params ?? {});
+    case 'shell_set_default_workdir':
+      return shellTools.setDefaultWorkingDirectory(params ?? {});
+    case 'list_execution_outputs':
+      return shellTools.listFiles(params ?? {});
+    case 'read_execution_output':
+      return shellTools.readFile(params ?? {});
+    case 'delete_execution_outputs':
+      return shellTools.deleteFiles(params ?? {});
+    case 'get_cleanup_suggestions':
+      return shellTools.getCleanupSuggestions(params);
+    case 'perform_auto_cleanup':
+      return shellTools.performAutoCleanup(params);
+    case 'terminal_operate':
+      return shellTools.terminalOperate(params ?? {});
+    case 'terminal_list':
+      return shellTools.listTerminals(params ?? {});
+    case 'terminal_get_info':
+      return shellTools.getTerminal(params ?? {});
+    case 'terminal_close':
+      return shellTools.closeTerminal(params ?? {});
+    case 'command_history_query':
+      return shellTools.queryCommandHistory(params ?? {});
+    default:
+      throw new Error(`Unsupported tool: ${toolName}`);
+  }
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -189,12 +217,19 @@ export function activate(context: vscode.ExtensionContext) {
 
   const registration = vscode.lm.registerMcpServerDefinitionProvider(PROVIDER_ID, provider);
   const toolRegistrations = TOOL_NAMES.map((toolName) =>
-    vscode.lm.registerTool(toolName, new McpBridgeTool(context, output, toolName))
+    vscode.lm.registerTool(toolName, new DirectShellTool(context, output, toolName))
   );
 
   context.subscriptions.push(output, registration, ...toolRegistrations);
 }
 
-export function deactivate() {
-  // No-op: resources are disposed via subscriptions.
+export async function deactivate() {
+  if (runtimePromise) {
+    try {
+      const runtime = await runtimePromise;
+      await runtime.cleanup();
+    } catch (error) {
+      // Avoid throwing on shutdown.
+    }
+  }
 }

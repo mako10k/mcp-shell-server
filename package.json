@@ -3,6 +3,10 @@
   "version": "2.5.1",
   "description": "MCP Shell Server - Secure shell operations and terminal management for Model Context Protocol",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./tool-runtime": "./dist/runtime/tool-runtime.js"
+  },
   "type": "module",
   "bin": {
     "mcp-shell-server": "dist/index.js"
