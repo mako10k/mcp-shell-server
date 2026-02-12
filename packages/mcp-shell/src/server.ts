@@ -150,6 +150,37 @@ export class MCPShellServer {
           return null;
       }
     };
+
+    const parseNonServerParams = (name: string, args: ToolParams | undefined): ToolParams | null => {
+      switch (name) {
+        case 'process_get_execution':
+          return ShellGetExecutionParamsSchema.parse(args);
+        case 'shell_set_default_workdir':
+          return ShellSetDefaultWorkdirParamsSchema.parse(args);
+        case 'list_execution_outputs':
+          return FileListParamsSchema.parse(args);
+        case 'read_execution_output':
+          return FileReadParamsSchema.parse(args);
+        case 'delete_execution_outputs':
+          return FileDeleteParamsSchema.parse(args);
+        case 'get_cleanup_suggestions':
+          return CleanupSuggestionsParamsSchema.parse(args);
+        case 'perform_auto_cleanup':
+          return AutoCleanupParamsSchema.parse(args);
+        case 'terminal_operate':
+          return TerminalOperateParamsSchema.parse(args);
+        case 'terminal_list':
+          return TerminalListParamsSchema.parse(args);
+        case 'terminal_get_info':
+          return TerminalGetParamsSchema.parse(args);
+        case 'terminal_close':
+          return TerminalCloseParamsSchema.parse(args);
+        case 'command_history_query':
+          return CommandHistoryQueryParamsSchema.parse(args);
+        default:
+          return null;
+      }
+    };
     // ツールリストの提供
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
@@ -300,11 +331,12 @@ export class MCPShellServer {
 
         if (name === 'shell_execute') {
           try {
+            const parsed = ShellExecuteParamsSchema.parse(args);
             const result = await dispatchToolCall(
               this.shellTools,
               this.serverManager,
               name as ToolName,
-              args as ToolParams,
+              parsed as ToolParams,
               dispatchOptions
             );
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -342,6 +374,18 @@ export class MCPShellServer {
             this.serverManager,
             name as ToolName,
             parsedServerParams as ToolParams,
+            dispatchOptions
+          );
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
+        const parsedNonServerParams = parseNonServerParams(name, args as ToolParams);
+        if (parsedNonServerParams) {
+          const result = await dispatchToolCall(
+            this.shellTools,
+            this.serverManager,
+            name as ToolName,
+            parsedNonServerParams as ToolParams,
             dispatchOptions
           );
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
