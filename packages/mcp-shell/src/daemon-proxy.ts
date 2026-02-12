@@ -37,6 +37,8 @@ function serializeMessage(message: JSONRPCMessage): string {
 
 const SOCKET_READY_TIMEOUT_MS = 3000;
 const SOCKET_READY_INTERVAL_MS = 200;
+const TRANSPORT_READY_TIMEOUT_MS = 2000;
+const TRANSPORT_READY_INTERVAL_MS = 200;
 
 async function validateSocketPermissions(socketPath: string): Promise<void> {
   const stat = await fs.stat(socketPath);
@@ -126,7 +128,29 @@ export async function runDaemonProxy(socketPath: string): Promise<void> {
     process.exit(0);
   };
 
-  await transport.start();
+  const startTransport = async () => {
+    const deadline = Date.now() + TRANSPORT_READY_TIMEOUT_MS;
+    let lastError: unknown = null;
+
+    while (Date.now() < deadline) {
+      try {
+        await transport.start();
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        lastError = error;
+        if (code !== 'ECONNREFUSED') {
+          throw error;
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, TRANSPORT_READY_INTERVAL_MS));
+    }
+
+    throw lastError || new Error('Timed out waiting for daemon transport.');
+  };
+
+  await startTransport();
 
   process.stdin.on('data', (chunk) => {
     readBuffer.append(chunk);
