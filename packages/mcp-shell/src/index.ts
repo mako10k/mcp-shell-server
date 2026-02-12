@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { MCPShellServer } from './server.js';
+import { runDaemonProxy } from './daemon-proxy.js';
+import { StubServerManager } from '../../shell-server/src/core/server-manager.js';
 import { logger } from '../../shell-server/src/utils/helpers.js';
 import fs from 'fs/promises';
 
@@ -41,6 +43,8 @@ function printHelp(version: string): void {
     '  MCP_SHELL_DEFAULT_WORKDIR  Default working directory for shell_execute',
     '  MCP_ALLOWED_WORKDIRS       Comma-separated allowed directories',
     '  MCP_DISABLED_TOOLS         Comma-separated tool names to disable',
+    '  MCP_SHELL_DAEMON_ENABLED=true  Enable daemon process separation',
+    '  MCP_SHELL_USE_DAEMON_MCP=false  Disable MCP daemon proxy (default: enabled when daemon is on)',
     '  LOG_LEVEL=debug|info|warn|error  Log verbosity',
     '',
     'Related commands (from package scripts):',
@@ -64,6 +68,23 @@ async function main() {
   if (argv.includes('--help') || argv.includes('-h')) {
     const ver = await getVersion();
     printHelp(ver);
+    return;
+  }
+
+  const daemonEnabled = process.env['MCP_SHELL_DAEMON_ENABLED'] === 'true';
+  const useDaemonMcp = process.env['MCP_SHELL_USE_DAEMON_MCP'] !== 'false';
+
+  if (daemonEnabled && useDaemonMcp) {
+    const serverManager = new StubServerManager();
+    const cwd = process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd();
+    const started = await serverManager.start({ cwd, allowExisting: true });
+    const info = await serverManager.get({ serverId: started.serverId });
+    const socketPath = info?.mcpSocketPath;
+    if (!socketPath) {
+      throw new Error('MCP daemon socket was not available.');
+    }
+
+    await runDaemonProxy(socketPath);
     return;
   }
 

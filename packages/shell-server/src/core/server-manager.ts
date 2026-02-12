@@ -705,6 +705,7 @@ export class StubServerManager implements ServerManager {
         status: this.deriveStatus(response.attached, response.detached),
         cwd: response.cwd || process.cwd(),
         ...(response.socketPath ? { socketPath: response.socketPath } : { socketPath }),
+        ...(response.mcpSocketPath ? { mcpSocketPath: response.mcpSocketPath } : {}),
         createdAt: response.startedAt || this.createdAt,
         lastSeenAt: new Date().toISOString(),
         ...(typeof response.pid === 'number' ? { pid: response.pid } : {}),
