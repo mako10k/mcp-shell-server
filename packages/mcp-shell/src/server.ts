@@ -82,6 +82,7 @@ export class MCPShellServer {
     this.commandHistoryManager = runtime.commandHistoryManager;
     this.shellTools = runtime.shellTools;
     this.serverManager = runtime.serverManager;
+    void this.serverManager;
 
     // バックグラウンドプロセス終了時のコールバックを設定
     this.processManager.setBackgroundProcessCallbacks({
