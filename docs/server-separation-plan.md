@@ -100,7 +100,7 @@
   - src/index.ts (CLI entry)
   - src/server.ts (MCP server wrapper)
 - packages/code-shell-extension/
-  - extensions/vscode-mcp-shell/
+  - vscode-mcp-shell/
 - packages/shell-server-backend/
   - public/ (backoffice UI assets)
   - docs/backoffice-design.md (if dedicated to backend)
@@ -110,33 +110,33 @@ Notes:
 - Backoffice is experimental; placement can be deferred until its scope is fixed.
 
 ### Phase 1 Inventory (Current Entry Points)
-- CLI entry: src/index.ts
-- MCP server: src/server.ts
-- Executor backend: src/executor/server.ts
-- Backoffice UI server: src/backoffice/server.ts
-- Backoffice entry: src/backoffice/index.ts
-- Tool runtime export: src/runtime/tool-runtime.ts
-- VSCode extension: extensions/vscode-mcp-shell/
+- CLI entry: packages/mcp-shell/src/index.ts
+- MCP server: packages/mcp-shell/src/server.ts
+- Executor backend: packages/shell-server/src/executor/server.ts
+- Backoffice UI server: packages/shell-server/src/backoffice/server.ts
+- Backoffice entry: packages/shell-server/src/backoffice/index.ts
+- Tool runtime export: packages/shell-server/src/runtime/tool-runtime.ts
+- VSCode extension: packages/code-shell-extension/vscode-mcp-shell/
 
 ### Phase 1 Inventory (Core Dependency Hubs)
-- Tool runtime (src/runtime/tool-runtime.ts)
+- Tool runtime (packages/shell-server/src/runtime/tool-runtime.ts)
   - core: ConfigManager, ProcessManager, TerminalManager, FileManager,
     MonitoringManager, CommandHistoryManager
   - tools: ShellTools
   - security: SecurityManager, evaluator types
   - utils: logger
   - types: EnhancedSecurityConfig
-- Shell tools (src/tools/shell-tools.ts)
+- Shell tools (packages/shell-server/src/tools/shell-tools.ts)
   - core: ProcessManager, TerminalManager, FileManager, MonitoringManager
   - security: SecurityManager
   - types: schemas, quick-schemas, shared types
   - utils: errors, criteria-manager
-- Process manager (src/core/process-manager.ts)
+- Process manager (packages/shell-server/src/core/process-manager.ts)
   - types: execution and output models
   - utils: helpers, errors
   - core: terminal-manager, file-manager
   - streaming: stream-publisher, subscribers, pipeline reader
-- Terminal manager (src/core/terminal-manager.ts)
+- Terminal manager (packages/shell-server/src/core/terminal-manager.ts)
   - types: terminal models
   - utils: helpers, errors, process-utils
   - external: node-pty (lazy-loaded)
@@ -164,23 +164,23 @@ Notes:
 
 ### Phase 1 Import Update Checklist
 - Entry points:
-  - src/index.ts (CLI entry -> packages/mcp-shell/src)
-  - src/server.ts (MCP server -> packages/mcp-shell/src)
-  - src/executor/server.ts (executor -> packages/shell-server/src/executor)
-  - src/backoffice/* (experimental; update only if moved)
+  - packages/mcp-shell/src/index.ts
+  - packages/mcp-shell/src/server.ts
+  - packages/shell-server/src/executor/server.ts
+  - packages/shell-server/src/backoffice/* (experimental; update only if moved)
 - Shared runtime:
-  - src/runtime/tool-runtime.ts
-  - src/tools/shell-tools.ts
+  - packages/shell-server/src/runtime/tool-runtime.ts
+  - packages/shell-server/src/tools/shell-tools.ts
 - Core managers and streaming:
-  - src/core/process-manager.ts
-  - src/core/terminal-manager.ts
-  - src/core/file-manager.ts
-  - src/core/monitoring-manager.ts
-  - src/core/*-subscriber.ts and stream-publisher.ts
+  - packages/shell-server/src/core/process-manager.ts
+  - packages/shell-server/src/core/terminal-manager.ts
+  - packages/shell-server/src/core/file-manager.ts
+  - packages/shell-server/src/core/monitoring-manager.ts
+  - packages/shell-server/src/core/*-subscriber.ts and stream-publisher.ts
 - Types and schemas:
-  - src/types/index.ts
-  - src/types/schemas.ts
-  - src/types/quick-schemas.ts
+  - packages/shell-server/src/types/index.ts
+  - packages/shell-server/src/types/schemas.ts
+  - packages/shell-server/src/types/quick-schemas.ts
 
 ### Phase 2: Foundation Consolidation
 - Move daemon and server management into shell-server.

@@ -6,7 +6,7 @@ Copilot Chat で MCP Shell Server と同等のツール群を VSIX から直接�
 
 参照:
 - [docs/specification.md](docs/specification.md)
-- [src/server.ts](src/server.ts)
+- packages/mcp-shell/src/server.ts
 - https://code.visualstudio.com/api/extension-guides/ai/tools
 
 ## 現状
@@ -43,7 +43,7 @@ Copilot Chat で MCP Shell Server と同等のツール群を VSIX から直接�
 
 ### 1) VSIX での Language Model Tools 定義
 
-`extensions/vscode-mcp-shell/package.json` に `contributes.languageModelTools` を追加し、MCP ツールと同一の定義を置く。
+`packages/code-shell-extension/vscode-mcp-shell/package.json` に `contributes.languageModelTools` を追加し、MCP ツールと同一の定義を置く。
 
 - `name`: MCP と同名
 - `displayName`: UI での表示名
@@ -55,7 +55,7 @@ Copilot Chat で MCP Shell Server と同等のツール群を VSIX から直接�
 
 ### 2) 拡張側のツール実装
 
-`extensions/vscode-mcp-shell/src/extension.ts` を拡張し、以下の責務を追加する。
+`packages/code-shell-extension/vscode-mcp-shell/src/extension.ts` を拡張し、以下の責務を追加する。
 
 - `vscode.lm.registerTool` でツールを登録
 - ツール実装は MCP サーバーのコアと同一のクラス構成で動作
@@ -110,7 +110,7 @@ MCP サーバーの Enhanced Evaluator は MCP の sampling/elicitation に依�
 
 ## ツール定義の具体案
 
-`extensions/vscode-mcp-shell/package.json` に以下のような定義を追加する。
+`packages/code-shell-extension/vscode-mcp-shell/package.json` に以下のような定義を追加する。
 
 - 各ツールの `inputSchema` は `src/types/schemas.ts` と `src/types/quick-schemas.ts` にある Zod から生成
 - `modelDescription` は MCP の description を基準にする
@@ -130,8 +130,8 @@ MCP サーバーの Enhanced Evaluator は MCP の sampling/elicitation に依�
 
 ## 実装のステップ案
 
-1. `extensions/vscode-mcp-shell/package.json` に `contributes.languageModelTools` を追加
-2. `extensions/vscode-mcp-shell/src/extension.ts` にツール登録処理を追加
+1. `packages/code-shell-extension/vscode-mcp-shell/package.json` に `contributes.languageModelTools` を追加
+2. `packages/code-shell-extension/vscode-mcp-shell/src/extension.ts` にツール登録処理を追加
 3. `ToolRuntime` を新設して MCP サーバーと同じ初期化フローを再現
 4. `ShellTools` の各メソッドを呼び出す `LanguageModelTool` 実装を追加
 5. `prepareInvocation` と結果 JSON 文字列化を統一
