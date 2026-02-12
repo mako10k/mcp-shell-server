@@ -67,7 +67,7 @@ const SOCKET_READY_INTERVAL_MS = 50;
 const SOCKET_REQUEST_TIMEOUT_MS = 1000;
 
 type DaemonRequest = {
-  action: 'status' | 'attach' | 'detach' | 'reattach' | 'stop';
+  action: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop';
 };
 
 type DaemonResponse = {
@@ -77,9 +77,12 @@ type DaemonResponse = {
   detached?: boolean;
   attachedAt?: string;
   detachedAt?: string;
+  startedAt?: string;
+  uptimeSeconds?: number;
   pid?: number;
   cwd?: string;
   branch?: string;
+  socketPath?: string;
 };
 
 type HeartbeatMessage = {
@@ -690,7 +693,7 @@ export class StubServerManager implements ServerManager {
         return null;
       }
 
-      const response = await this.requestDaemon(socketPath, { action: 'status' });
+      const response = await this.requestDaemon(socketPath, { action: 'info' });
       if (!response.ok) {
         return null;
       }
@@ -699,8 +702,8 @@ export class StubServerManager implements ServerManager {
         serverId: options.serverId,
         status: this.deriveStatus(response.attached, response.detached),
         cwd: response.cwd || process.cwd(),
-        socketPath,
-        createdAt: this.createdAt,
+        ...(response.socketPath ? { socketPath: response.socketPath } : { socketPath }),
+        createdAt: response.startedAt || this.createdAt,
         lastSeenAt: new Date().toISOString(),
         ...(typeof response.pid === 'number' ? { pid: response.pid } : {}),
       };

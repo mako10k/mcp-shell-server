@@ -9,7 +9,7 @@ const SOCKET_REQUEST_TIMEOUT_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 500;
 
 type DaemonRequest = {
-  action?: 'status' | 'attach' | 'detach' | 'reattach' | 'stop';
+  action?: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop';
 };
 
 type DaemonResponse = {
@@ -19,9 +19,12 @@ type DaemonResponse = {
   detached?: boolean;
   attachedAt?: string;
   detachedAt?: string;
+  startedAt?: string;
+  uptimeSeconds?: number;
   pid?: number;
   cwd?: string;
   branch?: string;
+  socketPath?: string;
 };
 
 type HeartbeatMessage = {
@@ -87,6 +90,7 @@ async function startDaemon(): Promise<void> {
     // Ignore missing socket.
   }
 
+  const startedAt = new Date().toISOString();
   const state = {
     attached: false,
     detached: false,
@@ -192,7 +196,7 @@ async function startDaemon(): Promise<void> {
       }
 
       const action = request.action || 'status';
-      if (action === 'status') {
+      if (action === 'status' || action === 'info') {
         if (attachSocket) {
           const alive = await checkAttachLiveness();
           if (!alive) {
@@ -201,15 +205,19 @@ async function startDaemon(): Promise<void> {
           }
         }
 
+        const uptimeSeconds = Math.max(0, Math.floor(process.uptime()));
         sendResponse(socket, {
           ok: true,
           attached: state.attached,
           detached: state.detached,
           ...(state.attachedAt ? { attachedAt: state.attachedAt } : {}),
           ...(state.detachedAt ? { detachedAt: state.detachedAt } : {}),
+          ...(action === 'info' ? { startedAt } : {}),
+          ...(action === 'info' ? { uptimeSeconds } : {}),
           pid: process.pid,
           cwd: process.cwd(),
           ...(branch ? { branch } : {}),
+          ...(action === 'info' ? { socketPath } : {}),
         });
         return;
       }
