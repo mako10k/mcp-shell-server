@@ -1,5 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -542,9 +543,12 @@ export class MCPShellServer {
 
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
+    await this.runWithTransport(transport);
+  }
+
+  async runWithTransport(transport: Transport): Promise<void> {
     await this.server.connect(transport);
-    // console.error('MCP Shell Server running on stdio');
-    logger.info('MCP Shell Server running on stdio', {}, 'server');
+    logger.info('MCP Shell Server running', {}, 'server');
     
     // MCPサーバーを実行し続けるために無限に待機
     // MCPクライアントとの接続が切れるまで待機し続ける

@@ -15,6 +15,7 @@ export type ServerInfo = {
   status: ServerStatus;
   cwd: string;
   socketPath?: string;
+  mcpSocketPath?: string;
   createdAt?: string;
   lastSeenAt?: string;
   pid?: number;
@@ -83,6 +84,7 @@ type DaemonResponse = {
   cwd?: string;
   branch?: string;
   socketPath?: string;
+  mcpSocketPath?: string;
 };
 
 type HeartbeatMessage = {

@@ -1,12 +1,14 @@
 import * as fs from 'fs/promises';
 import * as net from 'net';
 import * as path from 'path';
+import { spawn, type ChildProcess } from 'child_process';
 
 import { logger } from '../utils/helpers.js';
 
 const DAEMON_COMPONENT = 'daemon';
 const SOCKET_REQUEST_TIMEOUT_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 500;
+const MCP_SOCKET_FILE_NAME = 'mcp.sock';
 
 type DaemonRequest = {
   action?: 'status' | 'info' | 'attach' | 'detach' | 'reattach' | 'stop';
@@ -96,6 +98,45 @@ async function startDaemon(): Promise<void> {
     detached: false,
     attachedAt: undefined as string | undefined,
     detachedAt: undefined as string | undefined,
+  };
+  let mcpChild: ChildProcess | null = null;
+  const mcpSocketPath = path.join(path.dirname(socketPath), MCP_SOCKET_FILE_NAME);
+
+  const resolveMcpDaemonEntry = (): string => {
+    return (
+      process.env['MCP_SHELL_MCP_DAEMON_ENTRY']
+      || path.resolve(process.cwd(), 'dist/packages/mcp-shell/src/daemon.js')
+    );
+  };
+
+  const startMcpDaemon = async () => {
+    if (mcpChild) {
+      return;
+    }
+
+    const daemonEntry = resolveMcpDaemonEntry();
+    try {
+      await fs.access(daemonEntry);
+    } catch (error) {
+      logger.error('MCP daemon entry not found', { error: String(error), daemonEntry }, DAEMON_COMPONENT);
+      return;
+    }
+
+    try {
+      await fs.unlink(mcpSocketPath);
+    } catch {
+      // Ignore missing socket.
+    }
+
+    mcpChild = spawn(process.execPath, [daemonEntry], {
+      detached: true,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        MCP_SHELL_MCP_SOCKET: mcpSocketPath,
+      },
+    });
+    mcpChild.unref();
   };
   let attachSocket: net.Socket | null = null;
   let pongResolver: ((result: boolean) => void) | null = null;
@@ -228,6 +269,7 @@ async function startDaemon(): Promise<void> {
           cwd: process.cwd(),
           ...(branch ? { branch } : {}),
           ...(action === 'info' ? { socketPath } : {}),
+          ...(action === 'info' ? { mcpSocketPath } : {}),
         });
         return;
       }
@@ -316,6 +358,13 @@ async function startDaemon(): Promise<void> {
       }
       if (action === 'stop') {
         sendResponse(socket, { ok: true });
+        if (mcpChild?.pid) {
+          try {
+            process.kill(mcpChild.pid);
+          } catch {
+            // Best-effort shutdown only.
+          }
+        }
         await shutdown();
         process.exit(0);
       }
@@ -339,6 +388,7 @@ async function startDaemon(): Promise<void> {
   });
 
   await fs.chmod(socketPath, 0o600);
+  await startMcpDaemon();
   logger.info('Daemon socket ready', { socketPath, cwd, branch }, DAEMON_COMPONENT);
 
   const shutdown = async () => {
