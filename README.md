@@ -176,6 +176,11 @@ npm install
 
 # Build the project
 npm run build
+
+### Repository Layout (Phase 1)
+- packages/shell-server: core runtime, managers, tools, security
+- packages/mcp-shell: MCP server entry points (CLI + MCP server)
+- packages/code-shell-extension: VS Code extension
 ```
 
 ## Quick Start
@@ -196,7 +201,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 const transport = new StdioClientTransport({
   command: 'node',
-  args: ['dist/index.js']
+  args: ['dist/packages/mcp-shell/src/index.js']
 });
 
 const client = new Client(
