@@ -17,6 +17,7 @@ import { ShellTools } from '../../shell-server/src/tools/shell-tools.js';
 import { logger } from '../../shell-server/src/utils/helpers.js';
 import { ExecutionInfo } from '../../shell-server/src/types/index.js';
 import { createShellToolRuntime } from '../../shell-server/src/runtime/tool-runtime.js';
+import type { ServerManager } from '../../shell-server/src/core/server-manager.js';
 
 import {
   ShellExecuteParamsSchema,
@@ -55,6 +56,7 @@ export class MCPShellServer {
   private monitoringManager: MonitoringManager;
   private commandHistoryManager: CommandHistoryManager;
   private shellTools: ShellTools;
+  private serverManager: ServerManager;
   private backoffice?: BackofficeServer;
 
   constructor() {
@@ -79,6 +81,7 @@ export class MCPShellServer {
     this.monitoringManager = runtime.monitoringManager;
     this.commandHistoryManager = runtime.commandHistoryManager;
     this.shellTools = runtime.shellTools;
+    this.serverManager = runtime.serverManager;
 
     // バックグラウンドプロセス終了時のコールバックを設定
     this.processManager.setBackgroundProcessCallbacks({
