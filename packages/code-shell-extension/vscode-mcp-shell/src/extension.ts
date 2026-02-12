@@ -3,6 +3,10 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   createShellToolRuntime,
+  dispatchToolCall,
+  TOOL_NAMES,
+  type ToolName,
+  type ToolParams,
   type ShellToolRuntime,
   type CreateMessageCallback,
   type ElicitationHandler
@@ -11,33 +15,6 @@ import {
 const PROVIDER_ID = 'mcp-shell-server.provider';
 const SERVER_LABEL = 'MCP Shell Server';
 const SERVER_VERSION = '2.7.0';
-const TOOL_NAMES = [
-  'shell_execute',
-  'process_get_execution',
-  'shell_set_default_workdir',
-  'list_execution_outputs',
-  'read_execution_output',
-  'delete_execution_outputs',
-  'get_cleanup_suggestions',
-  'perform_auto_cleanup',
-  'terminal_operate',
-  'terminal_list',
-  'terminal_get_info',
-  'terminal_close',
-  'command_history_query',
-  'server_current',
-  'server_list_attachable',
-  'server_start',
-  'server_stop',
-  'server_get',
-  'server_detach',
-  'server_reattach'
-] as const;
-
-type ToolName = (typeof TOOL_NAMES)[number];
-
-type ToolParams = Record<string, unknown>;
-
 type ShellToolsApi = ShellToolRuntime['shellTools'];
 type ServerManagerApi = ShellToolRuntime['serverManager'];
 
@@ -189,7 +166,11 @@ class DirectShellTool implements vscode.LanguageModelTool<ToolParams> {
       runtime.shellTools,
       runtime.serverManager,
       this.toolName,
-      options.input
+      options.input,
+      {
+        defaultWorkingDirectory: resolveDefaultWorkingDirectory(),
+        fallbackWorkingDirectory: process.cwd(),
+      }
     );
 
     return new vscode.LanguageModelToolResult([
@@ -231,82 +212,7 @@ function buildConfirmationMessage(toolName: ToolName, input?: ToolParams): vscod
   return new vscode.MarkdownString(`Run ${toolName}?`);
 }
 
-async function dispatchToolCall(
-  shellTools: ShellToolsApi,
-  serverManager: ServerManagerApi,
-  toolName: ToolName,
-  params?: ToolParams
-): Promise<unknown> {
-  switch (toolName) {
-    case 'shell_execute':
-      return shellTools.executeShellValidated(params ?? {});
-    case 'process_get_execution':
-      return shellTools.getExecutionValidated(params ?? {});
-    case 'shell_set_default_workdir':
-      return shellTools.setDefaultWorkingDirectoryValidated(params ?? {});
-    case 'list_execution_outputs':
-      return shellTools.listFilesValidated(params ?? {});
-    case 'read_execution_output':
-      return shellTools.readFileValidated(params ?? {});
-    case 'delete_execution_outputs':
-      return shellTools.deleteFilesValidated(params ?? {});
-    case 'get_cleanup_suggestions':
-      return shellTools.getCleanupSuggestionsValidated(params ?? {});
-    case 'perform_auto_cleanup':
-      return shellTools.performAutoCleanupValidated(params ?? {});
-    case 'terminal_operate':
-      return shellTools.terminalOperateValidated(params ?? {});
-    case 'terminal_list':
-      return shellTools.listTerminalsValidated(params ?? {});
-    case 'terminal_get_info':
-      return shellTools.getTerminalValidated(params ?? {});
-    case 'terminal_close':
-      return shellTools.closeTerminalValidated(params ?? {});
-    case 'command_history_query':
-      return shellTools.queryCommandHistoryValidated(params ?? {});
-    case 'server_current':
-      return serverManager.current();
-    case 'server_list_attachable': {
-      const cwdParam = params && typeof params.cwd === 'string' ? params.cwd : undefined;
-      const cwd = cwdParam || getWorkspaceCwd() || process.cwd();
-      return serverManager.listAttachable({ cwd });
-    }
-    case 'server_start': {
-      const cwdParam = params && typeof params.cwd === 'string' ? params.cwd : undefined;
-      const cwd = cwdParam || getWorkspaceCwd() || process.cwd();
-      const socketPath = params && typeof params.socket_path === 'string' ? params.socket_path : undefined;
-      const allowExisting = params && typeof params.allow_existing === 'boolean'
-        ? params.allow_existing
-        : false;
-      return serverManager.start({
-        cwd,
-        ...(socketPath ? { socketPath } : {}),
-        allowExisting,
-      });
-    }
-    case 'server_stop': {
-      const serverId = params && typeof params.server_id === 'string' ? params.server_id : '';
-      const force = params && typeof params.force === 'boolean' ? params.force : false;
-      await serverManager.stop({ serverId, force });
-      return { ok: true };
-    }
-    case 'server_get': {
-      const serverId = params && typeof params.server_id === 'string' ? params.server_id : '';
-      return serverManager.get({ serverId });
-    }
-    case 'server_detach': {
-      const serverId = params && typeof params.server_id === 'string' ? params.server_id : '';
-      await serverManager.detach({ serverId });
-      return { ok: true };
-    }
-    case 'server_reattach': {
-      const serverId = params && typeof params.server_id === 'string' ? params.server_id : '';
-      return serverManager.reattach({ serverId });
-    }
-    default:
-      throw new Error(`Unsupported tool: ${toolName}`);
-  }
-}
+const resolveDefaultWorkingDirectory = (): string | undefined => getWorkspaceCwd();
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel(SERVER_LABEL);
