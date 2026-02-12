@@ -5,6 +5,7 @@ import { ProcessManager } from '../core/process-manager.js';
 import { TerminalManager } from '../core/terminal-manager.js';
 import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
+import { StubServerManager, type ServerManager } from '../core/server-manager.js';
 import { SecurityManager } from '../security/manager.js';
 import type { CreateMessageCallback } from '../security/chat-completion-adapter.js';
 import type { ElicitationHandler } from '../security/evaluator-types.js';
@@ -24,6 +25,7 @@ export type ShellToolRuntime = {
   securityManager: SecurityManager;
   commandHistoryManager: CommandHistoryManager;
   shellTools: ShellTools;
+  serverManager: ServerManager;
   cleanup: () => Promise<void>;
 };
 
@@ -47,6 +49,7 @@ export function createShellToolRuntime(options: ShellToolRuntimeOptions = {}): S
   );
   const terminalManager = new TerminalManager();
   const monitoringManager = new MonitoringManager();
+  const serverManager = new StubServerManager();
   const enhancedConfig = configManager.getEnhancedSecurityConfig();
   const commandHistoryManager = new CommandHistoryManager(enhancedConfig);
   const securityManager = new SecurityManager();
@@ -105,6 +108,7 @@ export function createShellToolRuntime(options: ShellToolRuntimeOptions = {}): S
     securityManager,
     commandHistoryManager,
     shellTools,
+    serverManager,
     cleanup
   };
 }
