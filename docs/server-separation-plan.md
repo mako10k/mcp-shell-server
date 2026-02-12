@@ -118,6 +118,29 @@ Notes:
 - Tool runtime export: src/runtime/tool-runtime.ts
 - VSCode extension: extensions/vscode-mcp-shell/
 
+### Phase 1 Inventory (Core Dependency Hubs)
+- Tool runtime (src/runtime/tool-runtime.ts)
+  - core: ConfigManager, ProcessManager, TerminalManager, FileManager,
+    MonitoringManager, CommandHistoryManager
+  - tools: ShellTools
+  - security: SecurityManager, evaluator types
+  - utils: logger
+  - types: EnhancedSecurityConfig
+- Shell tools (src/tools/shell-tools.ts)
+  - core: ProcessManager, TerminalManager, FileManager, MonitoringManager
+  - security: SecurityManager
+  - types: schemas, quick-schemas, shared types
+  - utils: errors, criteria-manager
+- Process manager (src/core/process-manager.ts)
+  - types: execution and output models
+  - utils: helpers, errors
+  - core: terminal-manager, file-manager
+  - streaming: stream-publisher, subscribers, pipeline reader
+- Terminal manager (src/core/terminal-manager.ts)
+  - types: terminal models
+  - utils: helpers, errors, process-utils
+  - external: node-pty (lazy-loaded)
+
 ### Phase 2: Foundation Consolidation
 - Move daemon and server management into shell-server.
 - Route shell_execute and terminal_operate through the shared API.
