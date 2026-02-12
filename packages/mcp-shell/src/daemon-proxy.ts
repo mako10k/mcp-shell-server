@@ -35,6 +35,9 @@ function serializeMessage(message: JSONRPCMessage): string {
   return `${JSON.stringify(message)}\n`;
 }
 
+const SOCKET_READY_TIMEOUT_MS = 3000;
+const SOCKET_READY_INTERVAL_MS = 200;
+
 async function validateSocketPermissions(socketPath: string): Promise<void> {
   const stat = await fs.stat(socketPath);
   if (!stat.isSocket()) {
@@ -52,9 +55,29 @@ async function validateSocketPermissions(socketPath: string): Promise<void> {
   }
 }
 
+async function waitForSocketReady(socketPath: string): Promise<void> {
+  const deadline = Date.now() + SOCKET_READY_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    try {
+      await validateSocketPermissions(socketPath);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        throw error;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, SOCKET_READY_INTERVAL_MS));
+  }
+
+  throw new Error('Timed out waiting for daemon socket.');
+}
+
 export async function runDaemonProxy(socketPath: string): Promise<void> {
   try {
-    await validateSocketPermissions(socketPath);
+    await waitForSocketReady(socketPath);
   } catch (error) {
     logger.error(
       'MCP daemon socket validation failed',
