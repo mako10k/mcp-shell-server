@@ -39,6 +39,10 @@ export type ShellToolRuntimeOptions = {
   defaultWorkingDirectory?: string;
 };
 
+export function createServerManager(): ServerManager {
+  return new StubServerManager();
+}
+
 export function createShellToolRuntime(options: ShellToolRuntimeOptions = {}): ShellToolRuntime {
   const fileManager = new FileManager();
   const configManager = new ConfigManager();
@@ -49,7 +53,7 @@ export function createShellToolRuntime(options: ShellToolRuntimeOptions = {}): S
   );
   const terminalManager = new TerminalManager();
   const monitoringManager = new MonitoringManager();
-  const serverManager = new StubServerManager();
+  const serverManager = createServerManager();
   const enhancedConfig = configManager.getEnhancedSecurityConfig();
   const commandHistoryManager = new CommandHistoryManager(enhancedConfig);
   const securityManager = new SecurityManager();

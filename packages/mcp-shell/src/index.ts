@@ -2,7 +2,7 @@
 
 import { MCPShellServer } from './server.js';
 import { runDaemonProxy } from './daemon-proxy.js';
-import { StubServerManager } from '../../shell-server/src/core/server-manager.js';
+import { createServerManager } from '../../shell-server/src/runtime/tool-runtime.js';
 import { logger } from '../../shell-server/src/utils/helpers.js';
 import fs from 'fs/promises';
 
@@ -75,7 +75,7 @@ async function main() {
   const useDaemonMcp = process.env['MCP_SHELL_USE_DAEMON_MCP'] !== 'false';
 
   if (daemonEnabled && useDaemonMcp) {
-    const serverManager = new StubServerManager();
+    const serverManager = createServerManager();
     const cwd = process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd();
     const started = await serverManager.start({ cwd, allowExisting: true });
     const info = await serverManager.get({ serverId: started.serverId });
