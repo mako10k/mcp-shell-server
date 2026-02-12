@@ -200,4 +200,10 @@ describe('Daemon integration', () => {
 
     await expect(fs.stat(mcpSocketPath)).rejects.toBeTruthy();
   });
+
+  it('allows repeated stop calls with force enabled', async () => {
+    const serverManager = new StubServerManager();
+    await serverManager.stop({ serverId, force: true });
+    await serverManager.stop({ serverId, force: true });
+  });
 });

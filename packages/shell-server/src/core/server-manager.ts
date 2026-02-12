@@ -665,6 +665,10 @@ export class StubServerManager implements ServerManager {
       return;
     }
 
+    if (options.force) {
+      return;
+    }
+
     throw new MCPShellError('RESOURCE_001', 'Server not found', 'RESOURCE', {
       serverId: options.serverId,
     });
