@@ -121,6 +121,35 @@ export class MCPShellServer {
   }
 
   private setupHandlers(): void {
+    const parseServerParams = (
+      name: string,
+      args: ToolParams | undefined,
+      dispatchOptions: { defaultWorkingDirectory?: string; fallbackWorkingDirectory: string }
+    ): ToolParams | null => {
+      switch (name) {
+        case 'server_current':
+          return ServerCurrentParamsSchema.parse(args ?? {});
+        case 'server_list_attachable': {
+          const cwd =
+            (args && typeof args === 'object' && 'cwd' in args
+              ? String((args as { cwd?: string }).cwd || '')
+              : '') || dispatchOptions.defaultWorkingDirectory || dispatchOptions.fallbackWorkingDirectory;
+          return ServerListAttachableParamsSchema.parse({ cwd });
+        }
+        case 'server_start':
+          return ServerStartParamsSchema.parse(args);
+        case 'server_stop':
+          return ServerStopParamsSchema.parse(args);
+        case 'server_get':
+          return ServerGetParamsSchema.parse(args);
+        case 'server_detach':
+          return ServerDetachParamsSchema.parse(args);
+        case 'server_reattach':
+          return ServerReattachParamsSchema.parse(args);
+        default:
+          return null;
+      }
+    };
     // ツールリストの提供
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
@@ -306,89 +335,13 @@ export class MCPShellServer {
           }
         }
 
-        if (name === 'server_start') {
-          const parsed = ServerStartParamsSchema.parse(args);
+        const parsedServerParams = parseServerParams(name, args as ToolParams, dispatchOptions);
+        if (parsedServerParams) {
           const result = await dispatchToolCall(
             this.shellTools,
             this.serverManager,
             name as ToolName,
-            parsed as ToolParams,
-            dispatchOptions
-          );
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        if (name === 'server_list_attachable') {
-          const cwd =
-            (args && typeof args === 'object' && 'cwd' in args
-              ? String((args as { cwd?: string }).cwd || '')
-              : '') || dispatchOptions.defaultWorkingDirectory || dispatchOptions.fallbackWorkingDirectory;
-          const parsed = ServerListAttachableParamsSchema.parse({ cwd });
-          const result = await dispatchToolCall(
-            this.shellTools,
-            this.serverManager,
-            name as ToolName,
-            parsed as ToolParams,
-            dispatchOptions
-          );
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        if (name === 'server_stop') {
-          const parsed = ServerStopParamsSchema.parse(args);
-          const result = await dispatchToolCall(
-            this.shellTools,
-            this.serverManager,
-            name as ToolName,
-            parsed as ToolParams,
-            dispatchOptions
-          );
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        if (name === 'server_get') {
-          const parsed = ServerGetParamsSchema.parse(args);
-          const result = await dispatchToolCall(
-            this.shellTools,
-            this.serverManager,
-            name as ToolName,
-            parsed as ToolParams,
-            dispatchOptions
-          );
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        if (name === 'server_detach') {
-          const parsed = ServerDetachParamsSchema.parse(args);
-          const result = await dispatchToolCall(
-            this.shellTools,
-            this.serverManager,
-            name as ToolName,
-            parsed as ToolParams,
-            dispatchOptions
-          );
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        if (name === 'server_reattach') {
-          const parsed = ServerReattachParamsSchema.parse(args);
-          const result = await dispatchToolCall(
-            this.shellTools,
-            this.serverManager,
-            name as ToolName,
-            parsed as ToolParams,
-            dispatchOptions
-          );
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        if (name === 'server_current') {
-          const parsed = ServerCurrentParamsSchema.parse(args ?? {});
-          const result = await dispatchToolCall(
-            this.shellTools,
-            this.serverManager,
-            name as ToolName,
-            parsed as ToolParams,
+            parsedServerParams as ToolParams,
             dispatchOptions
           );
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };

@@ -44,6 +44,38 @@ async function waitForSocketReady(socketPath: string, timeoutMs: number): Promis
   throw new Error('Timed out waiting for daemon socket to be ready.');
 }
 
+async function openAttachSocket(socketPath: string): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ path: socketPath }, () => {
+      socket.write(`${JSON.stringify({ action: 'attach' })}\n`);
+    });
+
+    let buffer = '';
+    socket.setEncoding('utf-8');
+    socket.on('data', (chunk) => {
+      buffer += chunk;
+      if (!buffer.includes('\n')) {
+        return;
+      }
+      const line = buffer.split('\n')[0]?.trim();
+      if (!line) {
+        return;
+      }
+      try {
+        const parsed = JSON.parse(line) as { ok?: boolean; error?: string };
+        if (parsed.ok) {
+          resolve(socket);
+          return;
+        }
+        reject(new Error(parsed.error || 'attach_failed'));
+      } catch (error) {
+        reject(error as Error);
+      }
+    });
+    socket.on('error', reject);
+  });
+}
+
 async function waitForFile(pathname: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
@@ -205,5 +237,18 @@ describe('Daemon integration', () => {
     const serverManager = new StubServerManager();
     await serverManager.stop({ serverId, force: true });
     await serverManager.stop({ serverId, force: true });
+  });
+
+  it('closes attach sockets when the daemon stops', async () => {
+    const attachSocket = await openAttachSocket(socketPath);
+    const closePromise = new Promise<void>((resolve) => {
+      attachSocket.once('close', () => resolve());
+      attachSocket.once('end', () => resolve());
+    });
+
+    const serverManager = new StubServerManager();
+    await serverManager.stop({ serverId, force: true });
+
+    await closePromise;
   });
 });
