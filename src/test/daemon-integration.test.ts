@@ -96,6 +96,7 @@ describe('Daemon integration', () => {
   let runtimeDir: string;
   let tempCwd: string;
   let socketPath: string;
+  let mcpSocketPath: string;
   let serverId: string;
   let pidFile: string;
   let child: ChildProcess | null = null;
@@ -110,6 +111,7 @@ describe('Daemon integration', () => {
     runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-runtime-'));
     tempCwd = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-cwd-'));
     socketPath = buildSocketPath(tempCwd, 'test', runtimeDir);
+    mcpSocketPath = path.join(path.dirname(socketPath), 'mcp.sock');
     serverId = `${hashCwd(tempCwd)}:test`;
     pidFile = path.join(runtimeDir, 'mcp-child.pid');
 
@@ -188,5 +190,14 @@ describe('Daemon integration', () => {
     await serverManager.stop({ serverId, force: true });
 
     await waitForProcessExit(pid, 2000);
+  });
+
+  it('cleans up the MCP socket on daemon stop', async () => {
+    await waitForSocketReady(mcpSocketPath, 2000);
+
+    const serverManager = new StubServerManager();
+    await serverManager.stop({ serverId, force: true });
+
+    await expect(fs.stat(mcpSocketPath)).rejects.toBeTruthy();
   });
 });
