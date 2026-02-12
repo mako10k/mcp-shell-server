@@ -113,7 +113,49 @@
 - Preserve existing CLI/MCP/VSC usage during Phase 1-3.
 - Publish compatibility notes when submodules are introduced.
 
-## Open Questions
-- Required session metadata for re-attach (env, cwd, history, pty state).
-- Token and authorization model for server attachment.
-- Background daemon discovery mechanism (pidfile, socket, or registry).
+## Decisions (Review 1)
+- Session metadata scope for re-attach:
+  - Existing running shell_execute or terminal_operate sessions are unchanged.
+  - New executions or new terminals inherit the new env, cwd, and history.
+  - Existing terminals keep running with their current pty state.
+- Attachment authorization:
+  - Use a Unix domain socket with permissions 600.
+  - Access is limited to the same OS user by file permissions.
+
+## Open Questions (Review 2)
+- Detach and re-attach semantics:
+  - What happens to active streams during detach.
+  - Whether a detaching client can force-close a session.
+- Process ownership and cleanup:
+  - How orphaned daemons are detected and terminated.
+  - Default TTL for inactive sessions.
+
+## Recommendation
+- Prefer Option B: per-directory discovery using a socket file outside the
+  workdirectory to keep codebases clean. Use a per-user runtime directory
+  (e.g., $XDG_RUNTIME_DIR/mcp-shell/<hash>/daemon.sock) to enforce the
+  directory boundary while avoiding workspace pollution. The socket file is
+  created with 600 permissions and removed on clean shutdown. A stale socket
+  can be detected by a failed connect and cleaned up.
+
+## Decisions (Review 2)
+- Daemon discovery:
+  - Use per-directory discovery with a socket file in the per-user runtime.
+- Detach behavior:
+  - Detach when switching to a new server connection (close existing).
+  - Detach implicitly when the client process exits.
+  - Output during detach is canceled by default, but may vary by context.
+- Orphan handling and limits:
+  - shell_execute uses its timeout policy for cleanup.
+  - terminal_operate is persistent by default or uses a long TTL
+    (e.g., 86400 seconds).
+  - Enforce soft and hard concurrency limits to encourage reuse and cleanup.
+
+## Directory Branching Rule (Multiple Servers per Directory)
+- Allow multiple servers per directory by appending a branch suffix.
+- Default branch is "main".
+- The branch suffix is a safe identifier (e.g., "main", "work-1", "exp").
+- The socket path includes the branch:
+  - $XDG_RUNTIME_DIR/mcp-shell/<hash>/<branch>/daemon.sock
+- The branch is provided explicitly when starting a server.
+- Auto-attach uses the default branch unless a branch is specified.
