@@ -9,6 +9,7 @@ import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
 import { logger } from '../utils/helpers.js';
 import { listenServer, closeServer } from '../utils/server-helpers.js';
 import { RemoteProcessService } from '../core/remote-process-service.js';
+import { startHeartbeat } from '../utils/sse.js';
 
 interface BackofficeDeps {
   processManager: ProcessManager;
@@ -30,7 +31,7 @@ export class BackofficeServer {
     if (this.server) return Promise.resolve();
 
     this.server = http.createServer(async (req, res) => {
-      try {
+        try {
         // Localhost only
         const remote = req.socket.remoteAddress || '';
         if (!this.isLocalAddress(remote)) {
@@ -50,6 +51,16 @@ export class BackofficeServer {
         // Health endpoint for diagnostics
         if (pathname === '/health') {
           this.json(res, 200, { status: 'ok', service: 'backoffice', port: this.getListenPort() });
+          return;
+        }
+
+        // Dashboard snapshot API
+        if (pathname === '/api/dashboard') {
+          if (req.method !== 'GET') {
+            this.json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'GET only' } });
+            return;
+          }
+          await this.handleDashboard(res);
           return;
         }
 
@@ -353,39 +364,100 @@ export class BackofficeServer {
     return new RemoteProcessService();
   }
 
-  private async handleRemoteExecGet(res: ServerResponse, id: string) {
+  private ensureRemoteBackend(res: ServerResponse): boolean {
     if (!this.isRemoteBackend()) {
       this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
-      return;
+      return false;
     }
+    return true;
+  }
+
+  private async handleRemoteRequest<T>(
+    res: ServerResponse,
+    action: (remote: RemoteProcessService) => Promise<T>
+  ): Promise<void> {
+    if (!this.ensureRemoteBackend(res)) return;
     try {
       const remote = this.getRemoteService();
-      const data = await remote.get(id);
+      const data = await action(remote);
       this.json(res, 200, data);
     } catch (e) {
       this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
     }
+  }
+
+  // ---------- Dashboard Handler ----------
+  private async handleDashboard(res: ServerResponse) {
+    try {
+      // History summary
+  const history = this.deps.historyManager.searchHistory({ limit: 200 });
+  const totalHistory = history.length;
+  const withEval = history.filter((h) => Boolean(h.safety_classification) || Boolean(h.llm_evaluation_result)).length;
+  const executedTrue = history.filter((h) => h.was_executed === true).length;
+
+      // Process stats
+      const runningExec = this.deps.processManager.listExecutions({ status: 'running', limit: 50 }).executions;
+      const recentExec = this.deps.processManager.listExecutions({ limit: 20 }).executions
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      // Terminals
+      const terms = this.deps.terminalManager.listTerminals({ limit: 100 });
+
+      // File/output stats (sizes)
+      const fileStats = this.deps.fileManager.getUsageStats();
+
+      // Latest outputs summary for currently running commands (tail)
+      const recentRunningSummaries = await Promise.all(runningExec.slice(0, 10).map(async (e) => {
+        const summary: { execution_id: string; command: string; status: string; output_tail?: string } = {
+          execution_id: e.execution_id,
+          command: e.command,
+          status: e.status,
+        };
+        const outId = e.output_id;
+        if (outId) {
+          try {
+            const read = await this.deps.fileManager.readFile(outId, Math.max(0, (await (async () => {
+              const info = this.deps.fileManager.getFile(outId);
+              return Math.max(0, info.size - 4096);
+            })())), 4096);
+            summary.output_tail = read.content;
+          } catch {}
+        }
+        return summary;
+      }));
+
+      this.json(res, 200, {
+        timestamp: new Date().toISOString(),
+        history: {
+          total_entries: totalHistory,
+          with_evaluation: withEval,
+          executed_true: executedTrue,
+          last_5: history.slice(0, 5),
+        },
+        executions: {
+          running_count: runningExec.length,
+          running: runningExec,
+          recent: recentExec.slice(0, 10),
+          running_output_tails: recentRunningSummaries,
+        },
+        terminals: terms,
+        files: fileStats,
+      });
+    } catch (e) {
+      this.json(res, 500, { error: { code: 'INTERNAL', message: String(e) } });
+    }
+  }
+
+  private async handleRemoteExecGet(res: ServerResponse, id: string) {
+    await this.handleRemoteRequest(res, (remote) => remote.get(id));
   }
 
   private async handleRemoteExecOutputs(res: ServerResponse, id: string) {
-    if (!this.isRemoteBackend()) {
-      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
-      return;
-    }
-    try {
-      const remote = this.getRemoteService();
-      const data = await remote.outputs(id);
-      this.json(res, 200, data);
-    } catch (e) {
-      this.json(res, 502, { error: { code: 'BAD_GATEWAY', message: String(e) } });
-    }
+    await this.handleRemoteRequest(res, (remote) => remote.outputs(id));
   }
 
   private async handleRemoteExecKill(res: ServerResponse, id: string, q: URLSearchParams) {
-    if (!this.isRemoteBackend()) {
-      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
-      return;
-    }
+    if (!this.ensureRemoteBackend(res)) return;
     try {
       const remote = this.getRemoteService();
       const force = (q.get('force') || 'false') === 'true';
@@ -494,19 +566,14 @@ export class BackofficeServer {
     }
 
     // アイドル時はハートビート（10秒間隔）
-    heartbeat = setInterval(() => {
-      this.writeSSE(res, 'heartbeat', { t: Date.now() });
-    }, 10000);
+    heartbeat = startHeartbeat((event, data) => this.writeSSE(res, event, data));
 
     req.on('close', cleanup);
     req.on('aborted', cleanup);
   }
 
   private async handleRemoteExecSSE(res: ServerResponse, id: string, req: http.IncomingMessage) {
-    if (!this.isRemoteBackend()) {
-      this.json(res, 400, { error: { code: 'BAD_REQUEST', message: 'Remote backend not enabled' } });
-      return;
-    }
+    if (!this.ensureRemoteBackend(res)) return;
     this.initSSE(res);
     // Executor の SSE をそのままプロキシする（イベント駆動）
     const baseUrl = (process.env['EXECUTOR_URL'] || `http://${process.env['EXECUTOR_HOST'] || '127.0.0.1'}:${process.env['EXECUTOR_PORT'] || '4030'}`).replace(/\/$/, '');

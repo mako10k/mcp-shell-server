@@ -1,5 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { z } from 'zod';
+import { ToolCallSchema, ToolChoiceSchema } from './evaluator-types.js';
 
 // OpenAI compatible tool definitions
 export interface ToolDefinition {
@@ -78,14 +79,7 @@ const CCCRequestSchema = z.object({
   frequency_penalty: z.number().optional(),
   presence_penalty: z.number().optional(),
   tools: CCCToolsSchema.optional(),
-  tool_choice: z
-    .union([
-      z.literal('none'),
-      z.literal('auto'),
-      z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
-      z.object({ type: z.literal('tool'), name: z.string() }),
-    ])
-    .optional(),
+  tool_choice: ToolChoiceSchema.optional(),
 });
 
 type CCCRequest = z.infer<typeof CCCRequestSchema>;
@@ -96,16 +90,7 @@ const CCCResponseSchema = z.object({
       message: z.object({
         role: z.literal('assistant'),
         content: z.string().nullable(), // Function calls can have null content
-        tool_calls: z.array(
-          z.object({
-            id: z.string(),
-            type: z.literal('function'),
-            function: z.object({
-              name: z.string(),
-              arguments: z.string(),
-            }),
-          })
-        ).optional(),
+        tool_calls: z.array(ToolCallSchema).optional(),
       }),
       finish_reason: z.union([
         z.literal('stop'),
@@ -129,8 +114,12 @@ type CCCResponse = z.infer<typeof CCCResponseSchema>;
 export class CCCToMCPCMAdapter {
   private createMessage: CreateMessageCallback;
 
-  constructor(server: Server) {
-    this.createMessage = createMessageCallbackFromMCPServer(server);
+  constructor(createMessage: CreateMessageCallback) {
+    this.createMessage = createMessage;
+  }
+
+  static fromMCPServer(server: Server): CCCToMCPCMAdapter {
+    return new CCCToMCPCMAdapter(createMessageCallbackFromMCPServer(server));
   }
 
   // Update chatCompletion to handle optional properties explicitly
@@ -557,7 +546,7 @@ Make function calls as needed to fulfill the user's request.`;
 /**
  * Create a CreateMessageCallback from an MCP Server instance
  */
-function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
+export function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallback {
   return async (request: Parameters<CreateMessageCallback>[0]) => {
     try {
       // Convert request to MCP format
@@ -627,36 +616,5 @@ function createMessageCallbackFromMCPServer(server: Server): CreateMessageCallba
 }
 // Tools for Function Calling (external use only)
 // import { securityEvaluationTool } from './security-tools.js';
-// MCP sampling protocol interface (matches manager.ts implementation)
-export interface CreateMessageCallback {
-  (request: {
-    messages: Array<{
-      role: 'user' | 'assistant' | 'tool';
-      content: { type: 'text'; text: string; };
-      tool_call_id?: string;
-    }>;
-    maxTokens?: number;
-    temperature?: number;
-    systemPrompt?: string;
-    includeContext?: 'none' | 'thisServer' | 'allServers';
-    stopSequences?: string[];
-    metadata?: Record<string, unknown>;
-    modelPreferences?: Record<string, unknown>;
-    tools?: ToolDefinitions;
-    tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string; }; } | { type: 'tool'; name: string; };
-  }): Promise<{
-    content: { type: 'text'; text: string; };
-    model?: string | undefined;
-    stopReason?: string | undefined;
-    tool_calls?: Array<{
-      id: string;
-      type: 'function';
-      function: {
-        name: string;
-        arguments: string;
-      };
-    }>;
-  }>;
-}
 
 

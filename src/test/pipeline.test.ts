@@ -1,17 +1,30 @@
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { ShellTools } from '../tools/shell-tools.js';
 import { ProcessManager } from '../core/process-manager.js';
 import { TerminalManager } from '../core/terminal-manager.js';
 import { FileManager } from '../core/file-manager.js';
 import { MonitoringManager } from '../core/monitoring-manager.js';
 import { SecurityManager } from '../security/manager.js';
+import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
+import { DEFAULT_ENHANCED_SECURITY_CONFIG } from '../types/enhanced-security.js';
 
 describe('Pipeline Output Feature (Issue #13)', () => {
   let shellTools: ShellTools;
   let processManager: ProcessManager;
   let fileManager: FileManager;
+  let historyManager: CommandHistoryManager;
+  let envSnapshot: Record<string, string | undefined>;
 
   beforeAll(() => {
+    envSnapshot = {
+      MCP_SHELL_SECURITY_MODE: process.env['MCP_SHELL_SECURITY_MODE'],
+      MCP_SHELL_ENHANCED_MODE: process.env['MCP_SHELL_ENHANCED_MODE'],
+      MCP_SHELL_LLM_EVALUATION: process.env['MCP_SHELL_LLM_EVALUATION'],
+    };
+    process.env['MCP_SHELL_SECURITY_MODE'] = 'permissive';
+    process.env['MCP_SHELL_ENHANCED_MODE'] = 'false';
+    process.env['MCP_SHELL_LLM_EVALUATION'] = 'false';
+
     fileManager = new FileManager('/tmp/mcp-shell-test-pipeline');
     processManager = new ProcessManager(50, '/tmp/mcp-shell-test-pipeline', fileManager);
     processManager.setFileManager(fileManager);
@@ -19,14 +32,22 @@ describe('Pipeline Output Feature (Issue #13)', () => {
     const terminalManager = new TerminalManager();
     const monitoringManager = new MonitoringManager();
     const securityManager = new SecurityManager();
+    historyManager = new CommandHistoryManager(DEFAULT_ENHANCED_SECURITY_CONFIG);
 
     shellTools = new ShellTools(
       processManager,
       terminalManager,
       fileManager,
       monitoringManager,
-      securityManager
+      securityManager,
+      historyManager
     );
+  });
+
+  afterAll(() => {
+    process.env['MCP_SHELL_SECURITY_MODE'] = envSnapshot.MCP_SHELL_SECURITY_MODE;
+    process.env['MCP_SHELL_ENHANCED_MODE'] = envSnapshot.MCP_SHELL_ENHANCED_MODE;
+    process.env['MCP_SHELL_LLM_EVALUATION'] = envSnapshot.MCP_SHELL_LLM_EVALUATION;
   });
 
   describe('Phase 1: Completed Output Transfer (File→stdin)', () => {

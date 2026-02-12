@@ -1,4 +1,4 @@
-import * as pty from 'node-pty';
+import type { IPty } from 'node-pty';
 import { EventEmitter } from 'events';
 import {
   TerminalInfo,
@@ -9,7 +9,12 @@ import {
   ForegroundProcessInfo,
 } from '../types/index.js';
 import { generateId, getCurrentTimestamp, getSafeEnvironment } from '../utils/helpers.js';
-import { ResourceNotFoundError, ResourceLimitError, ExecutionError } from '../utils/errors.js';
+import {
+  MCPShellError,
+  ResourceNotFoundError,
+  ResourceLimitError,
+  ExecutionError,
+} from '../utils/errors.js';
 import { ProcessUtils } from '../utils/process-utils.js';
 
 interface TerminalOutputResult {
@@ -33,11 +38,46 @@ export interface TerminalOptions {
 
 interface TerminalSession {
   info: TerminalInfo;
-  ptyProcess: pty.IPty;
+  ptyProcess: IPty;
   outputBuffer: string[];
   history: string[];
   lastActivity: Date;
   foregroundProcessCache?: { info: ForegroundProcessInfo; timestamp: number };
+}
+
+let cachedPty: typeof import('node-pty') | undefined;
+let cachedPtyPromise: Promise<typeof import('node-pty')> | undefined;
+
+async function loadPty(): Promise<typeof import('node-pty')> {
+  if (cachedPty) {
+    return cachedPty;
+  }
+  if (cachedPtyPromise) {
+    return cachedPtyPromise;
+  }
+
+  cachedPtyPromise = import('node-pty')
+    .then((module) => {
+      cachedPty = module;
+      return module;
+    })
+    .catch((error) => {
+      cachedPtyPromise = undefined;
+      cachedPty = undefined;
+      const details: Record<string, unknown> = { error: String(error) };
+      if (error instanceof Error) {
+        details["message"] = error.message;
+        details["name"] = error.name;
+        details["stack"] = error.stack;
+      }
+      const maybeErrno = error as NodeJS.ErrnoException;
+      if (maybeErrno && typeof maybeErrno.code === 'string') {
+        details["code"] = maybeErrno.code;
+      }
+      throw new ExecutionError('Terminal support is unavailable because node-pty failed to load.', details);
+    });
+
+  return cachedPtyPromise;
 }
 
 export class TerminalManager {
@@ -86,7 +126,8 @@ export class TerminalManager {
 
     try {
       // PTYプロセスの作成
-      const ptyProcess = pty.spawn(shellCommand.command, shellCommand.args, {
+      const ptyModule = await loadPty();
+      const ptyProcess = ptyModule.spawn(shellCommand.command, shellCommand.args, {
         name: 'xterm-256color',
         cols: dimensions.width,
         rows: dimensions.height,
@@ -133,6 +174,9 @@ export class TerminalManager {
       this.terminals.set(terminalId, session);
       return terminalInfo;
     } catch (error) {
+      if (error instanceof MCPShellError) {
+        throw error;
+      }
       throw new ExecutionError(`Failed to create terminal: ${error}`, {
         shellType: shellType,
         error: String(error),

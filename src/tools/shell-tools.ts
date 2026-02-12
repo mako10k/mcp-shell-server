@@ -1,4 +1,51 @@
 import { ShellType, Dimensions, SafetyEvaluationResult } from '../types/index.js';
+import {
+  ShellExecuteParams,
+  ShellExecuteParamsSchema,
+  ShellGetExecutionParams,
+  ShellGetExecutionParamsSchema,
+  ShellSetDefaultWorkdirParams,
+  ShellSetDefaultWorkdirParamsSchema,
+  ProcessListParams,
+  ProcessKillParams,
+  ProcessMonitorParams,
+  FileListParams,
+  FileListParamsSchema,
+  FileReadParams,
+  FileReadParamsSchema,
+  FileDeleteParams,
+  FileDeleteParamsSchema,
+  TerminalCreateParams,
+  TerminalListParams,
+  TerminalListParamsSchema,
+  TerminalGetParams,
+  TerminalGetParamsSchema,
+  TerminalInputParams,
+  TerminalOutputParams,
+  TerminalResizeParams,
+  TerminalCloseParams,
+  TerminalCloseParamsSchema,
+  SecuritySetRestrictionsParams,
+  MonitoringGetStatsParams,
+  CleanupSuggestionsParams,
+  CleanupSuggestionsParamsSchema,
+  AutoCleanupParams,
+  AutoCleanupParamsSchema,
+  CommandHistoryQueryParams,
+  CommandHistoryQueryParamsSchema,
+  AdjustCriteriaParams as _AdjustCriteriaParams, // Disabled MCP tool type
+} from '../types/schemas.js';
+import { TerminalOperateParams, TerminalOperateParamsSchema } from '../types/quick-schemas.js';
+import { ProcessManager, ExecutionOptions } from '../core/process-manager.js';
+import { RemoteProcessService } from '../core/remote-process-service.js';
+import { TerminalManager } from '../core/terminal-manager.js';
+import { FileManager } from '../core/file-manager.js';
+import { MonitoringManager } from '../core/monitoring-manager.js';
+import { SecurityManager } from '../security/manager.js';
+import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
+import { TerminalOptions } from '../core/terminal-manager.js';
+import { MCPShellError } from '../utils/errors.js';
+import { saveCriteria as _saveCriteria, getCriteriaStatus as _getCriteriaStatus } from '../utils/criteria-manager.js'; // Disabled MCP tool functions
 
 // Tool response type for safety evaluation
 interface ToolSafetyEvaluationResponse {
@@ -20,7 +67,7 @@ interface ToolSafetyEvaluationResponse {
   };
 }
 
-// ターミナル出力レスポンス型（クラス全体で利用可能にする）
+// Terminal output response type used across the class
 export interface TerminalOutputResponse {
   terminal_id: string;
   output: string;
@@ -31,41 +78,6 @@ export interface TerminalOutputResponse {
   next_start_line: number;
   foreground_process?: unknown;
 }
-import {
-  ShellExecuteParams,
-  ShellGetExecutionParams,
-  ShellSetDefaultWorkdirParams,
-  ProcessListParams,
-  ProcessKillParams,
-  ProcessMonitorParams,
-  FileListParams,
-  FileReadParams,
-  FileDeleteParams,
-  TerminalCreateParams,
-  TerminalListParams,
-  TerminalGetParams,
-  TerminalInputParams,
-  TerminalOutputParams,
-  TerminalResizeParams,
-  TerminalCloseParams,
-  SecuritySetRestrictionsParams,
-  MonitoringGetStatsParams,
-  CleanupSuggestionsParams,
-  AutoCleanupParams,
-  CommandHistoryQueryParams,
-  AdjustCriteriaParams as _AdjustCriteriaParams, // Disabled MCP tool type
-} from '../types/schemas.js';
-import { TerminalOperateParams } from '../types/quick-schemas.js';
-import { ProcessManager, ExecutionOptions } from '../core/process-manager.js';
-import { RemoteProcessService } from '../core/remote-process-service.js';
-import { TerminalManager } from '../core/terminal-manager.js';
-import { FileManager } from '../core/file-manager.js';
-import { MonitoringManager } from '../core/monitoring-manager.js';
-import { SecurityManager } from '../security/manager.js';
-import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
-import { TerminalOptions } from '../core/terminal-manager.js';
-import { MCPShellError } from '../utils/errors.js';
-import { saveCriteria as _saveCriteria, getCriteriaStatus as _getCriteriaStatus } from '../utils/criteria-manager.js'; // Disabled MCP tool functions
 
 // ...existing code...
 
@@ -85,6 +97,16 @@ export class ShellTools {
   }
 
   // Shell Operations
+  async executeShellValidated(rawParams: unknown) {
+    const params = ShellExecuteParamsSchema.parse(rawParams);
+    return this.executeShell(params);
+  }
+
+  async getExecutionValidated(rawParams: unknown) {
+    const params = ShellGetExecutionParamsSchema.parse(rawParams);
+    return this.getExecution(params);
+  }
+
   async executeShell(params: ShellExecuteParams) {
     try {
       // Enhanced security evaluation (if enabled)
@@ -346,6 +368,21 @@ export class ShellTools {
   }
 
   // File Operations
+  async listFilesValidated(rawParams: unknown) {
+    const params = FileListParamsSchema.parse(rawParams ?? {});
+    return this.listFiles(params);
+  }
+
+  async readFileValidated(rawParams: unknown) {
+    const params = FileReadParamsSchema.parse(rawParams);
+    return this.readFile(params);
+  }
+
+  async deleteFilesValidated(rawParams: unknown) {
+    const params = FileDeleteParamsSchema.parse(rawParams);
+    return this.deleteFiles(params);
+  }
+
   async listFiles(params: FileListParams) {
     try {
       const listOptions: Record<string, unknown> = {
@@ -396,6 +433,26 @@ export class ShellTools {
   }
 
   // Terminal Management
+  async terminalOperateValidated(rawParams: unknown) {
+    const params = TerminalOperateParamsSchema.parse(rawParams ?? {});
+    return this.terminalOperate(params);
+  }
+
+  async listTerminalsValidated(rawParams: unknown) {
+    const params = TerminalListParamsSchema.parse(rawParams ?? {});
+    return this.listTerminals(params);
+  }
+
+  async getTerminalValidated(rawParams: unknown) {
+    const params = TerminalGetParamsSchema.parse(rawParams);
+    return this.getTerminal(params);
+  }
+
+  async closeTerminalValidated(rawParams: unknown) {
+    const params = TerminalCloseParamsSchema.parse(rawParams);
+    return this.closeTerminal(params);
+  }
+
   // ...existing code...
   async createTerminal(params: TerminalCreateParams) {
     try {
@@ -600,6 +657,11 @@ export class ShellTools {
     } catch (error) {
       throw MCPShellError.fromError(error);
     }
+  }
+
+  async setDefaultWorkingDirectoryValidated(rawParams: unknown) {
+    const params = ShellSetDefaultWorkdirParamsSchema.parse(rawParams);
+    return this.setDefaultWorkingDirectory(params);
   }
 
   async setDefaultWorkingDirectory(params: ShellSetDefaultWorkdirParams) {
@@ -971,6 +1033,21 @@ export class ShellTools {
     } catch (error) {
       throw MCPShellError.fromError(error);
     }
+  }
+
+  async getCleanupSuggestionsValidated(rawParams: unknown) {
+    const params = CleanupSuggestionsParamsSchema.parse(rawParams ?? {});
+    return this.getCleanupSuggestions(params);
+  }
+
+  async performAutoCleanupValidated(rawParams: unknown) {
+    const params = AutoCleanupParamsSchema.parse(rawParams ?? {});
+    return this.performAutoCleanup(params);
+  }
+
+  async queryCommandHistoryValidated(rawParams: unknown) {
+    const params = CommandHistoryQueryParamsSchema.parse(rawParams ?? {});
+    return this.queryCommandHistory(params);
   }
 
   // Dynamic Security Criteria Adjustment

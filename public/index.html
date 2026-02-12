@@ -10,6 +10,7 @@
     <header>
       <h1>MCP Shell Backoffice</h1>
       <nav>
+        <button data-tab="dashboard">ダッシュボード</button>
         <button data-tab="history" class="active">履歴</button>
         <button data-tab="executions">実行</button>
         <button data-tab="terminals">ターミナル</button>
@@ -20,6 +21,19 @@
     </header>
 
     <main>
+      <section id="dashboard" class="tab">
+        <div class="cards" id="dashboard-cards">
+          <div class="card"><h3>履歴</h3><pre id="dash-history"></pre></div>
+          <div class="card"><h3>実行状況</h3><pre id="dash-exec"></pre></div>
+          <div class="card"><h3>ターミナル</h3><pre id="dash-term"></pre></div>
+          <div class="card"><h3>ファイル</h3><pre id="dash-files"></pre></div>
+        </div>
+        <div>
+          <h3>実行中の出力サマリ</h3>
+          <pre id="dash-running-tails" class="terminal"></pre>
+          <button id="dash-refresh">更新</button>
+        </div>
+      </section>
       <section id="history" class="tab active">
         <div class="controls">
           <input id="history-q" placeholder="コマンド検索" />

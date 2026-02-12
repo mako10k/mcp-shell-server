@@ -14,11 +14,13 @@ describe('Function Call Integration Tests', () => {
   let securityManager: SecurityManager;
   let historyManager: CommandHistoryManager;
   let evaluator: EnhancedSafetyEvaluator;
+  let createMessage: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     securityManager = new SecurityManager();
     historyManager = new CommandHistoryManager(DEFAULT_ENHANCED_SECURITY_CONFIG);
-    evaluator = new EnhancedSafetyEvaluator(securityManager, historyManager);
+    createMessage = vi.fn().mockResolvedValue({ content: { type: 'text', text: '' } });
+    evaluator = new EnhancedSafetyEvaluator(securityManager, historyManager, createMessage);
   });
 
   afterEach(() => {
@@ -68,7 +70,7 @@ describe('Function Call Integration Tests', () => {
       
       if (result.success && result.result) {
         const evaluation = result.result as SimplifiedLLMEvaluationResult;
-        expect(evaluation.evaluation_result).toMatch(/^(ALLOW|DENY|NEED_MORE_HISTORY|NEED_USER_CONFIRM|NEED_ASSISTANT_CONFIRM)$/);
+        expect(evaluation.evaluation_result).toMatch(/^(allow|deny|add_more_history|user_confirm|ai_assistant_confirm)$/);
         expect(typeof evaluation.reasoning).toBe('string');
         expect(Array.isArray(evaluation.suggested_alternatives)).toBe(true);
       }
@@ -88,7 +90,7 @@ describe('Function Call Integration Tests', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
-      expect(result.error).toContain('Unknown function');
+      expect(result.error).toContain('No handler found');
     });
 
     test('should handle malformed function call arguments', async () => {
@@ -108,6 +110,15 @@ describe('Function Call Integration Tests', () => {
     });
 
     test('should execute reevaluate_with_user_intent function call', async () => {
+      const evaluatorAny = evaluator as unknown as {
+        performLLMCentricEvaluation: (command: string, workingDirectory: string, history: unknown[], comment?: string) => Promise<unknown>;
+      };
+      vi.spyOn(evaluatorAny, 'performLLMCentricEvaluation').mockResolvedValue({
+        evaluation_result: 'allow',
+        reasoning: 'ok',
+        suggested_alternatives: [],
+      });
+
       const functionCall = {
         name: 'reevaluate_with_user_intent',
         arguments: JSON.stringify({
@@ -116,7 +127,7 @@ describe('Function Call Integration Tests', () => {
           additional_context: 'Removing temporary test file',
           user_intent: 'cleanup',
           previous_evaluation: {
-            evaluation_result: 'NEED_USER_CONFIRM',
+            evaluation_result: 'user_confirm',
             reasoning: 'File deletion requires confirmation',
             requires_additional_context: {
               command_history_depth: 0,
@@ -141,7 +152,7 @@ describe('Function Call Integration Tests', () => {
       
       if (result.success && result.result) {
         const evaluation = result.result as SimplifiedLLMEvaluationResult;
-        expect(evaluation.evaluation_result).toMatch(/^(ALLOW|DENY|NEED_MORE_HISTORY|NEED_USER_CONFIRM|NEED_ASSISTANT_CONFIRM)$/);
+        expect(evaluation.evaluation_result).toMatch(/^(allow|deny|add_more_history|user_confirm|ai_assistant_confirm)$/);
         expect(typeof evaluation.reasoning).toBe('string');
       }
     });
@@ -168,35 +179,41 @@ describe('Function Call Integration Tests', () => {
     });
 
     test('should handle function call execution exceptions', async () => {
-      // Mock the registry to throw an error
-      const registry = evaluator.getFunctionCallRegistry();
-      const originalHandler = registry.get('evaluate_command_security');
-      
-      const mockHandler = vi.fn().mockRejectedValue(new Error('Test error'));
-      registry.set('evaluate_command_security', mockHandler);
+      const evaluatorAny = evaluator as unknown as {
+        performLLMCentricEvaluation: (command: string, workingDirectory: string, history: unknown[], comment?: string) => Promise<unknown>;
+      };
+      vi.spyOn(evaluatorAny, 'performLLMCentricEvaluation').mockRejectedValue(new Error('Test error'));
 
       const functionCall = {
-        name: 'evaluate_command_security',
+        name: 'reevaluate_with_user_intent',
         arguments: JSON.stringify({
-          command: 'ls -la',
-          working_directory: '/tmp'
-        })
+          command: 'rm test.txt',
+          working_directory: '/tmp',
+          additional_context: 'Removing temporary test file',
+          user_intent: 'cleanup',
+          previous_evaluation: {
+            evaluation_result: 'user_confirm',
+            reasoning: 'File deletion requires confirmation',
+            requires_additional_context: {
+              command_history_depth: 0,
+              execution_results_count: 0,
+              user_intent_search_keywords: null,
+              user_intent_question: null
+            },
+            suggested_alternatives: ['Use rm with specific filename']
+          }
+        } as ReevaluateWithUserIntentArgs)
       };
 
       const context: FunctionCallContext = {
-        command: 'ls -la',
+        command: 'rm test.txt',
       };
 
       const result = await evaluator.executeTestFunctionCall(functionCall, context);
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
-      expect(result.error).toContain('Test error');
-
-      // Restore original handler
-      if (originalHandler) {
-        registry.set('evaluate_command_security', originalHandler);
-      }
+      expect(result.error).toContain('User intent reevaluation failed');
     });
   });
 
@@ -250,7 +267,7 @@ describe('Function Call Integration Tests', () => {
         
         if (result.success && result.result) {
           const evaluation = result.result as SimplifiedLLMEvaluationResult;
-          expect(evaluation.evaluation_result).toMatch(/^(ALLOW|DENY|NEED_MORE_HISTORY|NEED_USER_CONFIRM|NEED_ASSISTANT_CONFIRM)$/);
+          expect(evaluation.evaluation_result).toMatch(/^(allow|deny|add_more_history|user_confirm|ai_assistant_confirm)$/);
         }
       }
     });
@@ -258,19 +275,33 @@ describe('Function Call Integration Tests', () => {
 
   describe('LLM Integration with Function Calls', () => {
     test('should integrate function calls with LLM sampling when available', async () => {
-      // Mock LLM sampling callback
-      const mockSamplingCallback = vi.fn().mockResolvedValue({
-        content: [{ type: 'text', text: 'Test LLM response' }]
+      const evaluatorAny = evaluator as unknown as {
+        performLLMCentricEvaluation: (command: string, workingDirectory: string, history: unknown[], comment?: string) => Promise<unknown>;
+      };
+      const llmSpy = vi.spyOn(evaluatorAny, 'performLLMCentricEvaluation').mockResolvedValue({
+        evaluation_result: 'allow',
+        reasoning: 'ok',
+        suggested_alternatives: [],
       });
 
-      securityManager.setLLMSamplingCallback(mockSamplingCallback);
-
       const functionCall = {
-        name: 'evaluate_command_security',
+        name: 'reevaluate_with_user_intent',
         arguments: JSON.stringify({
           command: 'complex-command --with-flags',
           working_directory: '/tmp',
-          additional_context: 'Complex operation requiring LLM evaluation'
+          additional_context: 'Complex operation requiring LLM evaluation',
+          user_intent: 'maintenance',
+          previous_evaluation: {
+            evaluation_result: 'user_confirm',
+            reasoning: 'Needs confirmation',
+            requires_additional_context: {
+              command_history_depth: 0,
+              execution_results_count: 0,
+              user_intent_search_keywords: null,
+              user_intent_question: null
+            },
+            suggested_alternatives: []
+          }
         })
       };
 
@@ -282,7 +313,7 @@ describe('Function Call Integration Tests', () => {
       const result = await evaluator.executeTestFunctionCall(functionCall, context);
 
       expect(result.success).toBe(true);
-      // Note: The actual LLM integration depends on command complexity and configuration
+      expect(llmSpy).toHaveBeenCalled();
     });
 
     test('should fallback gracefully when LLM is unavailable', async () => {

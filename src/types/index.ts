@@ -294,6 +294,16 @@ export abstract class SafetyEvaluationCompletedResult extends SafetyEvaluationRe
     this.confirmation_message = confirmationMessage;
     this.user_response = userResponse;
   }
+
+  protected buildCommonResponse(): Record<string, unknown> {
+    return {
+      reasoning: this.reasoning,
+      llm_evaluation_used: this.llm_evaluation_used,
+      confirmation_message: this.confirmation_message,
+      user_response: this.user_response,
+      elicitation_result: this.elicitation_result
+    };
+  }
 }
 
 // Allow結果クラス - 実行が許可された場合
@@ -323,14 +333,10 @@ export class SafetyEvaluationAllowResult extends SafetyEvaluationCompletedResult
   generateToolResponse() {
     return {
       evaluation_result: 'allow',
-      reasoning: this.reasoning,
-      llm_evaluation_used: this.llm_evaluation_used,
+      ...this.buildCommonResponse(),
       suggested_alternatives: this.suggested_alternatives,
       context_analysis: this.context_analysis,
       next_action: this.next_action,
-      confirmation_message: this.confirmation_message,
-      user_response: this.user_response,
-      elicitation_result: this.elicitation_result
     };
   }
 }
@@ -359,13 +365,9 @@ export class SafetyEvaluationDenyResult extends SafetyEvaluationCompletedResult 
   generateToolResponse() {
     return {
       evaluation_result: 'deny',
-      reasoning: this.reasoning,
-      llm_evaluation_used: this.llm_evaluation_used,
+      ...this.buildCommonResponse(),
       suggested_alternatives: this.suggested_alternatives,
       next_action: this.next_action,
-      confirmation_message: this.confirmation_message,
-      user_response: this.user_response,
-      elicitation_result: this.elicitation_result
     };
   }
 }
@@ -407,14 +409,10 @@ export class SafetyEvaluationAiAssistantConfirmResult extends SafetyEvaluationCo
   generateToolResponse() {
     return {
       evaluation_result: 'ai_assistant_confirm',
-      reasoning: this.reasoning,
-      llm_evaluation_used: this.llm_evaluation_used,
+      ...this.buildCommonResponse(),
       suggested_alternatives: this.suggested_alternatives,
       context_analysis: this.context_analysis,
       next_action: this.next_action,
-      confirmation_message: this.confirmation_message,
-      user_response: this.user_response,
-      elicitation_result: this.elicitation_result
     };
   }
 }

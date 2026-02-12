@@ -1,0 +1,7 @@
+**
+!dist/**
+!package.json
+!README.md
+!LICENSE
+!node_modules/node-pty/**
+!node_modules/node-addon-api/**

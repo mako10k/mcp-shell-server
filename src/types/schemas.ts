@@ -55,7 +55,13 @@ export const ShellExecuteParamsSchema = z
       .max(3600)
       .default(60)
       .describe(
-        'Maximum time in seconds to wait for foreground execution before switching to background or failing. Range: 1-3600 seconds.'
+        'Global timeout (1-3600s). Default: 60s.\n'
+        + 'Per execution_mode (effective limits before execution starts):\n'
+        + '• foreground: Schema allows 1-3600s, but the default security policy caps runs at 300s. Setting timeout_seconds above 300s raises TIMEOUT_LIMIT_EXCEEDED unless max_execution_time is increased via security_set_restrictions.\n'
+        + '• background: 1-3600s. Intended for >300s runs; still subject to the same security cap (300s by default) unless raised.\n'
+        + '• detached: 1-3600s. Shares the security cap behavior with background.\n'
+        + '• adaptive: 1-3600s total cap. The initial foreground phase also respects foreground_timeout_seconds (≤300s) and the security cap.\n'
+        + 'Guidance: For long-running tasks (>300s), raise max_execution_time or use background/adaptive modes.'
       ),
     foreground_timeout_seconds: z
       .number()
@@ -64,7 +70,11 @@ export const ShellExecuteParamsSchema = z
       .max(300)
       .default(15)
       .describe(
-        'For adaptive mode: timeout in seconds for the initial foreground phase before switching to background execution. Range: 1-300 seconds (maximum 300). If you need a longer timeout, use execution_mode "background" or "adaptive". Values above 300 will be rejected.'
+        'Initial foreground window for adaptive mode (1-300s).\n'
+        + 'Behavior by execution_mode:\n'
+        + '• adaptive: Duration to remain in foreground before automatically switching to background if the command is still running. Must be ≤ timeout_seconds.\n'
+        + '• foreground: Does not trigger background switching (value is effectively unused for switching). Use background/adaptive for >300s scenarios.\n'
+        + '• background/detached: Ignored.'
       ),
     return_partial_on_timeout: z
       .boolean()
@@ -113,6 +123,14 @@ export const ShellExecuteParamsSchema = z
       ),
   })
   .strict()
+  // Cross-field validations for timeout relationships
+  .refine(
+    (data) => data.execution_mode !== 'adaptive' || (data.foreground_timeout_seconds ?? 15) <= (data.timeout_seconds ?? 60),
+    {
+      message: 'foreground_timeout_seconds must be less than or equal to timeout_seconds in adaptive mode.',
+      path: ['foreground_timeout_seconds'],
+    }
+  )
   .refine((data) => !(data.input_data && data.input_output_id), {
     message: 'input_data and input_output_id cannot be specified simultaneously.',
     path: ['input_data', 'input_output_id'],

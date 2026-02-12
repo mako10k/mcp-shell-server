@@ -16,6 +16,13 @@ export const ToolCallSchema = z.object({
   })
 });
 
+export const ToolChoiceSchema = z.union([
+  z.literal('auto'),
+  z.literal('none'),
+  z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
+  z.object({ type: z.literal('tool'), name: z.string() })
+]);
+
 export const CreateMessageRequestSchema = z.object({
   messages: z.array(z.object({
     role: z.enum(['user', 'assistant', 'tool']),
@@ -37,12 +44,7 @@ export const CreateMessageRequestSchema = z.object({
       parameters: z.record(z.unknown())
     })
   })).optional(),
-  tool_choice: z.union([
-    z.literal('auto'),
-    z.literal('none'),
-    z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
-    z.object({ type: z.literal('tool'), name: z.string() })
-  ]).optional()
+  tool_choice: ToolChoiceSchema.optional()
 });
 
 export const CreateMessageResponseSchema = z.object({
@@ -143,6 +145,13 @@ export type CreateMessageResponse = z.infer<typeof CreateMessageResponseSchema>;
 export type ElicitationProperty = z.infer<typeof ElicitationPropertySchema>;
 export type ElicitationSchema = z.infer<typeof ElicitationSchemaSchema>;
 export type ElicitationResponse = z.infer<typeof ElicitationResponseSchema>;
+export type ElicitationRequest = {
+  message: string;
+  requestedSchema: ElicitationSchema;
+  timeoutMs: number;
+  level: 'question' | 'warning' | 'info' | string;
+};
+export type ElicitationHandler = (request: ElicitationRequest) => Promise<ElicitationResponse>;
 export type RequiresAdditionalContext = z.infer<typeof RequiresAdditionalContextSchema>;
 export type LLMEvaluationResult = z.infer<typeof LLMEvaluationResultSchema>;
 export type UserIntentData = z.infer<typeof UserIntentDataSchema>;

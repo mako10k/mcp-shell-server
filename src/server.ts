@@ -12,12 +12,11 @@ import { ProcessManager } from './core/process-manager.js';
 import { TerminalManager } from './core/terminal-manager.js';
 import { FileManager } from './core/file-manager.js';
 import { MonitoringManager } from './core/monitoring-manager.js';
-import { SecurityManager } from './security/manager.js';
-import { ConfigManager } from './core/config-manager.js';
 import { CommandHistoryManager } from './core/enhanced-history-manager.js';
 import { ShellTools } from './tools/shell-tools.js';
 import { logger } from './utils/helpers.js';
 import { ExecutionInfo } from './types/index.js';
+import { createShellToolRuntime } from './runtime/tool-runtime.js';
 
 import {
   ShellExecuteParamsSchema,
@@ -54,8 +53,6 @@ export class MCPShellServer {
   private terminalManager: TerminalManager;
   private fileManager: FileManager;
   private monitoringManager: MonitoringManager;
-  private securityManager: SecurityManager;
-  private configManager: ConfigManager;
   private commandHistoryManager: CommandHistoryManager;
   private shellTools: ShellTools;
   private backoffice?: BackofficeServer;
@@ -75,33 +72,13 @@ export class MCPShellServer {
       }
     );
 
-    // マネージャーの初期化（FileManagerを最初に初期化）
-    this.fileManager = new FileManager();
-    this.configManager = new ConfigManager();
-    this.processManager = new ProcessManager(50, '/tmp/mcp-shell-outputs', this.fileManager);
-    this.terminalManager = new TerminalManager();
-    this.monitoringManager = new MonitoringManager();
-    
-    // Enhanced security configを取得してCommandHistoryManagerを初期化
-    const enhancedConfig = this.configManager.getEnhancedSecurityConfig();
-    this.commandHistoryManager = new CommandHistoryManager(enhancedConfig);
-    
-    // SecurityManagerを先に作成（後でEnhancedSafetyEvaluatorを初期化）
-    this.securityManager = new SecurityManager();
-    
-    // EnhancedSafetyEvaluatorを初期化
-    this.securityManager.initializeEnhancedEvaluator(this.commandHistoryManager, this.server);
-    
-    // Load existing command history
-    this.commandHistoryManager.loadHistory().catch(error => {
-      console.warn('Failed to load command history:', error);
-    });
-
-    // Initialize Enhanced Safety Evaluator in SecurityManager with MCP server instance
-    this.securityManager.initializeEnhancedEvaluator(this.commandHistoryManager, this.server);
-
-    // ProcessManagerにTerminalManagerの参照を設定
-    this.processManager.setTerminalManager(this.terminalManager);
+    const runtime = createShellToolRuntime({ server: this.server });
+    this.fileManager = runtime.fileManager;
+    this.processManager = runtime.processManager;
+    this.terminalManager = runtime.terminalManager;
+    this.monitoringManager = runtime.monitoringManager;
+    this.commandHistoryManager = runtime.commandHistoryManager;
+    this.shellTools = runtime.shellTools;
 
     // バックグラウンドプロセス終了時のコールバックを設定
     this.processManager.setBackgroundProcessCallbacks({
@@ -115,16 +92,6 @@ export class MCPShellServer {
         await this.notifyBackgroundProcessTimeout(executionId, executionInfo);
       }
     });
-
-    // ツールハンドラーの初期化
-    this.shellTools = new ShellTools(
-      this.processManager,
-      this.terminalManager,
-      this.fileManager,
-      this.monitoringManager,
-      this.securityManager,
-      this.commandHistoryManager
-    );
 
     this.setupHandlers();
 
@@ -251,8 +218,7 @@ export class MCPShellServer {
           // Shell Operations
           case 'shell_execute': {
             try {
-              const params = ShellExecuteParamsSchema.parse(args);
-              const result = await this.shellTools.executeShell(params);
+              const result = await this.shellTools.executeShellValidated(args);
               return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
             } catch (e) {
               if (e instanceof ZodError) {
@@ -280,54 +246,46 @@ export class MCPShellServer {
           }
 
           case 'process_get_execution': {
-            const params = ShellGetExecutionParamsSchema.parse(args);
-            const result = await this.shellTools.getExecution(params);
+            const result = await this.shellTools.getExecutionValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'shell_set_default_workdir': {
-            const params = ShellSetDefaultWorkdirParamsSchema.parse(args);
-            const result = await this.shellTools.setDefaultWorkingDirectory(params);
+            const result = await this.shellTools.setDefaultWorkingDirectoryValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           // Output File Operations  
           case 'list_execution_outputs': {
-            const params = FileListParamsSchema.parse(args);
-            const result = await this.shellTools.listFiles(params);
+            const result = await this.shellTools.listFilesValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'read_execution_output': {
-            const params = FileReadParamsSchema.parse(args);
-            const result = await this.shellTools.readFile(params);
+            const result = await this.shellTools.readFileValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'delete_execution_outputs': {
-            const params = FileDeleteParamsSchema.parse(args);
-            const result = await this.shellTools.deleteFiles(params);
+            const result = await this.shellTools.deleteFilesValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           // Issue #15: クリーンアップ機能のハンドラー
           case 'get_cleanup_suggestions': {
-            const params = CleanupSuggestionsParamsSchema.parse(args);
-            const result = await this.shellTools.getCleanupSuggestions(params);
+            const result = await this.shellTools.getCleanupSuggestionsValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'perform_auto_cleanup': {
-            const params = AutoCleanupParamsSchema.parse(args);
-            const result = await this.shellTools.performAutoCleanup(params);
+            const result = await this.shellTools.performAutoCleanupValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           // Terminal Management
           // Terminal Management - Unified Operations
           case 'terminal_operate': {
-            const params = TerminalOperateParamsSchema.parse(args);
-            const result = await this.shellTools.terminalOperate(params);
+            const result = await this.shellTools.terminalOperateValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
@@ -354,27 +312,23 @@ export class MCPShellServer {
 
           // Essential terminal operations that remain individual
           case 'terminal_list': {
-            const params = TerminalListParamsSchema.parse(args);
-            const result = await this.shellTools.listTerminals(params);
+            const result = await this.shellTools.listTerminalsValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'terminal_get_info': {
-            const params = TerminalGetParamsSchema.parse(args);
-            const result = await this.shellTools.getTerminal(params);
+            const result = await this.shellTools.getTerminalValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           case 'terminal_close': {
-            const params = TerminalCloseParamsSchema.parse(args);
-            const result = await this.shellTools.closeTerminal(params);
+            const result = await this.shellTools.closeTerminalValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
           // Command History Operations
           case 'command_history_query': {
-            const params = CommandHistoryQueryParamsSchema.parse(args);
-            const result = await this.shellTools.queryCommandHistory(params);
+            const result = await this.shellTools.queryCommandHistoryValidated(args);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 
@@ -415,6 +369,21 @@ export class MCPShellServer {
     return { commandPreview, outputSizeStr };
   }
 
+  private async notifyClient(level: 'info' | 'error' | 'warning', message: string): Promise<void> {
+    try {
+      await this.server.notification({
+        method: 'notifications/message',
+        params: {
+          level,
+          data: message
+        }
+      });
+    } catch (error) {
+      const prefix = level === 'warning' ? 'WARN' : level.toUpperCase();
+      console.error(`[${prefix}] ${message}`);
+    }
+  }
+
   // バックグラウンドプロセス終了時の通知メソッド
   private async notifyBackgroundProcessComplete(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
     const { commandPreview, outputSizeStr } = this.getProcessNotificationInfo(executionInfo);
@@ -430,18 +399,7 @@ export class MCPShellServer {
     }, 'background-process');
     
     // MCPクライアントに通知を送信
-    try {
-      await this.server.notification({
-        method: 'notifications/message',
-        params: {
-          level: 'info',
-          data: message
-        }
-      });
-    } catch (error) {
-      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
-      console.error(`[INFO] ${message}`);
-    }
+    await this.notifyClient('info', message);
   }
 
   private async notifyBackgroundProcessError(executionId: string, executionInfo: ExecutionInfo, error?: Error): Promise<void> {
@@ -459,18 +417,7 @@ export class MCPShellServer {
     }, 'background-process');
     
     // MCPクライアントに通知を送信
-    try {
-      await this.server.notification({
-        method: 'notifications/message',
-        params: {
-          level: 'error',
-          data: message
-        }
-      });
-    } catch (notificationError) {
-      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
-      console.error(`[ERROR] ${message}`);
-    }
+    await this.notifyClient('error', message);
   }
 
   private async notifyBackgroundProcessTimeout(executionId: string, executionInfo: ExecutionInfo): Promise<void> {
@@ -487,18 +434,7 @@ export class MCPShellServer {
     }, 'background-process');
     
     // MCPクライアントに通知を送信
-    try {
-      await this.server.notification({
-        method: 'notifications/message',
-        params: {
-          level: 'warning',
-          data: message
-        }
-      });
-    } catch (error) {
-      // 通知送信エラーは内部ログのみ（フォールバックとしてstderr出力）
-      console.error(`[WARN] ${message}`);
-    }
+    await this.notifyClient('warning', message);
   }
 
   async run(): Promise<void> {
