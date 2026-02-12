@@ -44,6 +44,39 @@ async function waitForSocketReady(socketPath: string, timeoutMs: number): Promis
   throw new Error('Timed out waiting for daemon socket to be ready.');
 }
 
+async function waitForFile(pathname: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      await fs.access(pathname);
+      return;
+    } catch {
+      // Retry until timeout.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error(`Timed out waiting for file: ${pathname}`);
+}
+
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error(`Timed out waiting for process ${pid} to exit.`);
+}
+
 async function waitForExit(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.killed) {
     return;
@@ -64,6 +97,7 @@ describe('Daemon integration', () => {
   let tempCwd: string;
   let socketPath: string;
   let serverId: string;
+  let pidFile: string;
   let child: ChildProcess | null = null;
 
   beforeEach(async () => {
@@ -77,6 +111,7 @@ describe('Daemon integration', () => {
     tempCwd = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-cwd-'));
     socketPath = buildSocketPath(tempCwd, 'test', runtimeDir);
     serverId = `${hashCwd(tempCwd)}:test`;
+    pidFile = path.join(runtimeDir, 'mcp-child.pid');
 
     process.env['XDG_RUNTIME_DIR'] = runtimeDir;
     process.env['MCP_SHELL_SERVER_BRANCH'] = 'test';
@@ -86,7 +121,20 @@ describe('Daemon integration', () => {
     child = spawn(
       process.execPath,
       [tsxPath, 'packages/shell-server/src/daemon/server.ts', '--socket', socketPath, '--cwd', tempCwd, '--branch', 'test'],
-      { stdio: 'ignore' }
+      {
+        stdio: 'ignore',
+        env: {
+          ...process.env,
+          MCP_SHELL_MCP_DAEMON_ENTRY: path.join(
+            process.cwd(),
+            'src',
+            'test',
+            'fixtures',
+            'mcp-daemon-child.js'
+          ),
+          MCP_SHELL_MCP_CHILD_PID_FILE: pidFile,
+        },
+      }
     );
 
     await waitForSocketReady(socketPath, 3000);
@@ -127,5 +175,18 @@ describe('Daemon integration', () => {
 
     const attachableAfter = await serverManager.listAttachable({ cwd: tempCwd });
     expect(attachableAfter[0]?.attachable).toBe(true);
+  });
+
+  it('stops the daemon and terminates the MCP child process', async () => {
+    await waitForFile(pidFile, 2000);
+
+    const pidText = await fs.readFile(pidFile, 'utf-8');
+    const pid = Number.parseInt(pidText, 10);
+    expect(Number.isNaN(pid)).toBe(false);
+
+    const serverManager = new StubServerManager();
+    await serverManager.stop({ serverId, force: true });
+
+    await waitForProcessExit(pid, 2000);
   });
 });
