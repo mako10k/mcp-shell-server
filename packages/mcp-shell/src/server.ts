@@ -11,7 +11,13 @@ import { ZodError } from 'zod';
 
 import { logger } from '../../shell-server/src/utils/helpers.js';
 import { ExecutionInfo } from '../../shell-server/src/types/index.js';
-import { createShellToolRuntime, type ShellToolRuntime } from '../../shell-server/src/runtime/tool-runtime.js';
+import {
+  createShellToolRuntime,
+  dispatchToolCall,
+  type ShellToolRuntime,
+  type ToolName,
+  type ToolParams,
+} from '../../shell-server/src/runtime/tool-runtime.js';
 
 import {
   ShellExecuteParamsSchema,
@@ -256,194 +262,67 @@ export class MCPShellServer {
           );
         }
 
-        switch (name) {
-          // Shell Operations
-          case 'shell_execute': {
-            try {
-              const result = await this.shellTools.executeShellValidated(args);
-              return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-            } catch (e) {
-              if (e instanceof ZodError) {
-                // Check for common VS Code internal tool parameter confusion
-                const isExplanationError = args && typeof args === 'object' && 'explanation' in args;
-                const isBackgroundError = args && typeof args === 'object' && 'isBackground' in args;
-                
-                let specificMessage = 'Invalid parameters provided to shell_execute';
-                if (isExplanationError || isBackgroundError) {
-                  specificMessage = 'IMPORTANT: You are confusing MCP Shell Server with VS Code internal tools. This is "shell_execute" (MCP Shell Server), NOT "run_in_terminal" (VS Code internal). Do NOT use parameters like "explanation" or "isBackground". Use only the parameters defined in shell_execute schema.';
-                }
-                
-                const errorDetails = {
-                  error: 'Validation Error',
-                  message: specificMessage,
-                  receivedArgs: args,
-                  validationErrors: e.errors,
-                  timestamp: new Date().toISOString(),
-                  hint: isExplanationError || isBackgroundError ? 'Use MCP Shell Server parameters only: command, execution_mode, working_directory, etc.' : 'Check the shell_execute schema for valid parameters'
-                };
-                console.error('[SHELL_EXECUTE_VALIDATION_ERROR]', JSON.stringify(errorDetails, null, 2));
+        const dispatchOptions = {
+          ...(process.env['MCP_SHELL_DEFAULT_WORKDIR']
+            ? { defaultWorkingDirectory: process.env['MCP_SHELL_DEFAULT_WORKDIR'] }
+            : {}),
+          fallbackWorkingDirectory: process.cwd(),
+        };
+
+        if (name === 'shell_execute') {
+          try {
+            const result = await dispatchToolCall(
+              this.shellTools,
+              this.serverManager,
+              name as ToolName,
+              args as ToolParams,
+              dispatchOptions
+            );
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          } catch (e) {
+            if (e instanceof ZodError) {
+              // Check for common VS Code internal tool parameter confusion
+              const isExplanationError = args && typeof args === 'object' && 'explanation' in args;
+              const isBackgroundError = args && typeof args === 'object' && 'isBackground' in args;
+
+              let specificMessage = 'Invalid parameters provided to shell_execute';
+              if (isExplanationError || isBackgroundError) {
+                specificMessage = 'IMPORTANT: You are confusing MCP Shell Server with VS Code internal tools. This is "shell_execute" (MCP Shell Server), NOT "run_in_terminal" (VS Code internal). Do NOT use parameters like "explanation" or "isBackground". Use only the parameters defined in shell_execute schema.';
               }
-              throw e;
+
+              const errorDetails = {
+                error: 'Validation Error',
+                message: specificMessage,
+                receivedArgs: args,
+                validationErrors: e.errors,
+                timestamp: new Date().toISOString(),
+                hint: isExplanationError || isBackgroundError
+                  ? 'Use MCP Shell Server parameters only: command, execution_mode, working_directory, etc.'
+                  : 'Check the shell_execute schema for valid parameters'
+              };
+              console.error('[SHELL_EXECUTE_VALIDATION_ERROR]', JSON.stringify(errorDetails, null, 2));
             }
+            throw e;
           }
+        }
 
-          case 'process_get_execution': {
-            const result = await this.shellTools.getExecutionValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'shell_set_default_workdir': {
-            const result = await this.shellTools.setDefaultWorkingDirectoryValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Output File Operations  
-          case 'list_execution_outputs': {
-            const result = await this.shellTools.listFilesValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'read_execution_output': {
-            const result = await this.shellTools.readFileValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'delete_execution_outputs': {
-            const result = await this.shellTools.deleteFilesValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Issue #15: クリーンアップ機能のハンドラー
-          case 'get_cleanup_suggestions': {
-            const result = await this.shellTools.getCleanupSuggestionsValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'perform_auto_cleanup': {
-            const result = await this.shellTools.performAutoCleanupValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Terminal Management
-          // Terminal Management - Unified Operations
-          case 'terminal_operate': {
-            const result = await this.shellTools.terminalOperateValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Terminal Management - Individual Operations (Legacy, commented out)
-          /*
-          case 'terminal_create': {
-            const params = TerminalCreateParamsSchema.parse(args);
-            const result = await this.shellTools.createTerminal(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'terminal_send_input': {
-            const params = TerminalInputParamsSchema.parse(args);
-            const result = await this.shellTools.sendTerminalInput(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'terminal_get_output': {
-            const params = TerminalOutputParamsSchema.parse(args);
-            const result = await this.shellTools.getTerminalOutput(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-          */
-
-          // Essential terminal operations that remain individual
-          case 'terminal_list': {
-            const result = await this.shellTools.listTerminalsValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'terminal_get_info': {
-            const result = await this.shellTools.getTerminalValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'terminal_close': {
-            const result = await this.shellTools.closeTerminalValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Command History Operations
-          case 'command_history_query': {
-            const result = await this.shellTools.queryCommandHistoryValidated(args);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Server Management
-          case 'server_current': {
-            const result = await this.serverManager.current();
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'server_list_attachable': {
-            const cwd = args && typeof args === 'object' && 'cwd' in args
-              ? String((args as { cwd: string }).cwd)
-              : process.cwd();
-            const result = await this.serverManager.listAttachable({ cwd });
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'server_start': {
-            const params = args as {
-              cwd: string;
-              socket_path?: string;
-              allow_existing?: boolean;
-            };
-            const result = await this.serverManager.start({
-              cwd: params.cwd,
-              ...(params.socket_path ? { socketPath: params.socket_path } : {}),
-              allowExisting: params.allow_existing ?? false,
-            });
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'server_stop': {
-            const params = args as { server_id: string; force?: boolean };
-            await this.serverManager.stop({
-              serverId: params.server_id,
-              force: params.force ?? false,
-            });
-            return { content: [{ type: 'text', text: JSON.stringify({ ok: true }, null, 2) }] };
-          }
-
-          case 'server_get': {
-            const params = args as { server_id: string };
-            const result = await this.serverManager.get({ serverId: params.server_id });
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          case 'server_detach': {
-            const params = args as { server_id: string };
-            await this.serverManager.detach({ serverId: params.server_id });
-            return { content: [{ type: 'text', text: JSON.stringify({ ok: true }, null, 2) }] };
-          }
-
-          case 'server_reattach': {
-            const params = args as { server_id: string };
-            const result = await this.serverManager.reattach({ serverId: params.server_id });
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-
-          // Dynamic Security Criteria Adjustment
-          // NOTE: MCP-side adjust_criteria handler is disabled (security concern)
-          /*
-          case 'adjust_criteria': {
-            const params = AdjustCriteriaParamsSchema.parse(args);
-            const result = await this.shellTools.adjustCriteria(params);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-          */
-
-          default:
+        try {
+          const result = await dispatchToolCall(
+            this.shellTools,
+            this.serverManager,
+            name as ToolName,
+            args as ToolParams,
+            dispatchOptions
+          );
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          if (error instanceof Error && error.message.startsWith('Unsupported tool:')) {
             throw new McpError(
               ErrorCode.MethodNotFound,
               `Unknown tool: ${name}`
             );
+          }
+          throw error;
         }
       } catch (error) {
         if (error instanceof MCPShellError) {
