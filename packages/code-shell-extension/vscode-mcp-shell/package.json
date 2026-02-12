@@ -29,6 +29,13 @@
     "onLanguageModelTool:terminal_get_info",
     "onLanguageModelTool:terminal_close",
     "onLanguageModelTool:command_history_query",
+    "onLanguageModelTool:server_current",
+    "onLanguageModelTool:server_list_attachable",
+    "onLanguageModelTool:server_start",
+    "onLanguageModelTool:server_stop",
+    "onLanguageModelTool:server_get",
+    "onLanguageModelTool:server_detach",
+    "onLanguageModelTool:server_reattach",
     "onMcpServerDefinitionProvider:mcp-shell-server.provider"
   ],
   "main": "./dist/extension.js",
@@ -372,6 +379,157 @@
               "description": "Search term."
             }
           },
+          "additionalProperties": true
+        }
+      },
+      {
+        "name": "server_current",
+        "displayName": "Server Current",
+        "modelDescription": "Get current server information, including attach status and socket path when available.",
+        "userDescription": "Get current server metadata.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "server_current",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "server_list_attachable",
+        "displayName": "Server List Attachable",
+        "modelDescription": "List attachable servers for a working directory boundary.",
+        "userDescription": "List attachable servers by working directory.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "server_list_attachable",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "cwd": {
+              "type": "string",
+              "description": "Working directory used to discover attachable servers."
+            }
+          },
+          "required": [
+            "cwd"
+          ],
+          "additionalProperties": true
+        }
+      },
+      {
+        "name": "server_start",
+        "displayName": "Server Start",
+        "modelDescription": "Start or discover a server for the specified working directory.",
+        "userDescription": "Start a server for a working directory.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "server_start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "cwd": {
+              "type": "string",
+              "description": "Working directory for the server."
+            },
+            "socket_path": {
+              "type": "string",
+              "description": "Optional explicit socket path override."
+            },
+            "allow_existing": {
+              "type": "boolean",
+              "description": "Allow reuse when a server is already running."
+            }
+          },
+          "required": [
+            "cwd"
+          ],
+          "additionalProperties": true
+        }
+      },
+      {
+        "name": "server_stop",
+        "displayName": "Server Stop",
+        "modelDescription": "Stop a running server by server_id.",
+        "userDescription": "Stop a server by server_id.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "server_stop",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "server_id": {
+              "type": "string",
+              "description": "Server ID to stop."
+            },
+            "force": {
+              "type": "boolean",
+              "description": "Force stop even if clients are attached."
+            }
+          },
+          "required": [
+            "server_id"
+          ],
+          "additionalProperties": true
+        }
+      },
+      {
+        "name": "server_get",
+        "displayName": "Server Get",
+        "modelDescription": "Get server metadata by server_id.",
+        "userDescription": "Get server metadata by server_id.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "server_get",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "server_id": {
+              "type": "string",
+              "description": "Server ID to fetch."
+            }
+          },
+          "required": [
+            "server_id"
+          ],
+          "additionalProperties": true
+        }
+      },
+      {
+        "name": "server_detach",
+        "displayName": "Server Detach",
+        "modelDescription": "Detach from a server without stopping it.",
+        "userDescription": "Detach from a server by server_id.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "server_detach",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "server_id": {
+              "type": "string",
+              "description": "Server ID to detach from."
+            }
+          },
+          "required": [
+            "server_id"
+          ],
+          "additionalProperties": true
+        }
+      },
+      {
+        "name": "server_reattach",
+        "displayName": "Server Reattach",
+        "modelDescription": "Attach to a detached server by server_id.",
+        "userDescription": "Attach to a detached server by server_id.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "server_reattach",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "server_id": {
+              "type": "string",
+              "description": "Server ID to attach to."
+            }
+          },
+          "required": [
+            "server_id"
+          ],
           "additionalProperties": true
         }
       }

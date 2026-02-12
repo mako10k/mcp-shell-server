@@ -24,7 +24,14 @@ const TOOL_NAMES = [
   'terminal_list',
   'terminal_get_info',
   'terminal_close',
-  'command_history_query'
+  'command_history_query',
+  'server_current',
+  'server_list_attachable',
+  'server_start',
+  'server_stop',
+  'server_get',
+  'server_detach',
+  'server_reattach'
 ] as const;
 
 type ToolName = (typeof TOOL_NAMES)[number];
@@ -178,7 +185,12 @@ class DirectShellTool implements vscode.LanguageModelTool<ToolParams> {
     if (!this.serverManager) {
       this.serverManager = runtime.serverManager;
     }
-    const result = await dispatchToolCall(runtime.shellTools, this.toolName, options.input);
+    const result = await dispatchToolCall(
+      runtime.shellTools,
+      runtime.serverManager,
+      this.toolName,
+      options.input
+    );
 
     return new vscode.LanguageModelToolResult([
       new vscode.LanguageModelTextPart(JSON.stringify(result))
@@ -212,11 +224,16 @@ function buildConfirmationMessage(toolName: ToolName, input?: ToolParams): vscod
     return new vscode.MarkdownString('Perform automatic cleanup of execution outputs?');
   }
 
+  if (toolName.startsWith('server_')) {
+    return new vscode.MarkdownString('Manage MCP Shell Server attachment?');
+  }
+
   return new vscode.MarkdownString(`Run ${toolName}?`);
 }
 
 async function dispatchToolCall(
   shellTools: ShellToolsApi,
+  serverManager: ServerManagerApi,
   toolName: ToolName,
   params?: ToolParams
 ): Promise<unknown> {
@@ -247,6 +264,45 @@ async function dispatchToolCall(
       return shellTools.closeTerminalValidated(params ?? {});
     case 'command_history_query':
       return shellTools.queryCommandHistoryValidated(params ?? {});
+    case 'server_current':
+      return serverManager.current();
+    case 'server_list_attachable': {
+      const cwdParam = params && typeof params.cwd === 'string' ? params.cwd : undefined;
+      const cwd = cwdParam || getWorkspaceCwd() || process.cwd();
+      return serverManager.listAttachable({ cwd });
+    }
+    case 'server_start': {
+      const cwdParam = params && typeof params.cwd === 'string' ? params.cwd : undefined;
+      const cwd = cwdParam || getWorkspaceCwd() || process.cwd();
+      const socketPath = params && typeof params.socket_path === 'string' ? params.socket_path : undefined;
+      const allowExisting = params && typeof params.allow_existing === 'boolean'
+        ? params.allow_existing
+        : false;
+      return serverManager.start({
+        cwd,
+        ...(socketPath ? { socketPath } : {}),
+        allowExisting,
+      });
+    }
+    case 'server_stop': {
+      const serverId = params && typeof params.server_id === 'string' ? params.server_id : '';
+      const force = params && typeof params.force === 'boolean' ? params.force : false;
+      await serverManager.stop({ serverId, force });
+      return { ok: true };
+    }
+    case 'server_get': {
+      const serverId = params && typeof params.server_id === 'string' ? params.server_id : '';
+      return serverManager.get({ serverId });
+    }
+    case 'server_detach': {
+      const serverId = params && typeof params.server_id === 'string' ? params.server_id : '';
+      await serverManager.detach({ serverId });
+      return { ok: true };
+    }
+    case 'server_reattach': {
+      const serverId = params && typeof params.server_id === 'string' ? params.server_id : '';
+      return serverManager.reattach({ serverId });
+    }
     default:
       throw new Error(`Unsupported tool: ${toolName}`);
   }
