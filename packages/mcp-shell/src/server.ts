@@ -346,6 +346,42 @@ export class MCPShellServer {
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
+        if (name === 'server_get') {
+          const parsed = ServerGetParamsSchema.parse(args);
+          const result = await dispatchToolCall(
+            this.shellTools,
+            this.serverManager,
+            name as ToolName,
+            parsed as ToolParams,
+            dispatchOptions
+          );
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
+        if (name === 'server_detach') {
+          const parsed = ServerDetachParamsSchema.parse(args);
+          const result = await dispatchToolCall(
+            this.shellTools,
+            this.serverManager,
+            name as ToolName,
+            parsed as ToolParams,
+            dispatchOptions
+          );
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
+        if (name === 'server_reattach') {
+          const parsed = ServerReattachParamsSchema.parse(args);
+          const result = await dispatchToolCall(
+            this.shellTools,
+            this.serverManager,
+            name as ToolName,
+            parsed as ToolParams,
+            dispatchOptions
+          );
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
         try {
           const result = await dispatchToolCall(
             this.shellTools,
