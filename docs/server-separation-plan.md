@@ -246,6 +246,12 @@ Notes:
   - terminal_operate is persistent by default or uses a long TTL
     (e.g., 86400 seconds).
   - Enforce soft and hard concurrency limits to encourage reuse and cleanup.
+- Socket and runtime cleanup rules:
+  - On discovery, if a socket path exists but connect fails, treat it as stale
+    and delete the socket file.
+  - After removing a stale socket, remove the branch directory if empty.
+  - After removing a branch directory, remove the hash directory if empty.
+  - Cleanup is best-effort and must not delete non-empty directories.
 
 ## Directory Branching Rule (Multiple Servers per Directory)
 - Allow multiple servers per directory by appending a branch suffix.
