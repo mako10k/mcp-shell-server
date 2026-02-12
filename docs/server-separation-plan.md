@@ -97,8 +97,8 @@
   - src/utils/
   - src/backoffice/ (experimental; placement can be deferred)
 - packages/mcp-shell/
-  - src/index.ts (CLI entry)
-  - src/server.ts (MCP server wrapper)
+  - src/index.ts (CLI entry at packages/mcp-shell/src/index.ts)
+  - src/server.ts (MCP server wrapper at packages/mcp-shell/src/server.ts)
 - packages/code-shell-extension/
   - vscode-mcp-shell/
 - packages/shell-server-backend/

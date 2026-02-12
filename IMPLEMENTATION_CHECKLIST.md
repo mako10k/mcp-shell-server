@@ -8,17 +8,17 @@
 ## Phase 1: ExecutionModeと応答パラメータの改善 [優先度: 高]
 
 ### ExecutionMode の実装変更
-- [x] `src/types/index.ts` - ExecutionModeスキーマを更新
+- [x] `packages/shell-server/src/types/index.ts` - ExecutionModeスキーマを更新
   - [x] `'sync' | 'async' | 'background'` → `'foreground' | 'background' | 'detached' | 'adaptive'`
   - [x] デフォルト値を`'adaptive'`に変更
-- [x] `src/types/schemas.ts` - パラメータスキーマの更新
+- [x] `packages/shell-server/src/types/schemas.ts` - パラメータスキーマの更新
   - [x] `foreground_timeout_seconds`パラメータの追加
   - [x] `return_partial_on_timeout`パラメータの追加
-- [x] `src/core/process-manager.ts` - 実行ロジックの実装
+- [x] `packages/shell-server/src/core/process-manager.ts` - 実行ロジックの実装
   - [x] `adaptive`モードの実装
   - [x] `foreground`モードの実装（現在のsyncから改名）
   - [x] タイムアウト時の部分出力応答機能
-- [x] `src/tools/shell-tools.ts` - ツール層の更新
+- [x] `packages/shell-server/src/tools/shell-tools.ts` - ツール層の更新
   - [x] 新しいExecutionModeパラメータの対応
 
 ### 応答パラメータの改善
@@ -44,7 +44,7 @@
 ## Phase 2: ツール名変更とワーキングディレクトリ [優先度: 中]
 
 ### ツール名の変更実装
-- [x] `src/server.ts` - ツール定義の更新
+- [x] `packages/mcp-shell/src/server.ts` - ツール定義の更新
   - [x] `shell_get_execution` → `process_get_execution`
   - [x] `process_kill` → `process_terminate`
   - [x] `terminal_get` → `terminal_get_info`
@@ -53,8 +53,8 @@
   - [x] `file_list` → `list_execution_outputs`
   - [x] `file_read` → `read_execution_output`
   - [x] `file_delete` → `delete_execution_outputs`
-- [x] `src/types/schemas.ts` - スキーマ名の更新
-- [x] `src/tools/shell-tools.ts` - メソッド名の更新（必要に応じて）
+- [x] `packages/shell-server/src/types/schemas.ts` - スキーマ名の更新
+- [x] `packages/shell-server/src/tools/shell-tools.ts` - メソッド名の更新（必要に応じて）
 
 ### ワーキングディレクトリ管理の改善
 - [x] 環境変数サポートの実装
