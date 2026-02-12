@@ -109,6 +109,15 @@ Notes:
 - This is an initial mapping and will be validated against runtime dependencies.
 - Backoffice is experimental; placement can be deferred until its scope is fixed.
 
+### Phase 1 Inventory (Current Entry Points)
+- CLI entry: src/index.ts
+- MCP server: src/server.ts
+- Executor backend: src/executor/server.ts
+- Backoffice UI server: src/backoffice/server.ts
+- Backoffice entry: src/backoffice/index.ts
+- Tool runtime export: src/runtime/tool-runtime.ts
+- VSCode extension: extensions/vscode-mcp-shell/
+
 ### Phase 2: Foundation Consolidation
 - Move daemon and server management into shell-server.
 - Route shell_execute and terminal_operate through the shared API.
