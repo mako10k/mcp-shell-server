@@ -64,12 +64,35 @@ const SOCKET_FILE_NAME = 'daemon.sock';
 const SOCKET_CONNECT_TIMEOUT_MS = 250;
 const SOCKET_READY_TIMEOUT_MS = 1000;
 const SOCKET_READY_INTERVAL_MS = 50;
+const SOCKET_REQUEST_TIMEOUT_MS = 1000;
+
+type DaemonRequest = {
+  action: 'status' | 'attach' | 'detach' | 'reattach';
+};
+
+type DaemonResponse = {
+  ok: boolean;
+  error?: string;
+  attached?: boolean;
+  detached?: boolean;
+  attachedAt?: string;
+  detachedAt?: string;
+  pid?: number;
+  cwd?: string;
+  branch?: string;
+};
 
 export class StubServerManager implements ServerManager {
   private readonly createdAt = new Date().toISOString();
   private readonly servers = new Map<
     string,
-    { socketPath: string; server?: net.Server; child?: ChildProcess }
+    {
+      socketPath: string;
+      server?: net.Server;
+      child?: ChildProcess;
+      attached: boolean;
+      detached: boolean;
+    }
   >();
 
   private getBranch(): string {
@@ -81,6 +104,10 @@ export class StubServerManager implements ServerManager {
     return path.join(runtimeDir, 'mcp-shell');
   }
 
+  private isDaemonEnabled(): boolean {
+    return process.env['MCP_SHELL_DAEMON_ENABLED'] === 'true';
+  }
+
   private hashCwd(cwd: string): string {
     return crypto.createHash('sha256').update(path.resolve(cwd)).digest('hex');
   }
@@ -89,6 +116,22 @@ export class StubServerManager implements ServerManager {
     const runtimeRoot = this.getRuntimeRoot();
     const cwdHash = this.hashCwd(cwd);
     return path.join(runtimeRoot, cwdHash, branch, SOCKET_FILE_NAME);
+  }
+
+  private parseServerId(serverId: string): { hash: string; branch: string } | null {
+    const [hash, branch] = serverId.split(':');
+    if (!hash || !branch) {
+      return null;
+    }
+    return { hash, branch };
+  }
+
+  private buildSocketPathFromServerId(serverId: string): string | null {
+    const parsed = this.parseServerId(serverId);
+    if (!parsed) {
+      return null;
+    }
+    return path.join(this.getRuntimeRoot(), parsed.hash, parsed.branch, SOCKET_FILE_NAME);
   }
 
   private resolveDaemonEntry(): string {
@@ -147,6 +190,85 @@ export class StubServerManager implements ServerManager {
     return false;
   }
 
+  private async requestDaemon(socketPath: string, request: DaemonRequest): Promise<DaemonResponse> {
+    return new Promise((resolve, reject) => {
+      const socket = net.connect({ path: socketPath }, () => {
+        socket.write(`${JSON.stringify(request)}\n`);
+      });
+
+      let buffer = '';
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        reject(
+          new MCPShellError('SYSTEM_013', 'Daemon request timed out', 'SYSTEM', {
+            socketPath,
+            action: request.action,
+          })
+        );
+      }, SOCKET_REQUEST_TIMEOUT_MS);
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        socket.removeAllListeners();
+      };
+
+      socket.setEncoding('utf-8');
+      socket.on('data', (chunk) => {
+        buffer += chunk;
+        if (buffer.includes('\n')) {
+          socket.end();
+        }
+      });
+
+      socket.on('end', () => {
+        cleanup();
+        const line = buffer.trim();
+        if (!line) {
+          reject(
+            new MCPShellError('SYSTEM_013', 'Daemon response was empty', 'SYSTEM', {
+              socketPath,
+              action: request.action,
+            })
+          );
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(line) as DaemonResponse);
+        } catch (error) {
+          reject(
+            new MCPShellError('SYSTEM_013', 'Failed to parse daemon response', 'SYSTEM', {
+              socketPath,
+              action: request.action,
+              error: String(error),
+            })
+          );
+        }
+      });
+
+      socket.on('error', (error) => {
+        cleanup();
+        reject(
+          new MCPShellError('SYSTEM_013', 'Daemon request failed', 'SYSTEM', {
+            socketPath,
+            action: request.action,
+            error: String(error),
+          })
+        );
+      });
+    });
+  }
+
+  private deriveStatus(attached?: boolean, detached?: boolean): ServerStatus {
+    if (detached) {
+      return 'detached';
+    }
+    if (attached) {
+      return 'running';
+    }
+    return 'running';
+  }
+
   private async removeIfEmpty(dirPath: string): Promise<void> {
     try {
       const entries = await fs.readdir(dirPath);
@@ -199,9 +321,19 @@ export class StubServerManager implements ServerManager {
         continue;
       }
 
+      let status: ServerStatus = 'running';
+      if (this.isDaemonEnabled()) {
+        try {
+          const response = await this.requestDaemon(socketPath, { action: 'status' });
+          status = this.deriveStatus(response.attached, response.detached);
+        } catch {
+          status = 'unknown';
+        }
+      }
+
       servers.push({
         serverId: `${cwdHash}:${branch}`,
-        status: 'running',
+        status,
         cwd,
         socketPath,
         createdAt: this.createdAt,
@@ -224,9 +356,19 @@ export class StubServerManager implements ServerManager {
       await this.cleanupStaleSocket(socketPath);
     }
 
+    let status: ServerStatus = 'running';
+    if (socketReady && this.isDaemonEnabled()) {
+      try {
+        const response = await this.requestDaemon(socketPath, { action: 'status' });
+        status = this.deriveStatus(response.attached, response.detached);
+      } catch {
+        status = 'unknown';
+      }
+    }
+
     return {
       serverId: 'local',
-      status: 'running',
+      status,
       cwd,
       ...(socketReady ? { socketPath } : {}),
       createdAt: this.createdAt,
@@ -241,10 +383,32 @@ export class StubServerManager implements ServerManager {
     const discovered = await this.listSocketsForCwd(resolvedTarget);
 
     if (discovered.length > 0) {
-      return discovered.map((server) => ({
-        ...server,
-        attachable: true,
-      }));
+      const attachable = await Promise.all(
+        discovered.map(async (server) => {
+          if (!this.isDaemonEnabled() || !server.socketPath) {
+            return { ...server, attachable: true };
+          }
+
+          try {
+            const response = await this.requestDaemon(server.socketPath, { action: 'status' });
+            const canAttach = response.attached !== true || response.detached === true;
+            return {
+              ...server,
+              status: this.deriveStatus(response.attached, response.detached),
+              attachable: canAttach,
+              ...(canAttach ? {} : { reason: 'Already attached' }),
+            };
+          } catch {
+            return {
+              ...server,
+              attachable: false,
+              reason: 'Failed to query daemon status',
+            };
+          }
+        })
+      );
+
+      return attachable;
     }
 
     if (resolvedCurrent === resolvedTarget) {
@@ -291,7 +455,7 @@ export class StubServerManager implements ServerManager {
 
     await fs.mkdir(path.dirname(socketPath), { recursive: true });
 
-    if (process.env['MCP_SHELL_DAEMON_ENABLED'] === 'true') {
+    if (this.isDaemonEnabled()) {
       const daemonEntry = this.resolveDaemonEntry();
       try {
         await fs.access(daemonEntry);
@@ -324,7 +488,7 @@ export class StubServerManager implements ServerManager {
         });
       }
 
-      this.servers.set(serverId, { socketPath, child });
+      this.servers.set(serverId, { socketPath, child, attached: false, detached: false });
     } else {
       const server = net.createServer((socket) => {
         socket.destroy();
@@ -336,7 +500,7 @@ export class StubServerManager implements ServerManager {
       });
 
       await fs.chmod(socketPath, 0o600);
-      this.servers.set(serverId, { socketPath, server });
+      this.servers.set(serverId, { socketPath, server, attached: false, detached: false });
     }
 
     return {
@@ -372,14 +536,14 @@ export class StubServerManager implements ServerManager {
       return;
     }
 
-    const [hash, branch] = options.serverId.split(':');
-    if (!hash || !branch) {
+    const parsed = this.parseServerId(options.serverId);
+    if (!parsed) {
       throw new MCPShellError('RESOURCE_001', 'Server not found', 'RESOURCE', {
         serverId: options.serverId,
       });
     }
 
-    const socketPath = path.join(this.getRuntimeRoot(), hash, branch, SOCKET_FILE_NAME);
+    const socketPath = path.join(this.getRuntimeRoot(), parsed.hash, parsed.branch, SOCKET_FILE_NAME);
     if (await this.socketExists(socketPath)) {
       await this.cleanupStaleSocket(socketPath);
       return;
@@ -391,13 +555,83 @@ export class StubServerManager implements ServerManager {
   }
 
   async get(options: ServerLookupOptions): Promise<ServerInfo | null> {
-    throw new MCPShellError('SYSTEM_010', NOT_IMPLEMENTED_MESSAGE, 'SYSTEM', {
-      operation: 'get',
+    const entry = this.servers.get(options.serverId);
+    if (entry) {
+      return {
+        serverId: options.serverId,
+        status: this.deriveStatus(entry.attached, entry.detached),
+        cwd: process.cwd(),
+        socketPath: entry.socketPath,
+        createdAt: this.createdAt,
+        lastSeenAt: new Date().toISOString(),
+        pid: entry.child?.pid ?? process.pid,
+      };
+    }
+
+    const socketPath = this.buildSocketPathFromServerId(options.serverId);
+    if (!socketPath || !(await this.socketExists(socketPath))) {
+      return null;
+    }
+
+    if (this.isDaemonEnabled()) {
+      if (!(await this.canConnectSocket(socketPath))) {
+        await this.cleanupStaleSocket(socketPath);
+        return null;
+      }
+
+      const response = await this.requestDaemon(socketPath, { action: 'status' });
+      if (!response.ok) {
+        return null;
+      }
+
+      return {
+        serverId: options.serverId,
+        status: this.deriveStatus(response.attached, response.detached),
+        cwd: response.cwd || process.cwd(),
+        socketPath,
+        createdAt: this.createdAt,
+        lastSeenAt: new Date().toISOString(),
+        ...(typeof response.pid === 'number' ? { pid: response.pid } : {}),
+      };
+    }
+
+    return {
       serverId: options.serverId,
-    });
+      status: 'running',
+      cwd: process.cwd(),
+      socketPath,
+      createdAt: this.createdAt,
+      lastSeenAt: new Date().toISOString(),
+      pid: process.pid,
+    };
   }
 
   async detach(options: ServerAttachOptions): Promise<void> {
+    const entry = this.servers.get(options.serverId);
+    if (entry) {
+      entry.attached = false;
+      entry.detached = true;
+      return;
+    }
+
+    const socketPath = this.buildSocketPathFromServerId(options.serverId);
+    if (!socketPath || !(await this.socketExists(socketPath))) {
+      throw new MCPShellError('RESOURCE_001', 'Server not found', 'RESOURCE', {
+        serverId: options.serverId,
+      });
+    }
+
+    if (this.isDaemonEnabled()) {
+      const response = await this.requestDaemon(socketPath, { action: 'detach' });
+      if (!response.ok) {
+        throw new MCPShellError('SYSTEM_013', 'Daemon detach failed', 'SYSTEM', {
+          serverId: options.serverId,
+          error: response.error,
+        });
+      }
+      return;
+    }
+
     throw new MCPShellError('SYSTEM_010', NOT_IMPLEMENTED_MESSAGE, 'SYSTEM', {
       operation: 'detach',
       serverId: options.serverId,
@@ -405,9 +639,64 @@ export class StubServerManager implements ServerManager {
   }
 
   async reattach(options: ServerAttachOptions): Promise<ServerInfo> {
+    const entry = this.servers.get(options.serverId);
+    if (entry) {
+      if (entry.attached && !entry.detached) {
+        throw new MCPShellError('RESOURCE_006', 'Server is already attached', 'RESOURCE', {
+          serverId: options.serverId,
+        });
+      }
+
+      entry.attached = true;
+      entry.detached = false;
+      return {
+        serverId: options.serverId,
+        status: 'running',
+        cwd: process.cwd(),
+        socketPath: entry.socketPath,
+        createdAt: this.createdAt,
+        lastSeenAt: new Date().toISOString(),
+        pid: entry.child?.pid ?? process.pid,
+      };
+    }
+
+    const socketPath = this.buildSocketPathFromServerId(options.serverId);
+    if (!socketPath || !(await this.socketExists(socketPath))) {
+      throw new MCPShellError('RESOURCE_001', 'Server not found', 'RESOURCE', {
+        serverId: options.serverId,
+      });
+    }
+
+    if (this.isDaemonEnabled()) {
+      const response = await this.requestDaemon(socketPath, { action: 'attach' });
+      if (!response.ok) {
+        if (response.error === 'already_attached') {
+          throw new MCPShellError('RESOURCE_006', 'Server is already attached', 'RESOURCE', {
+            serverId: options.serverId,
+          });
+        }
+
+        throw new MCPShellError('SYSTEM_013', 'Daemon attach failed', 'SYSTEM', {
+          serverId: options.serverId,
+          error: response.error,
+        });
+      }
+
+      return {
+        serverId: options.serverId,
+        status: this.deriveStatus(response.attached, response.detached),
+        cwd: response.cwd || process.cwd(),
+        socketPath,
+        createdAt: this.createdAt,
+        lastSeenAt: new Date().toISOString(),
+        ...(typeof response.pid === 'number' ? { pid: response.pid } : {}),
+      };
+    }
+
     throw new MCPShellError('SYSTEM_010', NOT_IMPLEMENTED_MESSAGE, 'SYSTEM', {
       operation: 'reattach',
       serverId: options.serverId,
     });
   }
+
 }

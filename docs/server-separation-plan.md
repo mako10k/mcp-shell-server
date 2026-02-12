@@ -241,6 +241,9 @@ Notes:
   - Detach when switching to a new server connection (close existing).
   - Detach implicitly when the client process exits.
   - Output during detach is canceled by default, but may vary by context.
+- Attach eligibility:
+  - Attach is allowed when the server has not been attached yet or is detached.
+  - Attach is rejected while a server is already attached.
 - Orphan handling and limits:
   - shell_execute uses its timeout policy for cleanup.
   - terminal_operate is persistent by default or uses a long TTL
