@@ -2,14 +2,14 @@
   "name": "@mako10k/mcp-shell-server",
   "version": "2.7.1",
   "description": "MCP Shell Server - Secure shell operations and terminal management for Model Context Protocol",
-  "main": "dist/index.js",
+  "main": "dist/packages/mcp-shell/src/index.js",
   "exports": {
-    ".": "./dist/index.js",
+    ".": "./dist/packages/mcp-shell/src/index.js",
     "./tool-runtime": "./dist/packages/shell-server/src/runtime/tool-runtime.js"
   },
   "type": "module",
   "bin": {
-    "mcp-shell-server": "dist/index.js"
+    "mcp-shell-server": "dist/packages/mcp-shell/src/index.js"
   },
   "files": [
     "dist/",
@@ -20,9 +20,9 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
-    "watch": "tsx --watch src/index.ts",
+    "dev": "tsx packages/mcp-shell/src/index.ts",
+    "start": "node dist/packages/mcp-shell/src/index.js",
+    "watch": "tsx --watch packages/mcp-shell/src/index.ts",
     "backoffice:dev": "tsx packages/shell-server/src/backoffice/index.ts",
     "backoffice:start": "node dist/packages/shell-server/src/backoffice/index.js",
     "executor:dev": "tsx packages/shell-server/src/executor/server.ts",

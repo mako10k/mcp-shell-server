@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { MCPShellServer } from './server.js';
-import { logger } from '../packages/shell-server/src/utils/helpers.js';
+import { logger } from '../../shell-server/src/utils/helpers.js';
 import fs from 'fs/promises';
 
 async function getVersion(): Promise<string> {
