@@ -77,7 +77,25 @@ export async function runDaemonProxy(socketPath: string): Promise<void> {
   };
 
   transport.onerror = (error) => {
-    logger.error('Daemon transport error', { error: String(error) }, 'daemon-proxy');
+    const code = (error as NodeJS.ErrnoException).code;
+    const message = (() => {
+      if (code === 'ENOENT') {
+        return 'Daemon socket not found. Start the daemon or check MCP_SHELL_DAEMON_ENABLED.';
+      }
+      if (code === 'EACCES') {
+        return 'Permission denied connecting to daemon socket. Check file permissions and ownership.';
+      }
+      if (code === 'ECONNREFUSED') {
+        return 'Daemon socket refused connection. The daemon may be down.';
+      }
+      return 'Daemon transport error.';
+    })();
+
+    logger.error(
+      message,
+      { error: String(error), code, socketPath },
+      'daemon-proxy'
+    );
   };
 
   transport.onclose = () => {
