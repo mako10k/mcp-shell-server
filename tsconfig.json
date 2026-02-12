@@ -29,5 +29,5 @@
     "allowUnreachableCode": false
   },
   "include": ["src/**/*", "packages/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "packages/code-shell-extension/**"]
 }
