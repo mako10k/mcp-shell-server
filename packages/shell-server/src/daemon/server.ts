@@ -6,6 +6,7 @@ import { logger } from '../utils/helpers.js';
 
 const DAEMON_COMPONENT = 'daemon';
 const SOCKET_REQUEST_TIMEOUT_MS = 1000;
+const HEARTBEAT_TIMEOUT_MS = 500;
 
 type DaemonRequest = {
   action?: 'status' | 'attach' | 'detach' | 'reattach';
@@ -21,6 +22,10 @@ type DaemonResponse = {
   pid?: number;
   cwd?: string;
   branch?: string;
+};
+
+type HeartbeatMessage = {
+  type?: 'ping' | 'pong';
 };
 
 function getArgValue(args: string[], flag: string): string | undefined {
@@ -88,14 +93,66 @@ async function startDaemon(): Promise<void> {
     attachedAt: undefined as string | undefined,
     detachedAt: undefined as string | undefined,
   };
+  let attachSocket: net.Socket | null = null;
+  let pongResolver: ((result: boolean) => void) | null = null;
 
-  const sendResponse = (socket: net.Socket, response: DaemonResponse) => {
+  const markDetached = () => {
+    state.attached = false;
+    state.detached = true;
+    state.detachedAt = new Date().toISOString();
+  };
+
+  const closeAttachSocket = () => {
+    if (attachSocket) {
+      attachSocket.destroy();
+      attachSocket = null;
+    }
+  };
+
+  const checkAttachLiveness = async (): Promise<boolean> => {
+    if (!attachSocket) {
+      return false;
+    }
+
+    if (pongResolver) {
+      return false;
+    }
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        pongResolver = null;
+        resolve(false);
+      }, HEARTBEAT_TIMEOUT_MS);
+
+      pongResolver = (result: boolean) => {
+        clearTimeout(timeout);
+        pongResolver = null;
+        resolve(result);
+      };
+
+      try {
+        attachSocket?.write(`${JSON.stringify({ type: 'ping' })}\n`);
+      } catch {
+        pongResolver = null;
+        clearTimeout(timeout);
+        resolve(false);
+      }
+    });
+  };
+
+  const sendResponse = (
+    socket: net.Socket,
+    response: DaemonResponse,
+    close: boolean = true
+  ) => {
     try {
       socket.write(`${JSON.stringify(response)}\n`);
     } catch (error) {
       logger.error('Failed to write daemon response', { error: String(error) }, DAEMON_COMPONENT);
     } finally {
-      socket.end();
+      if (close) {
+        socket.end();
+      }
     }
   };
 
@@ -119,7 +176,7 @@ async function startDaemon(): Promise<void> {
       }
     });
 
-    socket.on('end', () => {
+    const handleRequest = async () => {
       cleanup();
       const line = buffer.trim();
       if (!line) {
@@ -136,6 +193,14 @@ async function startDaemon(): Promise<void> {
 
       const action = request.action || 'status';
       if (action === 'status') {
+        if (attachSocket) {
+          const alive = await checkAttachLiveness();
+          if (!alive) {
+            closeAttachSocket();
+            markDetached();
+          }
+        }
+
         sendResponse(socket, {
           ok: true,
           attached: state.attached,
@@ -150,31 +215,75 @@ async function startDaemon(): Promise<void> {
       }
 
       if (action === 'attach' || action === 'reattach') {
+        if (attachSocket) {
+          const alive = await checkAttachLiveness();
+          if (!alive) {
+            closeAttachSocket();
+            markDetached();
+          }
+        }
+
         if (state.attached && !state.detached) {
           sendResponse(socket, { ok: false, error: 'already_attached' });
           return;
         }
 
+        attachSocket = socket;
+        socket.setEncoding('utf-8');
+        socket.on('data', (data) => {
+          const messages = data.toString().split('\n');
+          for (const message of messages) {
+            if (!message.trim()) {
+              continue;
+            }
+            let parsed: HeartbeatMessage;
+            try {
+              parsed = JSON.parse(message) as HeartbeatMessage;
+            } catch {
+              continue;
+            }
+
+            if (parsed.type === 'pong' && pongResolver) {
+              pongResolver(true);
+            }
+          }
+        });
+        socket.on('close', () => {
+          if (attachSocket === socket) {
+            attachSocket = null;
+          }
+          markDetached();
+        });
+        socket.on('error', () => {
+          if (attachSocket === socket) {
+            attachSocket = null;
+          }
+          markDetached();
+        });
+
         state.attached = true;
         state.detached = false;
         state.attachedAt = new Date().toISOString();
-        sendResponse(socket, {
-          ok: true,
-          attached: state.attached,
-          detached: state.detached,
-          ...(state.attachedAt ? { attachedAt: state.attachedAt } : {}),
-          ...(state.detachedAt ? { detachedAt: state.detachedAt } : {}),
-          pid: process.pid,
-          cwd: process.cwd(),
-          ...(branch ? { branch } : {}),
-        });
+        sendResponse(
+          socket,
+          {
+            ok: true,
+            attached: state.attached,
+            detached: state.detached,
+            ...(state.attachedAt ? { attachedAt: state.attachedAt } : {}),
+            ...(state.detachedAt ? { detachedAt: state.detachedAt } : {}),
+            pid: process.pid,
+            cwd: process.cwd(),
+            ...(branch ? { branch } : {}),
+          },
+          false
+        );
         return;
       }
 
       if (action === 'detach') {
-        state.attached = false;
-        state.detached = true;
-        state.detachedAt = new Date().toISOString();
+        closeAttachSocket();
+        markDetached();
         sendResponse(socket, {
           ok: true,
           attached: state.attached,
@@ -189,6 +298,10 @@ async function startDaemon(): Promise<void> {
       }
 
       sendResponse(socket, { ok: false, error: 'unsupported_action' });
+    };
+
+    socket.on('end', () => {
+      void handleRequest();
     });
 
     socket.on('error', (error) => {

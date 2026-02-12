@@ -244,6 +244,7 @@ Notes:
 - Attach eligibility:
   - Attach is allowed when the server has not been attached yet or is detached.
   - Attach is rejected while a server is already attached.
+  - If a server reports attached, perform a heartbeat check before confirming.
 - Orphan handling and limits:
   - shell_execute uses its timeout policy for cleanup.
   - terminal_operate is persistent by default or uses a long TTL

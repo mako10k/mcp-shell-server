@@ -82,6 +82,10 @@ type DaemonResponse = {
   branch?: string;
 };
 
+type HeartbeatMessage = {
+  type?: 'ping' | 'pong';
+};
+
 export class StubServerManager implements ServerManager {
   private readonly createdAt = new Date().toISOString();
   private readonly servers = new Map<
@@ -92,6 +96,7 @@ export class StubServerManager implements ServerManager {
       child?: ChildProcess;
       attached: boolean;
       detached: boolean;
+      attachSocket?: net.Socket;
     }
   >();
 
@@ -252,6 +257,93 @@ export class StubServerManager implements ServerManager {
           new MCPShellError('SYSTEM_013', 'Daemon request failed', 'SYSTEM', {
             socketPath,
             action: request.action,
+            error: String(error),
+          })
+        );
+      });
+    });
+  }
+
+  private async openAttachConnection(
+    socketPath: string
+  ): Promise<{ socket: net.Socket; response: DaemonResponse }> {
+    return new Promise((resolve, reject) => {
+      const socket = net.connect({ path: socketPath }, () => {
+        socket.write(`${JSON.stringify({ action: 'attach' })}\n`);
+      });
+
+      let buffer = '';
+      let responseSent = false;
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        reject(
+          new MCPShellError('SYSTEM_013', 'Attach request timed out', 'SYSTEM', {
+            socketPath,
+          })
+        );
+      }, SOCKET_REQUEST_TIMEOUT_MS);
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+      };
+
+      const handleHeartbeat = (message: HeartbeatMessage) => {
+        if (message.type === 'ping') {
+          try {
+            socket.write(`${JSON.stringify({ type: 'pong' })}\n`);
+          } catch {
+            // Ignore write failures on heartbeat.
+          }
+        }
+      };
+
+      socket.setEncoding('utf-8');
+      socket.on('data', (chunk) => {
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            continue;
+          }
+
+          let parsed: DaemonResponse | HeartbeatMessage;
+          try {
+            parsed = JSON.parse(trimmed) as DaemonResponse | HeartbeatMessage;
+          } catch {
+            continue;
+          }
+
+          if (!responseSent && 'ok' in parsed) {
+            responseSent = true;
+            cleanup();
+            const response = parsed as DaemonResponse;
+            if (!response.ok) {
+              socket.end();
+              reject(
+                new MCPShellError('SYSTEM_013', 'Daemon attach failed', 'SYSTEM', {
+                  socketPath,
+                  error: response.error,
+                })
+              );
+              return;
+            }
+
+            resolve({ socket, response });
+            continue;
+          }
+
+          handleHeartbeat(parsed as HeartbeatMessage);
+        }
+      });
+
+      socket.on('error', (error) => {
+        cleanup();
+        reject(
+          new MCPShellError('SYSTEM_013', 'Attach connection failed', 'SYSTEM', {
+            socketPath,
             error: String(error),
           })
         );
@@ -611,6 +703,11 @@ export class StubServerManager implements ServerManager {
     if (entry) {
       entry.attached = false;
       entry.detached = true;
+      if (entry.attachSocket) {
+        entry.attachSocket.end();
+        entry.attachSocket.destroy();
+        delete entry.attachSocket;
+      }
       return;
     }
 
@@ -668,19 +765,20 @@ export class StubServerManager implements ServerManager {
     }
 
     if (this.isDaemonEnabled()) {
-      const response = await this.requestDaemon(socketPath, { action: 'attach' });
-      if (!response.ok) {
-        if (response.error === 'already_attached') {
-          throw new MCPShellError('RESOURCE_006', 'Server is already attached', 'RESOURCE', {
-            serverId: options.serverId,
-          });
-        }
-
-        throw new MCPShellError('SYSTEM_013', 'Daemon attach failed', 'SYSTEM', {
+      const { socket, response } = await this.openAttachConnection(socketPath);
+      if (response.error === 'already_attached') {
+        socket.end();
+        throw new MCPShellError('RESOURCE_006', 'Server is already attached', 'RESOURCE', {
           serverId: options.serverId,
-          error: response.error,
         });
       }
+
+      this.servers.set(options.serverId, {
+        socketPath,
+        attached: response.attached === true,
+        detached: response.detached === true,
+        attachSocket: socket,
+      });
 
       return {
         serverId: options.serverId,
