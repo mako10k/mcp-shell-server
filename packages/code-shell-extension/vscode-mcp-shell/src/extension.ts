@@ -32,6 +32,7 @@ type ToolName = (typeof TOOL_NAMES)[number];
 type ToolParams = Record<string, unknown>;
 
 type ShellToolsApi = ShellToolRuntime['shellTools'];
+type ServerManagerApi = ShellToolRuntime['serverManager'];
 
 function getWorkspaceCwd(): string | undefined {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -153,6 +154,8 @@ class DirectShellTool implements vscode.LanguageModelTool<ToolParams> {
     private toolName: ToolName
   ) {}
 
+  private serverManager?: ServerManagerApi;
+
   async prepareInvocation(
     options: vscode.LanguageModelToolInvocationPrepareOptions<ToolParams>
   ): Promise<vscode.PreparedToolInvocation> {
@@ -172,6 +175,9 @@ class DirectShellTool implements vscode.LanguageModelTool<ToolParams> {
     _token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelToolResult> {
     const runtime = await getRuntime(this.context, this.output);
+    if (!this.serverManager) {
+      this.serverManager = runtime.serverManager;
+    }
     const result = await dispatchToolCall(runtime.shellTools, this.toolName, options.input);
 
     return new vscode.LanguageModelToolResult([

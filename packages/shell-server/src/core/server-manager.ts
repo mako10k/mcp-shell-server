@@ -1,3 +1,5 @@
+import * as path from 'path';
+
 import { MCPShellError } from '../utils/errors.js';
 
 export type ServerStatus = 'running' | 'stopped' | 'detached' | 'unknown';
@@ -53,12 +55,44 @@ export interface ServerManager {
 const NOT_IMPLEMENTED_MESSAGE = 'Server management layer is not implemented yet.';
 
 export class StubServerManager implements ServerManager {
+  private readonly createdAt = new Date().toISOString();
+
   async current(): Promise<ServerInfo | null> {
-    return null;
+    return {
+      serverId: 'local',
+      status: 'running',
+      cwd: process.cwd(),
+      createdAt: this.createdAt,
+      lastSeenAt: new Date().toISOString(),
+      pid: process.pid,
+    };
   }
 
   async listAttachable(_options: ListAttachableOptions): Promise<AttachableServerInfo[]> {
-    return [];
+    const resolvedCurrent = path.resolve(process.cwd());
+    const resolvedTarget = path.resolve(_options.cwd);
+    const current = await this.current();
+
+    if (!current) {
+      return [];
+    }
+
+    if (resolvedCurrent !== resolvedTarget) {
+      return [
+        {
+          ...current,
+          attachable: false,
+          reason: 'Different working directory boundary',
+        },
+      ];
+    }
+
+    return [
+      {
+        ...current,
+        attachable: true,
+      },
+    ];
   }
 
   async start(options: ServerStartOptions): Promise<ServerInfo> {
