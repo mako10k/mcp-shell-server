@@ -306,6 +306,18 @@ export class MCPShellServer {
           }
         }
 
+        if (name === 'server_start') {
+          const parsed = ServerStartParamsSchema.parse(args);
+          const result = await dispatchToolCall(
+            this.shellTools,
+            this.serverManager,
+            name as ToolName,
+            parsed as ToolParams,
+            dispatchOptions
+          );
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
         try {
           const result = await dispatchToolCall(
             this.shellTools,
