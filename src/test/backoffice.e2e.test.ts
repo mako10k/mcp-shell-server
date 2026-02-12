@@ -1,11 +1,11 @@
 import { describe, test, expect } from 'vitest';
 import http from 'http';
-import { BackofficeServer } from '../backoffice/server.js';
-import { ProcessManager } from '../core/process-manager.js';
-import { TerminalManager } from '../core/terminal-manager.js';
-import { FileManager } from '../core/file-manager.js';
-import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
-import { ConfigManager } from '../core/config-manager.js';
+import { BackofficeServer } from '../../packages/shell-server/src/backoffice/server.js';
+import { ProcessManager } from '../../packages/shell-server/src/core/process-manager.js';
+import { TerminalManager } from '../../packages/shell-server/src/core/terminal-manager.js';
+import { FileManager } from '../../packages/shell-server/src/core/file-manager.js';
+import { CommandHistoryManager } from '../../packages/shell-server/src/core/enhanced-history-manager.js';
+import { ConfigManager } from '../../packages/shell-server/src/core/config-manager.js';
 
 function get(url: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {

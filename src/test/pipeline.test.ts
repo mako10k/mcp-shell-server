@@ -1,12 +1,12 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
-import { ShellTools } from '../tools/shell-tools.js';
-import { ProcessManager } from '../core/process-manager.js';
-import { TerminalManager } from '../core/terminal-manager.js';
-import { FileManager } from '../core/file-manager.js';
-import { MonitoringManager } from '../core/monitoring-manager.js';
-import { SecurityManager } from '../security/manager.js';
-import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
-import { DEFAULT_ENHANCED_SECURITY_CONFIG } from '../types/enhanced-security.js';
+import { ShellTools } from '../../packages/shell-server/src/tools/shell-tools.js';
+import { ProcessManager } from '../../packages/shell-server/src/core/process-manager.js';
+import { TerminalManager } from '../../packages/shell-server/src/core/terminal-manager.js';
+import { FileManager } from '../../packages/shell-server/src/core/file-manager.js';
+import { MonitoringManager } from '../../packages/shell-server/src/core/monitoring-manager.js';
+import { SecurityManager } from '../../packages/shell-server/src/security/manager.js';
+import { CommandHistoryManager } from '../../packages/shell-server/src/core/enhanced-history-manager.js';
+import { DEFAULT_ENHANCED_SECURITY_CONFIG } from '../../packages/shell-server/src/types/enhanced-security.js';
 
 describe('Pipeline Output Feature (Issue #13)', () => {
   let shellTools: ShellTools;

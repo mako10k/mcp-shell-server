@@ -1,14 +1,14 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { EnhancedSafetyEvaluator } from '../security/enhanced-evaluator.js';
-import { SecurityManager } from '../security/manager.js';
-import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
+import { EnhancedSafetyEvaluator } from '../../packages/shell-server/src/security/enhanced-evaluator.js';
+import { SecurityManager } from '../../packages/shell-server/src/security/manager.js';
+import { CommandHistoryManager } from '../../packages/shell-server/src/core/enhanced-history-manager.js';
 import { 
   DEFAULT_ENHANCED_SECURITY_CONFIG,
   FunctionCallContext,
   EvaluateCommandSecurityArgs,
   ReevaluateWithUserIntentArgs,
   SimplifiedLLMEvaluationResult
-} from '../types/enhanced-security.js';
+} from '../../packages/shell-server/src/types/enhanced-security.js';
 
 describe('Function Call Integration Tests', () => {
   let securityManager: SecurityManager;

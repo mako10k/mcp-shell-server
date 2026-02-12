@@ -8,15 +8,15 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { ZodError } from 'zod';
 
-import { ProcessManager } from './core/process-manager.js';
-import { TerminalManager } from './core/terminal-manager.js';
-import { FileManager } from './core/file-manager.js';
-import { MonitoringManager } from './core/monitoring-manager.js';
-import { CommandHistoryManager } from './core/enhanced-history-manager.js';
-import { ShellTools } from './tools/shell-tools.js';
-import { logger } from './utils/helpers.js';
-import { ExecutionInfo } from './types/index.js';
-import { createShellToolRuntime } from './runtime/tool-runtime.js';
+import { ProcessManager } from '../packages/shell-server/src/core/process-manager.js';
+import { TerminalManager } from '../packages/shell-server/src/core/terminal-manager.js';
+import { FileManager } from '../packages/shell-server/src/core/file-manager.js';
+import { MonitoringManager } from '../packages/shell-server/src/core/monitoring-manager.js';
+import { CommandHistoryManager } from '../packages/shell-server/src/core/enhanced-history-manager.js';
+import { ShellTools } from '../packages/shell-server/src/tools/shell-tools.js';
+import { logger } from '../packages/shell-server/src/utils/helpers.js';
+import { ExecutionInfo } from '../packages/shell-server/src/types/index.js';
+import { createShellToolRuntime } from '../packages/shell-server/src/runtime/tool-runtime.js';
 
 import {
   ShellExecuteParamsSchema,
@@ -32,12 +32,12 @@ import {
   AutoCleanupParamsSchema,
   CommandHistoryQueryParamsSchema,
   AdjustCriteriaParamsSchema as _AdjustCriteriaParamsSchema, // Disabled MCP tool
-} from './types/schemas.js';
-import { TerminalOperateParamsSchema } from './types/quick-schemas.js';
+} from '../packages/shell-server/src/types/schemas.js';
+import { TerminalOperateParamsSchema } from '../packages/shell-server/src/types/quick-schemas.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
-import { MCPShellError } from './utils/errors.js';
-import { BackofficeServer } from './backoffice/server.js';
+import { MCPShellError } from '../packages/shell-server/src/utils/errors.js';
+import { BackofficeServer } from '../packages/shell-server/src/backoffice/server.js';
 
 // Tools can be disabled by specifying a comma-separated list in the
 // MCP_DISABLED_TOOLS environment variable. Disabled tools will not be

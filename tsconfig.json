@@ -5,7 +5,7 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -28,6 +28,6 @@
     "allowUnusedLabels": false,
     "allowUnreachableCode": false
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "packages/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

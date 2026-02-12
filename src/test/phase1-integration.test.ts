@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
-import { SecurityManager } from '../security/manager.js';
-import { ConfigManager } from '../core/config-manager.js';
-import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
+import { SecurityManager } from '../../packages/shell-server/src/security/manager.js';
+import { ConfigManager } from '../../packages/shell-server/src/core/config-manager.js';
+import { CommandHistoryManager } from '../../packages/shell-server/src/core/enhanced-history-manager.js';
 import {
   DEFAULT_ENHANCED_SECURITY_CONFIG,
   DEFAULT_BASIC_SAFETY_RULES,
   CommandClassification,
-} from '../types/enhanced-security.js';
+} from '../../packages/shell-server/src/types/enhanced-security.js';
 
 describe('Phase 1 Integration Tests', () => {
   let securityManager: SecurityManager;

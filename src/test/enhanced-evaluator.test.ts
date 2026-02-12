@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { EnhancedSafetyEvaluator } from '../../src/security/enhanced-evaluator.js';
-import { SecurityManager } from '../../src/security/manager.js';
-import { CommandHistoryManager } from '../../src/core/enhanced-history-manager.js';
-import { DEFAULT_ENHANCED_SECURITY_CONFIG, SimplifiedLLMEvaluationResult } from '../../src/types/enhanced-security.js';
+import { EnhancedSafetyEvaluator } from '../../packages/shell-server/src/security/enhanced-evaluator.js';
+import { SecurityManager } from '../../packages/shell-server/src/security/manager.js';
+import { CommandHistoryManager } from '../../packages/shell-server/src/core/enhanced-history-manager.js';
+import { DEFAULT_ENHANCED_SECURITY_CONFIG, SimplifiedLLMEvaluationResult } from '../../packages/shell-server/src/types/enhanced-security.js';
 
 const createMessage = vi.fn().mockResolvedValue({ content: { type: 'text', text: '' } });
 

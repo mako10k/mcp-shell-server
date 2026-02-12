@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { ProcessManager } from '../core/process-manager.js';
-import { SecurityManager } from '../security/manager.js';
-import { TerminalManager } from '../core/terminal-manager.js';
-import { FileManager } from '../core/file-manager.js';
-import { MonitoringManager } from '../core/monitoring-manager.js';
-import { ShellTools } from '../tools/shell-tools.js';
-import { CommandHistoryManager } from '../core/enhanced-history-manager.js';
-import { DEFAULT_ENHANCED_SECURITY_CONFIG } from '../types/enhanced-security.js';
+import { ProcessManager } from '../../packages/shell-server/src/core/process-manager.js';
+import { SecurityManager } from '../../packages/shell-server/src/security/manager.js';
+import { TerminalManager } from '../../packages/shell-server/src/core/terminal-manager.js';
+import { FileManager } from '../../packages/shell-server/src/core/file-manager.js';
+import { MonitoringManager } from '../../packages/shell-server/src/core/monitoring-manager.js';
+import { ShellTools } from '../../packages/shell-server/src/tools/shell-tools.js';
+import { CommandHistoryManager } from '../../packages/shell-server/src/core/enhanced-history-manager.js';
+import { DEFAULT_ENHANCED_SECURITY_CONFIG } from '../../packages/shell-server/src/types/enhanced-security.js';
 
 describe('MCP Shell Server Components', () => {
   let processManager: ProcessManager;

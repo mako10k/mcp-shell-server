@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ZodError } from 'zod';
-import { ShellExecuteParamsSchema } from '../types/schemas.js';
+import { ShellExecuteParamsSchema } from '../../packages/shell-server/src/types/schemas.js';
 
 describe('Explanation Parameter Validation', () => {
   it('should reject explanation parameter with clear error message', () => {

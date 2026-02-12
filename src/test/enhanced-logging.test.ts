@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { logger, LogLevel, updateLogConfig, getLogConfig } from '../utils/helpers.js';
+import { logger, LogLevel, updateLogConfig, getLogConfig } from '../../packages/shell-server/src/utils/helpers.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
