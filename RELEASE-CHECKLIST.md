@@ -6,7 +6,7 @@ This checklist is version-agnostic. Update sections as needed per release.
 
 - Update version numbers:
   - package.json (server)
-  - extensions/vscode-mcp-shell/package.json (if VSIX changes are released)
+  - packages/code-shell-extension/vscode-mcp-shell/package.json (if VSIX changes are released)
 - Update CHANGELOG.md with release notes
 - Ensure dist is up to date: `npm run build`
 - Run quality checks:
@@ -25,7 +25,7 @@ This checklist is version-agnostic. Update sections as needed per release.
 
 ## VSIX packaging
 
-- From extensions/vscode-mcp-shell:
+- From packages/code-shell-extension/vscode-mcp-shell:
   - `npm install`
   - `npm run package:release`
 - Verify package contents:
