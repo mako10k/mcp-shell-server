@@ -141,6 +141,27 @@ Notes:
   - utils: helpers, errors, process-utils
   - external: node-pty (lazy-loaded)
 
+### Phase 1 Move Order (Suggested)
+1. Create packages/ skeletons and move shared types and utils into
+   packages/shell-server/src/types and packages/shell-server/src/utils.
+2. Move core managers (core/*) into packages/shell-server/src/core and adjust
+   internal imports to the new root.
+3. Move runtime and tools into packages/shell-server/src/runtime and
+   packages/shell-server/src/tools.
+4. Move security modules into packages/shell-server/src/security.
+5. Move MCP entry points into packages/mcp-shell/src (index.ts, server.ts).
+6. Move VSCode extension into packages/code-shell-extension/.
+7. Move executor backend entry into packages/shell-server/src/executor.
+
+### Phase 1 Cut Points (Interfaces)
+- Shell runtime API boundary:
+  - createShellToolRuntime, ShellToolRuntime types
+- Tool surface boundary:
+  - ShellTools methods used by MCP handlers
+- Manager boundaries:
+  - ProcessManager, TerminalManager, FileManager, MonitoringManager,
+    CommandHistoryManager
+
 ### Phase 2: Foundation Consolidation
 - Move daemon and server management into shell-server.
 - Route shell_execute and terminal_operate through the shared API.
