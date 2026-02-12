@@ -1,0 +1,131 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { spawn, type ChildProcess } from 'child_process';
+import * as crypto from 'crypto';
+import * as fs from 'fs/promises';
+import * as net from 'net';
+import * as os from 'os';
+import * as path from 'path';
+
+import { StubServerManager } from '../../packages/shell-server/src/core/server-manager.js';
+
+type EnvSnapshot = Record<string, string | undefined>;
+
+function hashCwd(cwd: string): string {
+  return crypto.createHash('sha256').update(path.resolve(cwd)).digest('hex');
+}
+
+function buildSocketPath(cwd: string, branch: string, runtimeDir: string): string {
+  return path.join(runtimeDir, 'mcp-shell', hashCwd(cwd), branch, 'daemon.sock');
+}
+
+async function waitForSocketReady(socketPath: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const stat = await fs.stat(socketPath);
+      if (stat.isSocket()) {
+        await new Promise<void>((resolve, reject) => {
+          const socket = net.connect({ path: socketPath }, () => {
+            socket.end();
+            resolve();
+          });
+          socket.on('error', reject);
+        });
+        return;
+      }
+    } catch {
+      // Retry until timeout.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error('Timed out waiting for daemon socket to be ready.');
+}
+
+async function waitForExit(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.killed) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 2000);
+    child.once('exit', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
+describe('Daemon integration', () => {
+  let envSnapshot: EnvSnapshot;
+  let runtimeDir: string;
+  let tempCwd: string;
+  let socketPath: string;
+  let serverId: string;
+  let child: ChildProcess | null = null;
+
+  beforeEach(async () => {
+    envSnapshot = {
+      MCP_SHELL_DAEMON_ENABLED: process.env['MCP_SHELL_DAEMON_ENABLED'],
+      MCP_SHELL_SERVER_BRANCH: process.env['MCP_SHELL_SERVER_BRANCH'],
+      XDG_RUNTIME_DIR: process.env['XDG_RUNTIME_DIR'],
+    };
+
+    runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-runtime-'));
+    tempCwd = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-cwd-'));
+    socketPath = buildSocketPath(tempCwd, 'test', runtimeDir);
+    serverId = `${hashCwd(tempCwd)}:test`;
+
+    process.env['XDG_RUNTIME_DIR'] = runtimeDir;
+    process.env['MCP_SHELL_SERVER_BRANCH'] = 'test';
+    process.env['MCP_SHELL_DAEMON_ENABLED'] = 'true';
+
+    const tsxPath = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
+    child = spawn(
+      process.execPath,
+      [tsxPath, 'packages/shell-server/src/daemon/server.ts', '--socket', socketPath, '--cwd', tempCwd, '--branch', 'test'],
+      { stdio: 'ignore' }
+    );
+
+    await waitForSocketReady(socketPath, 3000);
+  });
+
+  afterEach(async () => {
+    try {
+      const serverManager = new StubServerManager();
+      await serverManager.stop({ serverId, force: true });
+    } catch {
+      // Best-effort shutdown only.
+    }
+
+    if (child) {
+      child.kill('SIGTERM');
+      await waitForExit(child);
+    }
+
+    process.env['MCP_SHELL_DAEMON_ENABLED'] = envSnapshot.MCP_SHELL_DAEMON_ENABLED;
+    process.env['MCP_SHELL_SERVER_BRANCH'] = envSnapshot.MCP_SHELL_SERVER_BRANCH;
+    process.env['XDG_RUNTIME_DIR'] = envSnapshot.XDG_RUNTIME_DIR;
+
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+    await fs.rm(tempCwd, { recursive: true, force: true });
+  });
+
+  it('attaches to the real daemon and observes detach', async () => {
+    const serverManager = new StubServerManager();
+
+    const info = await serverManager.reattach({ serverId });
+    expect(info.status).toBe('running');
+    expect(info.socketPath).toBe(socketPath);
+
+    const attachableBefore = await serverManager.listAttachable({ cwd: tempCwd });
+    expect(attachableBefore[0]?.attachable).toBe(false);
+
+    await serverManager.detach({ serverId });
+
+    const attachableAfter = await serverManager.listAttachable({ cwd: tempCwd });
+    expect(attachableAfter[0]?.attachable).toBe(true);
+  });
+});
