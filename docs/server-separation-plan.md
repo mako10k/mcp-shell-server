@@ -86,6 +86,29 @@
 - Fix imports and build configs.
 - Keep runtime behavior unchanged.
 
+### Phase 1 Mapping Draft (Current -> packages)
+- packages/shell-server/
+  - src/core/
+  - src/executor/
+  - src/runtime/
+  - src/security/
+  - src/tools/
+  - src/types/
+  - src/utils/
+  - src/backoffice/ (experimental; placement can be deferred)
+- packages/mcp-shell/
+  - src/index.ts (CLI entry)
+  - src/server.ts (MCP server wrapper)
+- packages/code-shell-extension/
+  - extensions/vscode-mcp-shell/
+- packages/shell-server-backend/
+  - public/ (backoffice UI assets)
+  - docs/backoffice-design.md (if dedicated to backend)
+
+Notes:
+- This is an initial mapping and will be validated against runtime dependencies.
+- Backoffice is experimental; placement can be deferred until its scope is fixed.
+
 ### Phase 2: Foundation Consolidation
 - Move daemon and server management into shell-server.
 - Route shell_execute and terminal_operate through the shared API.
