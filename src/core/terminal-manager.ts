@@ -1,4 +1,4 @@
-import * as pty from 'node-pty';
+import type { IPty } from 'node-pty';
 import { EventEmitter } from 'events';
 import {
   TerminalInfo,
@@ -33,11 +33,27 @@ export interface TerminalOptions {
 
 interface TerminalSession {
   info: TerminalInfo;
-  ptyProcess: pty.IPty;
+  ptyProcess: IPty;
   outputBuffer: string[];
   history: string[];
   lastActivity: Date;
   foregroundProcessCache?: { info: ForegroundProcessInfo; timestamp: number };
+}
+
+let cachedPty: typeof import('node-pty') | undefined;
+
+async function loadPty(): Promise<typeof import('node-pty')> {
+  if (cachedPty) {
+    return cachedPty;
+  }
+  try {
+    cachedPty = await import('node-pty');
+    return cachedPty;
+  } catch (error) {
+    throw new ExecutionError('Terminal support is unavailable because node-pty failed to load.', {
+      error: String(error),
+    });
+  }
 }
 
 export class TerminalManager {
@@ -86,7 +102,8 @@ export class TerminalManager {
 
     try {
       // PTYプロセスの作成
-      const ptyProcess = pty.spawn(shellCommand.command, shellCommand.args, {
+      const ptyModule = await loadPty();
+      const ptyProcess = ptyModule.spawn(shellCommand.command, shellCommand.args, {
         name: 'xterm-256color',
         cols: dimensions.width,
         rows: dimensions.height,
