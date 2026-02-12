@@ -32,6 +32,13 @@ import {
   CleanupSuggestionsParamsSchema,
   AutoCleanupParamsSchema,
   CommandHistoryQueryParamsSchema,
+  ServerCurrentParamsSchema,
+  ServerListAttachableParamsSchema,
+  ServerStartParamsSchema,
+  ServerStopParamsSchema,
+  ServerGetParamsSchema,
+  ServerDetachParamsSchema,
+  ServerReattachParamsSchema,
   AdjustCriteriaParamsSchema as _AdjustCriteriaParamsSchema, // Disabled MCP tool
 } from '../../shell-server/src/types/schemas.js';
 import { TerminalOperateParamsSchema } from '../../shell-server/src/types/quick-schemas.js';
@@ -194,6 +201,43 @@ export class MCPShellServer {
           inputSchema: zodToJsonSchema(CommandHistoryQueryParamsSchema, { target: 'jsonSchema7' })
         },
 
+        // Server Management
+        {
+          name: 'server_current',
+          description: 'Get current server information, including attach status and socket path when available.',
+          inputSchema: zodToJsonSchema(ServerCurrentParamsSchema, { target: 'jsonSchema7' })
+        },
+        {
+          name: 'server_list_attachable',
+          description: 'List attachable servers for a given working directory boundary.',
+          inputSchema: zodToJsonSchema(ServerListAttachableParamsSchema, { target: 'jsonSchema7' })
+        },
+        {
+          name: 'server_start',
+          description: 'Start or discover a server for the specified working directory.',
+          inputSchema: zodToJsonSchema(ServerStartParamsSchema, { target: 'jsonSchema7' })
+        },
+        {
+          name: 'server_stop',
+          description: 'Stop a running server by server_id.',
+          inputSchema: zodToJsonSchema(ServerStopParamsSchema, { target: 'jsonSchema7' })
+        },
+        {
+          name: 'server_get',
+          description: 'Get server metadata by server_id.',
+          inputSchema: zodToJsonSchema(ServerGetParamsSchema, { target: 'jsonSchema7' })
+        },
+        {
+          name: 'server_detach',
+          description: 'Detach from a server without stopping it.',
+          inputSchema: zodToJsonSchema(ServerDetachParamsSchema, { target: 'jsonSchema7' })
+        },
+        {
+          name: 'server_reattach',
+          description: 'Attach to a detached server by server_id.',
+          inputSchema: zodToJsonSchema(ServerReattachParamsSchema, { target: 'jsonSchema7' })
+        },
+
         // Dynamic Security Criteria Adjustment
         // NOTE: MCP-side adjust_criteria tool is disabled (security concern - evaluated party should not adjust evaluation criteria)
         // Use Validator-side adjustValidatorCriteria instead for internal criteria adjustment
@@ -333,6 +377,61 @@ export class MCPShellServer {
           // Command History Operations
           case 'command_history_query': {
             const result = await this.shellTools.queryCommandHistoryValidated(args);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          // Server Management
+          case 'server_current': {
+            const result = await this.serverManager.current();
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          case 'server_list_attachable': {
+            const cwd = args && typeof args === 'object' && 'cwd' in args
+              ? String((args as { cwd: string }).cwd)
+              : process.cwd();
+            const result = await this.serverManager.listAttachable({ cwd });
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          case 'server_start': {
+            const params = args as {
+              cwd: string;
+              socket_path?: string;
+              allow_existing?: boolean;
+            };
+            const result = await this.serverManager.start({
+              cwd: params.cwd,
+              ...(params.socket_path ? { socketPath: params.socket_path } : {}),
+              allowExisting: params.allow_existing ?? false,
+            });
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          case 'server_stop': {
+            const params = args as { server_id: string; force?: boolean };
+            await this.serverManager.stop({
+              serverId: params.server_id,
+              force: params.force ?? false,
+            });
+            return { content: [{ type: 'text', text: JSON.stringify({ ok: true }, null, 2) }] };
+          }
+
+          case 'server_get': {
+            const params = args as { server_id: string };
+            const result = await this.serverManager.get({ serverId: params.server_id });
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+
+          case 'server_detach': {
+            const params = args as { server_id: string };
+            await this.serverManager.detach({ serverId: params.server_id });
+            return { content: [{ type: 'text', text: JSON.stringify({ ok: true }, null, 2) }] };
+          }
+
+          case 'server_reattach': {
+            const params = args as { server_id: string };
+            const result = await this.serverManager.reattach({ serverId: params.server_id });
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
 

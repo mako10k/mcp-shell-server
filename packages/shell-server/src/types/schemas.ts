@@ -226,6 +226,48 @@ export const ProcessMonitorParamsSchema = z.object({
     ),
 });
 
+// Server Management
+export const ServerCurrentParamsSchema = z.object({}).strict();
+
+export const ServerListAttachableParamsSchema = z.object({
+  cwd: z
+    .string()
+    .min(1)
+    .describe('Working directory used to discover attachable servers.'),
+});
+
+export const ServerStartParamsSchema = z.object({
+  cwd: z.string().min(1).describe('Working directory for the server.'),
+  socket_path: z
+    .string()
+    .optional()
+    .describe('Optional explicit socket path override.'),
+  allow_existing: z
+    .boolean()
+    .default(false)
+    .describe('Allow reuse when a server is already running.'),
+});
+
+export const ServerStopParamsSchema = z.object({
+  server_id: z.string().min(1).describe('Server ID to stop.'),
+  force: z
+    .boolean()
+    .default(false)
+    .describe('Force stop even if clients are attached.'),
+});
+
+export const ServerGetParamsSchema = z.object({
+  server_id: z.string().min(1).describe('Server ID to fetch.'),
+});
+
+export const ServerDetachParamsSchema = z.object({
+  server_id: z.string().min(1).describe('Server ID to detach from.'),
+});
+
+export const ServerReattachParamsSchema = z.object({
+  server_id: z.string().min(1).describe('Server ID to attach to.'),
+});
+
 // File Operations
 export const FileListParamsSchema = z.object({
   output_type: OutputTypeSchema.optional().describe(
