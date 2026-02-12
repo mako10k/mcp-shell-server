@@ -76,6 +76,31 @@ async function openAttachSocket(socketPath: string): Promise<net.Socket> {
   });
 }
 
+async function spawnDaemon(socketPath: string, cwd: string, pidFile: string): Promise<ChildProcess> {
+  const tsxPath = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
+  const child = spawn(
+    process.execPath,
+    [tsxPath, 'packages/shell-server/src/daemon/server.ts', '--socket', socketPath, '--cwd', cwd, '--branch', 'test'],
+    {
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        MCP_SHELL_MCP_DAEMON_ENTRY: path.join(
+          process.cwd(),
+          'src',
+          'test',
+          'fixtures',
+          'mcp-daemon-child.js'
+        ),
+        MCP_SHELL_MCP_CHILD_PID_FILE: pidFile,
+      },
+    }
+  );
+
+  await waitForSocketReady(socketPath, 3000);
+  return child;
+}
+
 async function waitForFile(pathname: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
@@ -151,27 +176,7 @@ describe('Daemon integration', () => {
     process.env['MCP_SHELL_SERVER_BRANCH'] = 'test';
     process.env['MCP_SHELL_DAEMON_ENABLED'] = 'true';
 
-    const tsxPath = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
-    child = spawn(
-      process.execPath,
-      [tsxPath, 'packages/shell-server/src/daemon/server.ts', '--socket', socketPath, '--cwd', tempCwd, '--branch', 'test'],
-      {
-        stdio: 'ignore',
-        env: {
-          ...process.env,
-          MCP_SHELL_MCP_DAEMON_ENTRY: path.join(
-            process.cwd(),
-            'src',
-            'test',
-            'fixtures',
-            'mcp-daemon-child.js'
-          ),
-          MCP_SHELL_MCP_CHILD_PID_FILE: pidFile,
-        },
-      }
-    );
-
-    await waitForSocketReady(socketPath, 3000);
+    child = await spawnDaemon(socketPath, tempCwd, pidFile);
   });
 
   afterEach(async () => {
@@ -250,5 +255,25 @@ describe('Daemon integration', () => {
     await serverManager.stop({ serverId, force: true });
 
     await closePromise;
+  });
+
+  it('can reattach after daemon restart', async () => {
+    const attachSocket = await openAttachSocket(socketPath);
+    const closePromise = new Promise<void>((resolve) => {
+      attachSocket.once('close', () => resolve());
+      attachSocket.once('end', () => resolve());
+    });
+
+    const serverManager = new StubServerManager();
+    await serverManager.stop({ serverId, force: true });
+    await closePromise;
+
+    if (child) {
+      await waitForExit(child);
+    }
+    child = await spawnDaemon(socketPath, tempCwd, pidFile);
+
+    const info = await serverManager.reattach({ serverId });
+    expect(info.status).toBe('running');
   });
 });
