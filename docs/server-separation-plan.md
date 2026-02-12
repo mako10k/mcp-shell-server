@@ -162,6 +162,26 @@ Notes:
   - ProcessManager, TerminalManager, FileManager, MonitoringManager,
     CommandHistoryManager
 
+### Phase 1 Import Update Checklist
+- Entry points:
+  - src/index.ts (CLI entry -> packages/mcp-shell/src)
+  - src/server.ts (MCP server -> packages/mcp-shell/src)
+  - src/executor/server.ts (executor -> packages/shell-server/src/executor)
+  - src/backoffice/* (experimental; update only if moved)
+- Shared runtime:
+  - src/runtime/tool-runtime.ts
+  - src/tools/shell-tools.ts
+- Core managers and streaming:
+  - src/core/process-manager.ts
+  - src/core/terminal-manager.ts
+  - src/core/file-manager.ts
+  - src/core/monitoring-manager.ts
+  - src/core/*-subscriber.ts and stream-publisher.ts
+- Types and schemas:
+  - src/types/index.ts
+  - src/types/schemas.ts
+  - src/types/quick-schemas.ts
+
 ### Phase 2: Foundation Consolidation
 - Move daemon and server management into shell-server.
 - Route shell_execute and terminal_operate through the shared API.
