@@ -41,7 +41,7 @@ function printHelp(version: string): void {
     '  EXECUTION_BACKEND=local|remote  Select execution backend (default: local)',
     '  EXECUTOR_URL / EXECUTOR_HOST / EXECUTOR_PORT / EXECUTOR_TOKEN  Configure remote executor',
     '  MCP_SHELL_DEFAULT_WORKDIR  Default working directory for shell_execute',
-    '  MCP_ALLOWED_WORKDIRS       Comma-separated allowed directories',
+    '  MCP_SHELL_ALLOWED_WORKDIRS  Comma-separated allowed directories',
     '  MCP_DISABLED_TOOLS         Comma-separated tool names to disable',
     '  MCP_SHELL_DAEMON_ENABLED=true  Enable daemon process separation',
     '  MCP_SHELL_USE_DAEMON_MCP=false  Disable MCP daemon proxy (default: enabled when daemon is on)',

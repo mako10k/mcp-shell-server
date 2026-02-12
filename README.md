@@ -359,6 +359,7 @@ The server supports various environment variables (see sections below), such as:
 - `BACKOFFICE_ENABLED`, `BACKOFFICE_PORT`
 - `EXECUTION_BACKEND` and `EXECUTOR_*` for remote executor
 - `MCP_SHELL_DEFAULT_WORKDIR`, `MCP_SHELL_ALLOWED_WORKDIRS`
+- `MCP_SHELL_DAEMON_ENABLED`, `MCP_SHELL_USE_DAEMON_MCP`
 - `MCP_DISABLED_TOOLS`, `LOG_LEVEL`
 
 ### Development
@@ -435,6 +436,30 @@ The server supports the following environment variables for configuration:
   ```bash
   export MCP_SHELL_MAX_MEMORY_MB="1024"
   ```
+
+#### Daemon Configuration
+- `MCP_SHELL_DAEMON_ENABLED`: Enable daemon process separation
+  ```bash
+  export MCP_SHELL_DAEMON_ENABLED="true"
+  ```
+- `MCP_SHELL_USE_DAEMON_MCP`: Disable MCP daemon proxy when set to `false` (default: enabled when daemon is on)
+  ```bash
+  export MCP_SHELL_USE_DAEMON_MCP="false"
+  ```
+- `MCP_SHELL_SERVER_BRANCH`: Namespace the daemon socket path (default: `main`)
+  ```bash
+  export MCP_SHELL_SERVER_BRANCH="main"
+  ```
+- `MCP_SHELL_DAEMON_ENTRY`: Override the daemon entrypoint path (advanced)
+
+Daemon sockets are created under `$XDG_RUNTIME_DIR` when available (fallback: OS temp dir),
+using a per-directory hash and branch namespace:
+
+```text
+$XDG_RUNTIME_DIR/mcp-shell/<hash>/<branch>/daemon.sock
+```
+
+Socket permissions are set to `600` and the daemon cleans up stale sockets on discovery.
 
 #### Complete Configuration Example
 ```bash
