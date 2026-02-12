@@ -67,7 +67,7 @@ const SOCKET_READY_INTERVAL_MS = 50;
 const SOCKET_REQUEST_TIMEOUT_MS = 1000;
 
 type DaemonRequest = {
-  action: 'status' | 'attach' | 'detach' | 'reattach';
+  action: 'status' | 'attach' | 'detach' | 'reattach' | 'stop';
 };
 
 type DaemonResponse = {
@@ -609,6 +609,14 @@ export class StubServerManager implements ServerManager {
   async stop(options: ServerStopOptions): Promise<void> {
     const entry = this.servers.get(options.serverId);
     if (entry) {
+      if (this.isDaemonEnabled()) {
+        try {
+          await this.requestDaemon(entry.socketPath, { action: 'stop' });
+        } catch {
+          // Best-effort shutdown only.
+        }
+      }
+
       if (entry.server) {
         await new Promise<void>((resolve) => {
           entry.server?.close(() => resolve());
@@ -637,6 +645,17 @@ export class StubServerManager implements ServerManager {
 
     const socketPath = path.join(this.getRuntimeRoot(), parsed.hash, parsed.branch, SOCKET_FILE_NAME);
     if (await this.socketExists(socketPath)) {
+      if (this.isDaemonEnabled() && (await this.canConnectSocket(socketPath))) {
+        const response = await this.requestDaemon(socketPath, { action: 'stop' });
+        if (!response.ok) {
+          throw new MCPShellError('SYSTEM_013', 'Daemon stop failed', 'SYSTEM', {
+            serverId: options.serverId,
+            error: response.error,
+          });
+        }
+        return;
+      }
+
       await this.cleanupStaleSocket(socketPath);
       return;
     }

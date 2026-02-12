@@ -9,7 +9,7 @@ const SOCKET_REQUEST_TIMEOUT_MS = 1000;
 const HEARTBEAT_TIMEOUT_MS = 500;
 
 type DaemonRequest = {
-  action?: 'status' | 'attach' | 'detach' | 'reattach';
+  action?: 'status' | 'attach' | 'detach' | 'reattach' | 'stop';
 };
 
 type DaemonResponse = {
@@ -295,6 +295,11 @@ async function startDaemon(): Promise<void> {
           ...(branch ? { branch } : {}),
         });
         return;
+      }
+      if (action === 'stop') {
+        sendResponse(socket, { ok: true });
+        await shutdown();
+        process.exit(0);
       }
 
       sendResponse(socket, { ok: false, error: 'unsupported_action' });
