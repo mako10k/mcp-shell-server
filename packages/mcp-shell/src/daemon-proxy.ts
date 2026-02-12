@@ -1,5 +1,6 @@
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
+import * as fs from 'fs/promises';
 import { logger } from '../../shell-server/src/utils/helpers.js';
 import { UdsClientTransport } from '../../shell-server/src/daemon/uds-transport.js';
 
@@ -34,7 +35,35 @@ function serializeMessage(message: JSONRPCMessage): string {
   return `${JSON.stringify(message)}\n`;
 }
 
+async function validateSocketPermissions(socketPath: string): Promise<void> {
+  const stat = await fs.stat(socketPath);
+  if (!stat.isSocket()) {
+    throw new Error('Socket path is not a Unix domain socket.');
+  }
+
+  const mode = stat.mode & 0o777;
+  if (mode !== 0o600) {
+    throw new Error('Socket permissions must be 600.');
+  }
+
+  const getuid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (getuid !== null && stat.uid !== getuid) {
+    throw new Error('Socket owner does not match current user.');
+  }
+}
+
 export async function runDaemonProxy(socketPath: string): Promise<void> {
+  try {
+    await validateSocketPermissions(socketPath);
+  } catch (error) {
+    logger.error(
+      'MCP daemon socket validation failed',
+      { error: String(error), socketPath },
+      'daemon-proxy'
+    );
+    throw error;
+  }
+
   const transport = new UdsClientTransport(socketPath);
   const readBuffer = new ReadBuffer();
 
