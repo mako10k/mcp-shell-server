@@ -52,10 +52,33 @@ describe('Explanation Parameter Validation', () => {
 
   it('should have clear description warning about VS Code parameters', () => {
     // Test that the schema description contains warnings about VS Code parameters
-    const schemaDefinition = ShellExecuteParamsSchema._def;
-    // Access the inner schema since it's wrapped in a refine
-    const innerSchema = schemaDefinition.schema;
-    const commandSchema = innerSchema.shape.command;
+    const unwrap = (schema: unknown): unknown => {
+      let current = schema as { _def?: { schema?: unknown; innerType?: () => unknown } };
+      while (current?._def?.schema || current?._def?.innerType) {
+        if (current._def?.schema) {
+          current = current._def.schema as typeof current;
+          continue;
+        }
+        if (current._def?.innerType) {
+          current = current._def.innerType() as typeof current;
+          continue;
+        }
+        break;
+      }
+      return current;
+    };
+
+    const innerSchema = unwrap(ShellExecuteParamsSchema) as {
+      _def?: { shape?: () => Record<string, { description?: string }> };
+      shape?: Record<string, { description?: string }>;
+    };
+    const shape = typeof innerSchema._def?.shape === 'function'
+      ? innerSchema._def.shape()
+      : innerSchema.shape;
+    const commandSchema = shape?.command;
+    if (!commandSchema) {
+      throw new Error('Command schema not found on ShellExecuteParamsSchema');
+    }
     const description = commandSchema.description;
 
     expect(description).toContain('MCP Shell Server');

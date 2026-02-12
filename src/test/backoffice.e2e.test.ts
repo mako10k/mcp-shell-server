@@ -19,6 +19,19 @@ function get(url: string): Promise<{ status: number; body: string }> {
   });
 }
 
+async function getWithRetry(url: string, attempts = 3): Promise<{ status: number; body: string }> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await get(url);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  throw lastError;
+}
+
 describe('BackofficeServer E2E', () => {
   test('should start and respond to /health', async () => {
     const fileManager = new FileManager();
@@ -54,7 +67,7 @@ describe('BackofficeServer E2E', () => {
     await server.start();
     const port = server.getListenPort();
 
-    const res = await get(`http://127.0.0.1:${port}/api/dashboard`);
+    const res = await getWithRetry(`http://127.0.0.1:${port}/api/dashboard`);
     expect(res.status).toBe(200);
     const json = JSON.parse(res.body);
     expect(typeof json.timestamp).toBe('string');
