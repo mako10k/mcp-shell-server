@@ -9,16 +9,9 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { ZodError } from 'zod';
 
-import { ProcessManager } from '../../shell-server/src/core/process-manager.js';
-import { TerminalManager } from '../../shell-server/src/core/terminal-manager.js';
-import { FileManager } from '../../shell-server/src/core/file-manager.js';
-import { MonitoringManager } from '../../shell-server/src/core/monitoring-manager.js';
-import { CommandHistoryManager } from '../../shell-server/src/core/enhanced-history-manager.js';
-import { ShellTools } from '../../shell-server/src/tools/shell-tools.js';
 import { logger } from '../../shell-server/src/utils/helpers.js';
 import { ExecutionInfo } from '../../shell-server/src/types/index.js';
-import { createShellToolRuntime } from '../../shell-server/src/runtime/tool-runtime.js';
-import type { ServerManager } from '../../shell-server/src/core/server-manager.js';
+import { createShellToolRuntime, type ShellToolRuntime } from '../../shell-server/src/runtime/tool-runtime.js';
 
 import {
   ShellExecuteParamsSchema,
@@ -58,13 +51,13 @@ const DISABLED_TOOLS: string[] = (process.env['MCP_DISABLED_TOOLS'] || '')
 
 export class MCPShellServer {
   private server: Server;
-  private processManager: ProcessManager;
-  private terminalManager: TerminalManager;
-  private fileManager: FileManager;
-  private monitoringManager: MonitoringManager;
-  private commandHistoryManager: CommandHistoryManager;
-  private shellTools: ShellTools;
-  private serverManager: ServerManager;
+  private processManager: ShellToolRuntime['processManager'];
+  private terminalManager: ShellToolRuntime['terminalManager'];
+  private fileManager: ShellToolRuntime['fileManager'];
+  private monitoringManager: ShellToolRuntime['monitoringManager'];
+  private commandHistoryManager: ShellToolRuntime['commandHistoryManager'];
+  private shellTools: ShellToolRuntime['shellTools'];
+  private serverManager: ShellToolRuntime['serverManager'];
   private backoffice?: BackofficeServer;
 
   constructor() {
