@@ -173,19 +173,29 @@ async function startDaemon(): Promise<void> {
       socket.removeAllListeners();
     };
 
+    let handled = false;
+
     socket.on('data', (chunk) => {
       buffer += chunk;
       if (buffer.includes('\n')) {
-        socket.end();
+        void handleRequest();
       }
     });
 
     const handleRequest = async () => {
+      if (handled) {
+        return;
+      }
+      handled = true;
+
       cleanup();
-      const line = buffer.trim();
+      const line = buffer.split('\n')[0]?.trim();
       if (!line) {
         return;
       }
+
+      socket.removeAllListeners('data');
+      socket.removeAllListeners('end');
 
       let request: DaemonRequest;
       try {
