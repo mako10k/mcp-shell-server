@@ -380,7 +380,7 @@
   "scripts": {
     "build": "npm run typecheck && npm run bundle:extension && npm run bundle:server",
     "bundle:extension": "esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --sourcemap --outfile=dist/extension.js --external:vscode --external:node-pty",
-    "bundle:server": "esbuild node_modules/@mako10k/mcp-shell-server/dist/index.js --bundle --platform=node --target=node18 --format=cjs --sourcemap --outfile=dist/mcp-shell-server.js --external:node-pty",
+    "bundle:server": "esbuild node_modules/@mako10k/mcp-shell-server/dist/packages/mcp-shell/src/index.js --bundle --platform=node --target=node18 --format=cjs --sourcemap --outfile=dist/mcp-shell-server.js --external:node-pty",
     "package": "npm run build && npx -y @vscode/vsce package",
     "package:release": "npm install --include=dev && npm run build && npm prune --omit=dev && npx -y @vscode/vsce package",
     "typecheck": "tsc -p . --noEmit",
