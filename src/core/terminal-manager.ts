@@ -9,7 +9,12 @@ import {
   ForegroundProcessInfo,
 } from '../types/index.js';
 import { generateId, getCurrentTimestamp, getSafeEnvironment } from '../utils/helpers.js';
-import { ResourceNotFoundError, ResourceLimitError, ExecutionError } from '../utils/errors.js';
+import {
+  MCPShellError,
+  ResourceNotFoundError,
+  ResourceLimitError,
+  ExecutionError,
+} from '../utils/errors.js';
 import { ProcessUtils } from '../utils/process-utils.js';
 
 interface TerminalOutputResult {
@@ -41,19 +46,38 @@ interface TerminalSession {
 }
 
 let cachedPty: typeof import('node-pty') | undefined;
+let cachedPtyPromise: Promise<typeof import('node-pty')> | undefined;
 
 async function loadPty(): Promise<typeof import('node-pty')> {
   if (cachedPty) {
     return cachedPty;
   }
-  try {
-    cachedPty = await import('node-pty');
-    return cachedPty;
-  } catch (error) {
-    throw new ExecutionError('Terminal support is unavailable because node-pty failed to load.', {
-      error: String(error),
-    });
+  if (cachedPtyPromise) {
+    return cachedPtyPromise;
   }
+
+  cachedPtyPromise = import('node-pty')
+    .then((module) => {
+      cachedPty = module;
+      return module;
+    })
+    .catch((error) => {
+      cachedPtyPromise = undefined;
+      cachedPty = undefined;
+      const details: Record<string, unknown> = { error: String(error) };
+      if (error instanceof Error) {
+        details["message"] = error.message;
+        details["name"] = error.name;
+        details["stack"] = error.stack;
+      }
+      const maybeErrno = error as NodeJS.ErrnoException;
+      if (maybeErrno && typeof maybeErrno.code === 'string') {
+        details["code"] = maybeErrno.code;
+      }
+      throw new ExecutionError('Terminal support is unavailable because node-pty failed to load.', details);
+    });
+
+  return cachedPtyPromise;
 }
 
 export class TerminalManager {
@@ -150,6 +174,9 @@ export class TerminalManager {
       this.terminals.set(terminalId, session);
       return terminalInfo;
     } catch (error) {
+      if (error instanceof MCPShellError) {
+        throw error;
+      }
       throw new ExecutionError(`Failed to create terminal: ${error}`, {
         shellType: shellType,
         error: String(error),

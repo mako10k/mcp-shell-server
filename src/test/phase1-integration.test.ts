@@ -17,8 +17,18 @@ describe('Phase 1 Integration Tests', () => {
   let tempDir: string;
   let configPath: string;
   let historyPath: string;
+  let envSnapshot: Record<string, string | undefined>;
 
   beforeEach(async () => {
+    envSnapshot = {
+      MCP_SHELL_SECURITY_MODE: process.env['MCP_SHELL_SECURITY_MODE'],
+      MCP_SHELL_ENHANCED_MODE: process.env['MCP_SHELL_ENHANCED_MODE'],
+      MCP_SHELL_LLM_EVALUATION: process.env['MCP_SHELL_LLM_EVALUATION'],
+    };
+    process.env['MCP_SHELL_SECURITY_MODE'] = 'permissive';
+    process.env['MCP_SHELL_ENHANCED_MODE'] = 'false';
+    process.env['MCP_SHELL_LLM_EVALUATION'] = 'false';
+
     // Create temporary directory for test files
     tempDir = path.join(__dirname, 'temp-test-' + Date.now());
     await fs.mkdir(tempDir, { recursive: true });
@@ -39,6 +49,9 @@ describe('Phase 1 Integration Tests', () => {
     } catch (error) {
       // Ignore cleanup errors
     }
+    process.env['MCP_SHELL_SECURITY_MODE'] = envSnapshot.MCP_SHELL_SECURITY_MODE;
+    process.env['MCP_SHELL_ENHANCED_MODE'] = envSnapshot.MCP_SHELL_ENHANCED_MODE;
+    process.env['MCP_SHELL_LLM_EVALUATION'] = envSnapshot.MCP_SHELL_LLM_EVALUATION;
   });
 
   describe('SecurityManager Enhanced Features', () => {
@@ -53,8 +66,8 @@ describe('Phase 1 Integration Tests', () => {
       ];
 
       testCases.forEach(({ command, expectedClassification }) => {
-        const result = securityManager.classifyCommandSafety(command);
-        expect(result).toBe(expectedClassification as CommandClassification);
+        const result = securityManager.analyzeCommandSafety(command);
+        expect(result.classification).toBe(expectedClassification as CommandClassification);
       });
     });
 
@@ -284,16 +297,16 @@ describe('Phase 1 Integration Tests', () => {
       }
 
       // Test classification with loaded config
-      const classification = securityManager.classifyCommandSafety('ls -la');
-      expect(classification).toBe('basic_safe');
+      const classification = securityManager.analyzeCommandSafety('ls -la');
+      expect(classification.classification).toBe('basic_safe');
 
       // Update config and verify security manager behavior
       await configManager.updateEnhancedSecurityConfig({ basic_safe_classification: false });
       const updatedConfig = configManager.getEnhancedSecurityConfig();
       securityManager.setEnhancedConfig(updatedConfig);
 
-      const newClassification = securityManager.classifyCommandSafety('ls -la');
-      expect(newClassification).toBe('llm_required'); // Should require LLM when basic classification is disabled
+      const newClassification = securityManager.analyzeCommandSafety('ls -la');
+      expect(newClassification.classification).toBe('llm_required'); // Should require LLM when basic classification is disabled
     });
 
     it('should integrate SecurityManager with CommandHistoryManager', async () => {
