@@ -17,6 +17,33 @@ import { logger } from '../utils/helpers.js';
 export type { CreateMessageCallback } from '../security/chat-completion-adapter.js';
 export type { ElicitationHandler } from '../security/evaluator-types.js';
 
+export { BackofficeServer } from '../backoffice/server.js';
+export { MCPShellError } from '../utils/errors.js';
+export { ExecutionInfo } from '../types/index.js';
+export {
+  ShellExecuteParamsSchema,
+  ShellGetExecutionParamsSchema,
+  ShellSetDefaultWorkdirParamsSchema,
+  FileListParamsSchema,
+  FileReadParamsSchema,
+  FileDeleteParamsSchema,
+  TerminalListParamsSchema,
+  TerminalGetParamsSchema,
+  TerminalCloseParamsSchema,
+  CleanupSuggestionsParamsSchema,
+  AutoCleanupParamsSchema,
+  CommandHistoryQueryParamsSchema,
+  ServerCurrentParamsSchema,
+  ServerListAttachableParamsSchema,
+  ServerStartParamsSchema,
+  ServerStopParamsSchema,
+  ServerGetParamsSchema,
+  ServerDetachParamsSchema,
+  ServerReattachParamsSchema,
+} from '../types/schemas.js';
+export { TerminalOperateParamsSchema } from '../types/quick-schemas.js';
+export { logger };
+
 export type ShellToolRuntime = {
   processManager: ProcessManager;
   terminalManager: TerminalManager;

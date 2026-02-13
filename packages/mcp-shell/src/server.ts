@@ -9,17 +9,12 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { ZodError } from 'zod';
 
-import { logger } from '../../shell-server/src/utils/helpers.js';
-import { ExecutionInfo } from '../../shell-server/src/types/index.js';
 import {
   createShellToolRuntime,
   dispatchToolCall,
-  type ShellToolRuntime,
-  type ToolName,
-  type ToolParams,
-} from '../../shell-server/src/runtime/tool-runtime.js';
-
-import {
+  BackofficeServer,
+  MCPShellError,
+  ExecutionInfo,
   ShellExecuteParamsSchema,
   ShellGetExecutionParamsSchema,
   ShellSetDefaultWorkdirParamsSchema,
@@ -39,13 +34,13 @@ import {
   ServerGetParamsSchema,
   ServerDetachParamsSchema,
   ServerReattachParamsSchema,
-  AdjustCriteriaParamsSchema as _AdjustCriteriaParamsSchema, // Disabled MCP tool
-} from '../../shell-server/src/types/schemas.js';
-import { TerminalOperateParamsSchema } from '../../shell-server/src/types/quick-schemas.js';
+  TerminalOperateParamsSchema,
+  logger,
+  type ShellToolRuntime,
+  type ToolName,
+  type ToolParams,
+} from '../../shell-server/src/runtime/tool-runtime.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-
-import { MCPShellError } from '../../shell-server/src/utils/errors.js';
-import { BackofficeServer } from '../../shell-server/src/backoffice/server.js';
 
 // Tools can be disabled by specifying a comma-separated list in the
 // MCP_DISABLED_TOOLS environment variable. Disabled tools will not be

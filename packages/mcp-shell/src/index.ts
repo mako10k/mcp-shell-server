@@ -2,8 +2,7 @@
 
 import { MCPShellServer } from './server.js';
 import { runDaemonProxy } from './daemon-proxy.js';
-import { createServerManager } from '../../shell-server/src/runtime/tool-runtime.js';
-import { logger } from '../../shell-server/src/utils/helpers.js';
+import { createServerManager, logger } from '../../shell-server/src/runtime/tool-runtime.js';
 import fs from 'fs/promises';
 
 async function getVersion(): Promise<string> {
