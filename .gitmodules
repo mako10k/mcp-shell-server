@@ -1,3 +1,6 @@
 [submodule "packages/shell-server"]
 	path = packages/shell-server
 	url = https://github.com/mako10k/shell-server
+[submodule "packages/mcp-shell"]
+	path = packages/mcp-shell
+	url = https://github.com/mako10k/mcp-shell
