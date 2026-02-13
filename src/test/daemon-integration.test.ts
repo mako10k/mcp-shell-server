@@ -273,6 +273,9 @@ describe('Daemon integration', () => {
     }
     child = await spawnDaemon(socketPath, tempCwd, pidFile);
 
+    const attachable = await serverManager.listAttachable({ cwd: tempCwd });
+    expect(attachable[0]?.attachable).toBe(true);
+
     const info = await serverManager.reattach({ serverId });
     expect(info.status).toBe('running');
   });
