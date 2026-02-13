@@ -1,0 +1,21 @@
+{
+  "name": "@mako10k/shell-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/runtime/index.js",
+  "exports": {
+    "./runtime": "./dist/runtime/index.js",
+    "./tool-runtime": "./dist/runtime/tool-runtime.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.2",
+    "node-pty": "^1.0.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.24.5"
+  }
+}
