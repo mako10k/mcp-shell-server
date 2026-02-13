@@ -1,0 +1,3 @@
+[submodule "packages/shell-server"]
+	path = packages/shell-server
+	url = https://github.com/mako10k/shell-server
