@@ -368,6 +368,14 @@ The server supports various environment variables (see sections below), such as:
 npm run dev
 ```
 
+### Submodule Setup
+
+This repository uses git submodules. Initialize them before running builds or tests.
+
+```bash
+./scripts/init-submodules.sh
+```
+
 ### Build
 
 ```bash
