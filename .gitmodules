@@ -4,3 +4,6 @@
 [submodule "packages/mcp-shell"]
 	path = packages/mcp-shell
 	url = https://github.com/mako10k/mcp-shell
+[submodule "packages/code-shell-extension"]
+	path = packages/code-shell-extension
+	url = https://github.com/mako10k/code-shell-extension
