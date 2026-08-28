@@ -55,7 +55,8 @@ export type OutputTruncationReason =
   | 'timeout'
   | 'user_interrupt'
   | 'error'
-  | 'background_transition';
+  | 'background_transition'
+  | 'persistence_failure';
 
 // 出力状態情報
 export interface OutputStatus {

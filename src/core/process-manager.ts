@@ -1456,6 +1456,7 @@ export class ProcessManager {
         }
 
         let outputFileId = executionInfo.output_id;
+        let outputPersistenceSucceeded = false;
         try {
           outputFileId = await this.saveOutputToFile(
             executionId,
@@ -1465,16 +1466,24 @@ export class ProcessManager {
             outputFileId
           );
           executionInfo.output_id = outputFileId;
+          outputPersistenceSucceeded = true;
         } catch (error) {
-          executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
+          this.setOutputPersistenceFailure(
+            executionInfo,
+            error,
+            outputFileId,
+            snapshot.truncated
+          );
         }
 
-        this.setOutputStatus(
-          executionInfo,
-          snapshot.truncated,
-          'timeout',
-          outputFileId
-        );
+        if (outputPersistenceSucceeded) {
+          this.setOutputStatus(
+            executionInfo,
+            snapshot.truncated,
+            'timeout',
+            outputFileId
+          );
+        }
         this.executions.set(executionId, executionInfo);
         this.scheduleBackgroundTimeoutCallback(executionId, executionInfo);
       }
@@ -1510,6 +1519,7 @@ export class ProcessManager {
         }
 
         let outputFileId = executionInfo.output_id;
+        let outputPersistenceSucceeded = false;
         try {
           outputFileId = await this.saveOutputToFile(
             executionId,
@@ -1519,16 +1529,24 @@ export class ProcessManager {
             outputFileId
           );
           executionInfo.output_id = outputFileId;
+          outputPersistenceSucceeded = true;
         } catch (error) {
-          executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
+          this.setOutputPersistenceFailure(
+            executionInfo,
+            error,
+            outputFileId,
+            snapshot.truncated
+          );
         }
 
-        this.setOutputStatus(
-          executionInfo,
-          snapshot.truncated,
-          'size_limit',
-          outputFileId
-        );
+        if (outputPersistenceSucceeded) {
+          this.setOutputStatus(
+            executionInfo,
+            snapshot.truncated,
+            'size_limit',
+            outputFileId
+          );
+        }
         this.executions.set(executionId, executionInfo);
 
         // adaptive modeバックグラウンドプロセス正常終了のコールバック呼び出し
@@ -1754,6 +1772,30 @@ export class ProcessManager {
       return existingOutputId;
     }
     return await this.fileManager.createOutputFile(combinedOutput, executionId);
+  }
+
+  private setOutputPersistenceFailure(
+    executionInfo: ExecutionInfo,
+    error: unknown,
+    staleOutputId: string | undefined,
+    actuallyTruncated: boolean
+  ): void {
+    executionInfo.output_truncated = actuallyTruncated;
+    if (actuallyTruncated) executionInfo.truncation_reason = 'size_limit';
+    else delete executionInfo.truncation_reason;
+    if (staleOutputId) executionInfo.output_id = staleOutputId;
+    else delete executionInfo.output_id;
+    executionInfo.output_status = {
+      complete: false,
+      reason: 'persistence_failure',
+      available_via_output_id: !!staleOutputId,
+    };
+    executionInfo.message = `Final output persistence failed; ${staleOutputId ? 'output_id contains only the earlier transition snapshot.' : 'no retained output is available.'} ${error instanceof Error ? error.message : String(error)}`;
+    executionInfo.next_steps = [
+      'Treat any existing output_id as partial and stale',
+      'Resolve the storage failure and rerun the command if complete output is required',
+    ];
+    delete executionInfo.guidance;
   }
 
   /**

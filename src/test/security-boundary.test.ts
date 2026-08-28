@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
@@ -428,6 +428,49 @@ describe('Issue #24 execution boundary', () => {
       }
       expect(completedCallbackIds).toContain(adaptiveBurst.execution_id);
       expect(timeoutCallbackIds).not.toContain(adaptiveBurst.execution_id);
+
+      const replaceFailure = vi
+        .spyOn(fileManager, 'replaceOutputFile')
+        .mockRejectedValueOnce(new Error('forced adaptive persistence failure'));
+      try {
+        const adaptivePersistenceFailure = await manager.executeCommand({
+          command: 'printf stale; sleep 0.2; printf final',
+          executionMode: 'adaptive',
+          executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+          workingDirectory: root,
+          timeoutSeconds: 3,
+          foregroundTimeoutSeconds: 0.05,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+        const transitionOutputId = adaptivePersistenceFailure.output_id;
+        expect(transitionOutputId).toBeDefined();
+        let failedPersistence = manager.getExecution(adaptivePersistenceFailure.execution_id);
+        for (
+          let attempt = 0;
+          attempt < 100 && failedPersistence?.status === 'running';
+          attempt += 1
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          failedPersistence = manager.getExecution(adaptivePersistenceFailure.execution_id);
+        }
+        expect(failedPersistence?.status).toBe('completed');
+        expect(failedPersistence?.stdout).toBe('stalefinal');
+        expect(failedPersistence?.output_id).toBe(transitionOutputId);
+        expect(failedPersistence?.output_status).toMatchObject({
+          complete: false,
+          reason: 'persistence_failure',
+          available_via_output_id: true,
+        });
+        expect(failedPersistence?.message).toContain('earlier transition snapshot');
+        if (!transitionOutputId) {
+          throw new Error('The adaptive transition did not produce an output_id.');
+        }
+        const staleOutput = await fileManager.readFile(transitionOutputId, 0, 4096, 'utf-8');
+        expect(staleOutput.content).toBe('stale');
+      } finally {
+        replaceFailure.mockRestore();
+      }
 
       const backgroundResult = await manager.executeCommand({
         command: 'sleep 0.05; printf background',
