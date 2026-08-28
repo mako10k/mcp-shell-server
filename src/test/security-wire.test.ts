@@ -93,4 +93,69 @@ describe.runIf(process.platform === 'linux')('restrictive MCP wire contract', ()
       }
     }
   );
+
+  it.runIf(fs.existsSync('/usr/bin/bwrap'))(
+    'retains adaptive output produced after the foreground transition',
+    async () => {
+      const workspaceRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-wire-adaptive-'));
+      const { client } = await connectRestrictiveClient(workspaceRoot, '/usr/bin/bwrap');
+
+      try {
+        const started = await client.callTool({
+          name: 'shell_execute',
+          arguments: {
+            command: 'printf before; sleep 2; printf after',
+            execution_mode: 'adaptive',
+            foreground_timeout_seconds: 1,
+            timeout_seconds: 5,
+            max_output_size: 1024,
+          },
+        });
+        const startedText = started.content.find((item) => item.type === 'text');
+        if (!startedText || startedText.type !== 'text') {
+          throw new Error('The adaptive start response did not contain text.');
+        }
+        const startedExecution = JSON.parse(startedText.text) as Record<string, unknown>;
+        expect(startedExecution['status']).toBe('running');
+        const executionId = startedExecution['execution_id'];
+        const initialOutputId = startedExecution['output_id'];
+        expect(typeof executionId).toBe('string');
+        expect(typeof initialOutputId).toBe('string');
+
+        let completedExecution: Record<string, unknown> = startedExecution;
+        for (let attempt = 0; attempt < 100 && completedExecution['status'] === 'running'; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          const polled = await client.callTool({
+            name: 'process_get_execution',
+            arguments: { execution_id: executionId },
+          });
+          const polledText = polled.content.find((item) => item.type === 'text');
+          if (!polledText || polledText.type !== 'text') {
+            throw new Error('The adaptive poll response did not contain text.');
+          }
+          completedExecution = JSON.parse(polledText.text) as Record<string, unknown>;
+        }
+
+        expect(completedExecution['status']).toBe('completed');
+        expect(completedExecution['stdout']).toBe('beforeafter');
+        expect(completedExecution['output_truncated']).toBe(false);
+        expect(completedExecution['output_status']).toMatchObject({ complete: true });
+        expect(completedExecution['output_id']).toBe(initialOutputId);
+
+        const retained = await client.callTool({
+          name: 'read_execution_output',
+          arguments: { output_id: initialOutputId },
+        });
+        const retainedText = retained.content.find((item) => item.type === 'text');
+        if (!retainedText || retainedText.type !== 'text') {
+          throw new Error('The retained adaptive output response did not contain text.');
+        }
+        const retainedOutput = JSON.parse(retainedText.text) as Record<string, unknown>;
+        expect(retainedOutput['content']).toBe('beforeafter');
+      } finally {
+        await client.close();
+        await fsp.rm(workspaceRoot, { recursive: true, force: true });
+      }
+    }
+  );
 });

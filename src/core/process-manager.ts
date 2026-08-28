@@ -1032,7 +1032,8 @@ export class ProcessManager {
             executionId,
             childProcess,
             remainingTimeoutMilliseconds,
-            transitionPersistence
+            transitionPersistence,
+            output
           );
 
           executionInfo.status = 'running';
@@ -1419,7 +1420,8 @@ export class ProcessManager {
     executionId: string,
     childProcess: ChildProcess,
     timeoutMilliseconds: number,
-    transitionPersistence: Promise<void>
+    transitionPersistence: Promise<void>,
+    output: BoundedOutputCollector
   ): void {
     let terminalStateClaimed = false;
     // タイムアウトの設定（最終タイムアウト）
@@ -1439,9 +1441,13 @@ export class ProcessManager {
       await transitionPersistence;
       const currentExecutionInfo = this.executions.get(executionId);
       if (currentExecutionInfo) {
+        const snapshot = output.snapshot();
         const executionInfo: ExecutionInfo = {
           ...currentExecutionInfo,
           status: 'timeout',
+          stdout: sanitizeString(snapshot.stdout),
+          stderr: sanitizeString(snapshot.stderr),
+          output_truncated: snapshot.truncated,
           completed_at: getCurrentTimestamp(),
         };
         if (executionInfo.started_at) {
@@ -1449,11 +1455,25 @@ export class ProcessManager {
             Date.now() - new Date(executionInfo.started_at).getTime();
         }
 
+        let outputFileId = executionInfo.output_id;
+        try {
+          outputFileId = await this.saveOutputToFile(
+            executionId,
+            snapshot.stdout,
+            snapshot.stderr,
+            snapshot.combinedOutput,
+            outputFileId
+          );
+          executionInfo.output_id = outputFileId;
+        } catch (error) {
+          executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+
         this.setOutputStatus(
           executionInfo,
-          executionInfo.output_truncated ?? false,
+          snapshot.truncated,
           'timeout',
-          executionInfo.output_id
+          outputFileId
         );
         this.executions.set(executionId, executionInfo);
         this.scheduleBackgroundTimeoutCallback(executionId, executionInfo);
@@ -1472,10 +1492,14 @@ export class ProcessManager {
       await transitionPersistence;
       const currentExecutionInfo = this.executions.get(executionId);
       if (currentExecutionInfo) {
+        const snapshot = output.snapshot();
         const executionInfo: ExecutionInfo = {
           ...currentExecutionInfo,
           status: 'completed',
           exit_code: code || 0,
+          stdout: sanitizeString(snapshot.stdout),
+          stderr: sanitizeString(snapshot.stderr),
+          output_truncated: snapshot.truncated,
           completed_at: getCurrentTimestamp(),
         };
 
@@ -1485,11 +1509,25 @@ export class ProcessManager {
           executionInfo.execution_time_ms = Date.now() - startTime;
         }
 
+        let outputFileId = executionInfo.output_id;
+        try {
+          outputFileId = await this.saveOutputToFile(
+            executionId,
+            snapshot.stdout,
+            snapshot.stderr,
+            snapshot.combinedOutput,
+            outputFileId
+          );
+          executionInfo.output_id = outputFileId;
+        } catch (error) {
+          executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+
         this.setOutputStatus(
           executionInfo,
-          executionInfo.output_truncated ?? false,
+          snapshot.truncated,
           'size_limit',
-          executionInfo.output_id
+          outputFileId
         );
         this.executions.set(executionId, executionInfo);
 
@@ -1689,11 +1727,12 @@ export class ProcessManager {
     executionId: string,
     stdout: string,
     stderr: string,
-    combinedOutputOverride?: string
+    combinedOutputOverride?: string,
+    existingOutputId?: string
   ): Promise<string> {
     if (!this.fileManager) {
       // FileManagerが利用できない場合は、従来の方法でファイルを保存
-      const outputFileId = generateId();
+      const outputFileId = existingOutputId ?? generateId();
       const filePath = path.join(this.outputDir, `${outputFileId}.json`);
 
       const outputData = {
@@ -1710,6 +1749,10 @@ export class ProcessManager {
     // FileManagerを使用して出力ファイルを作成
     const combinedOutput =
       combinedOutputOverride ?? stdout + (stderr ? '\n--- STDERR ---\n' + stderr : '');
+    if (existingOutputId) {
+      await this.fileManager.replaceOutputFile(existingOutputId, combinedOutput);
+      return existingOutputId;
+    }
     return await this.fileManager.createOutputFile(combinedOutput, executionId);
   }
 

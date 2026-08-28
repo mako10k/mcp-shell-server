@@ -71,6 +71,28 @@ export class FileManager {
     return await this.registerFile(filePath, 'combined', executionId, fileName);
   }
 
+  async replaceOutputFile(outputId: string, content: string): Promise<void> {
+    const fileInfo = this.files.get(outputId);
+    if (!fileInfo || fileInfo.output_type !== 'combined') {
+      throw new ResourceNotFoundError('output file', outputId);
+    }
+
+    const temporaryPath = path.join(
+      path.dirname(fileInfo.path),
+      `.${path.basename(fileInfo.path)}.${generateId()}.tmp`
+    );
+    try {
+      await fs.writeFile(temporaryPath, content, 'utf-8');
+      await fs.rename(temporaryPath, fileInfo.path);
+    } catch (error) {
+      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+
+    fileInfo.size = await getFileSize(fileInfo.path);
+    this.files.set(outputId, fileInfo);
+  }
+
   async createLogFile(content: string, executionId?: string): Promise<string> {
     const outputId = generateId();
     const fileName = `log_${outputId}.log`;
