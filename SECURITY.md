@@ -14,7 +14,7 @@ We take security vulnerabilities seriously. Please follow these steps to report 
 ### For Security Issues
 
 1. **DO NOT** open a public issue for security vulnerabilities
-2. Send an email to [security@your-domain.com] with:
+2. Submit a private report using GitHub's [Private Vulnerability Reporting](https://github.com/mako10k/mcp-shell-server/security/advisories/new) or email [mako10k@mk10.org](mailto:mako10k@mk10.org) with:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
