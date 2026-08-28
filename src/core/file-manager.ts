@@ -12,6 +12,7 @@ import { ResourceNotFoundError } from '../utils/errors.js';
 
 export class FileManager {
   private files = new Map<string, FileInfo>();
+  private readonly fileOperationTails = new Map<string, Promise<void>>();
   private readonly baseDir: string;
   private readonly maxFiles: number;
 
@@ -72,25 +73,27 @@ export class FileManager {
   }
 
   async replaceOutputFile(outputId: string, content: string): Promise<void> {
-    const fileInfo = this.files.get(outputId);
-    if (!fileInfo || fileInfo.output_type !== 'combined') {
-      throw new ResourceNotFoundError('output file', outputId);
-    }
+    await this.withFileOperation(outputId, async () => {
+      const fileInfo = this.files.get(outputId);
+      if (!fileInfo || fileInfo.output_type !== 'combined') {
+        throw new ResourceNotFoundError('output file', outputId);
+      }
 
-    const temporaryPath = path.join(
-      path.dirname(fileInfo.path),
-      `.${path.basename(fileInfo.path)}.${generateId()}.tmp`
-    );
-    try {
-      await fs.writeFile(temporaryPath, content, 'utf-8');
-      await fs.rename(temporaryPath, fileInfo.path);
-    } catch (error) {
-      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
-      throw error;
-    }
+      const temporaryPath = path.join(
+        path.dirname(fileInfo.path),
+        `.${path.basename(fileInfo.path)}.${generateId()}.tmp`
+      );
+      try {
+        await fs.writeFile(temporaryPath, content, 'utf-8');
+        await fs.rename(temporaryPath, fileInfo.path);
+      } catch (error) {
+        await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+        throw error;
+      }
 
-    fileInfo.size = await getFileSize(fileInfo.path);
-    this.files.set(outputId, fileInfo);
+      fileInfo.size = await getFileSize(fileInfo.path);
+      this.files.set(outputId, fileInfo);
+    });
   }
 
   async createLogFile(content: string, executionId?: string): Promise<string> {
@@ -219,17 +222,21 @@ export class FileManager {
 
     for (const outputId of outputIds) {
       try {
-        const fileInfo = this.files.get(outputId);
-        if (!fileInfo) {
+        const deleted = await this.withFileOperation(outputId, async () => {
+          const fileInfo = this.files.get(outputId);
+          if (!fileInfo) return false;
+
+          // ファイルシステムからファイルを削除
+          await fs.unlink(fileInfo.path);
+
+          // マップから削除
+          this.files.delete(outputId);
+          return true;
+        });
+        if (!deleted) {
           failedFiles.push(outputId);
           continue;
         }
-
-        // ファイルシステムからファイルを削除
-        await fs.unlink(fileInfo.path);
-
-        // マップから削除
-        this.files.delete(outputId);
         deletedFiles.push(outputId);
       } catch (error) {
         // エラーログを内部ログに記録（標準出力を避ける）
@@ -255,13 +262,31 @@ export class FileManager {
 
     const filesToDelete = files.slice(0, deleteCount);
 
-    for (const [fileId, fileInfo] of filesToDelete) {
-      try {
-        await fs.unlink(fileInfo.path);
-        this.files.delete(fileId);
-      } catch (error) {
-        // エラーログを内部ログに記録（標準出力を避ける）
-        // console.error(`Failed to cleanup file ${fileId}:`, error);
+    await this.deleteFiles(
+      filesToDelete.map(([fileId]) => fileId),
+      true
+    );
+  }
+
+  private async withFileOperation<T>(outputId: string, operation: () => Promise<T>): Promise<T> {
+    const previousTail = this.fileOperationTails.get(outputId) ?? Promise.resolve();
+    let releaseCurrent!: () => void;
+    const currentOperation = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const currentTail = previousTail.then(
+      () => currentOperation,
+      () => currentOperation
+    );
+    this.fileOperationTails.set(outputId, currentTail);
+
+    await previousTail.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      releaseCurrent();
+      if (this.fileOperationTails.get(outputId) === currentTail) {
+        this.fileOperationTails.delete(outputId);
       }
     }
   }
