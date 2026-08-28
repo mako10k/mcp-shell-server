@@ -1043,6 +1043,9 @@ export class ProcessManager {
           const executionInfo = this.executions.get(executionId);
 
           if (executionInfo) {
+            if (executionInfo.status === 'timeout' || executionInfo.status === 'failed') {
+              return;
+            }
             executionInfo.status = 'completed';
             executionInfo.exit_code = code || 0;
             executionInfo.stdout = sanitizeString(stdout);
@@ -1215,6 +1218,9 @@ export class ProcessManager {
 
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
+        if (executionInfo.status === 'timeout' || executionInfo.status === 'failed') {
+          return;
+        }
         executionInfo.status = 'completed';
         executionInfo.exit_code = code || 0;
         executionInfo.execution_time_ms = Date.now() - startTime;
@@ -1322,6 +1328,9 @@ export class ProcessManager {
 
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
+        if (executionInfo.status === 'timeout' || executionInfo.status === 'failed') {
+          return;
+        }
         executionInfo.status = 'completed';
         executionInfo.exit_code = code || 0;
         executionInfo.completed_at = getCurrentTimestamp();

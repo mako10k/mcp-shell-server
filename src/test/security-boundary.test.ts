@@ -280,6 +280,16 @@ describe('Issue #24 execution boundary', () => {
       process.env['MCP_SHELL_TEST_HOST_SENTINEL'] = 'host-secret';
       const fileManager = new FileManager(fileDir);
       const manager = new ProcessManager(5, outputDir, fileManager);
+      const completedCallbackIds: string[] = [];
+      const timeoutCallbackIds: string[] = [];
+      manager.setBackgroundProcessCallbacks({
+        onComplete: (executionId) => {
+          completedCallbackIds.push(executionId);
+        },
+        onTimeout: (executionId) => {
+          timeoutCallbackIds.push(executionId);
+        },
+      });
 
       const result = await manager.executeCommand({
         command: [
@@ -377,6 +387,50 @@ describe('Issue #24 execution boundary', () => {
       }
       expect(completedBackground?.status).toBe('completed');
       expect(completedBackground?.execution_isolation?.kind).toBe('sandbox');
+
+      const backgroundTimeout = await manager.executeCommand({
+        command: 'sleep 30',
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 1,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let timedOutBackground = manager.getExecution(backgroundTimeout.execution_id);
+      for (let attempt = 0; attempt < 150 && timedOutBackground?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        timedOutBackground = manager.getExecution(backgroundTimeout.execution_id);
+      }
+      expect(timedOutBackground?.status).toBe('timeout');
+      for (
+        let attempt = 0;
+        attempt < 50 && !timeoutCallbackIds.includes(backgroundTimeout.execution_id);
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(timeoutCallbackIds).toContain(backgroundTimeout.execution_id);
+      expect(completedCallbackIds).not.toContain(backgroundTimeout.execution_id);
+
+      const adaptiveTimeout = await manager.executeCommand({
+        command: 'sleep 30',
+        executionMode: 'adaptive',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 1,
+        foregroundTimeoutSeconds: 0.05,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      expect(adaptiveTimeout.status).toBe('running');
+      let timedOutAdaptive = manager.getExecution(adaptiveTimeout.execution_id);
+      for (let attempt = 0; attempt < 150 && timedOutAdaptive?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        timedOutAdaptive = manager.getExecution(adaptiveTimeout.execution_id);
+      }
+      expect(timedOutAdaptive?.status).toBe('timeout');
+      expect(completedCallbackIds).not.toContain(adaptiveTimeout.execution_id);
 
       const pipelineSource = await manager.executeCommand({
         command: 'printf pipeline-data',
