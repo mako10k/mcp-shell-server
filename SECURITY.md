@@ -30,10 +30,10 @@ We take security vulnerabilities seriously. Please follow these steps to report 
 
 This project includes several security features:
 
-- **Restrictive Sandbox**: Restrictive local non-interactive commands run through a required Bubblewrap profile with a read-only workspace, private temporary storage, fixed environment, and no network
+- **Restrictive Sandbox**: Restrictive local non-interactive commands run through a required Bubblewrap profile with a read-only workspace, private temporary storage, fixed environment, and no IP network
 - **Canonical Path Validation**: Existing request paths use real-path and component-boundary checks; path validation alone is not filesystem confinement
 - **Fail-closed Routes**: Restrictive terminal, remote, detached, environment-override, and provider-failure paths stop before the requested command starts
-- **Resource Limits**: Execution-time and output limits are enforced; complete cgroup-backed CPU and memory containment is not currently provided
+- **Resource Limits**: Execution-time and host-memory output-retention limits are enforced; complete cgroup-backed CPU and memory containment is not currently provided
 - **Audit Logging**: All operations are logged for security auditing
 - **Explicit Receipts**: Successful executions identify whether they used the direct host launcher or the restrictive Bubblewrap profile
 
@@ -53,7 +53,7 @@ When using this server:
 - Permissive, moderate, enhanced, and enhanced-fast execution is not OS-confined
 - Legacy custom command lists are migration-only and cannot execute
 - Restrictive mode requires Linux and a successfully probed Bubblewrap installation
-- The restrictive workspace is read-only, but pre-existing sockets, FIFOs, devices, nested mounts, and FUSE endpoints inside that workspace are residual capabilities; do not place sensitive endpoints under approved roots
+- Restrictive startup rejects workspaces containing observed sockets, FIFOs, devices, or unknown special entries. Concurrent host mutation after inspection, nested mounts, and FUSE behavior remain outside this local-operator threat model; do not place sensitive endpoints under approved roots
 - Every readable regular file below the selected approved root remains readable in restrictive mode; configure narrow project roots rather than home directories or trees containing credentials
 - Bubblewrap and its host installation path are trusted operator-managed dependencies; deliberate host-side replacement or concurrent mount-tree mutation is outside this local-user threat model
 - Terminal sessions can persist in unconfined modes - implement session timeouts

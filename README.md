@@ -376,7 +376,7 @@ npm test
 
 ## Configuration
 
-The server can be configured through environment variables or by calling the security restriction tools at runtime.
+The server security mode and trusted workspace roots are startup configuration supplied through environment variables. They are not mutable through the public MCP tool surface.
 
 ### Default Security Settings
 
@@ -452,25 +452,17 @@ npm start
 
 **Note**: `restrictive` requires Linux and a successfully probed Bubblewrap provider. Provider absence or setup failure stops the request; it never falls back to direct host execution.
 
-### Runtime Security Configuration
+### Startup Security Configuration
 
-Use the `security_set_restrictions` tool to select the runtime security mode:
-
-```json
-{
-  "security_mode": "restrictive",
-  "max_execution_time": 300,
-  "max_memory_mb": 1024
-}
-```
+Select the security mode with `MCP_SHELL_SECURITY_MODE` before starting the server. The public MCP API intentionally does not expose `security_set_restrictions`, because an evaluated client must not be able to downgrade its own execution boundary.
 
 **Security Modes:**
 - `permissive` / `moderate`: Direct, unconfined host execution. Command evaluation is not an OS isolation boundary.
-- `restrictive`: Full Bash syntax runs inside `restrictive-v1`: approved workspace mounted read-only, private `/tmp`, fixed environment, and no network. Foreground, background, and adaptive local execution are supported.
+- `restrictive`: Full Bash syntax runs inside `restrictive-v1`: approved workspace mounted read-only, private `/tmp`, fixed environment, and no IP network. Foreground, background, and adaptive local execution are supported. The enhanced evaluator is bypassed because OS confinement, rather than client sampling support, is the required execution gate.
 - `enhanced` / `enhanced-fast`: LLM/Sampling evaluation followed by direct, unconfined host execution. Evaluation does not provide filesystem or process isolation.
 - `custom`: Legacy command-list configurations return `CUSTOM_MODE_MIGRATION_REQUIRED` before process creation.
 
-Restrictive mode temporarily rejects interactive terminals, remote execution, detached execution, and request environment overrides with stable `SANDBOX_*` errors. A successful response includes `execution_isolation` describing the actual launcher and profile.
+Restrictive mode temporarily rejects interactive terminals, remote execution, detached execution, request environment overrides, and workspaces containing special filesystem endpoints with stable `SANDBOX_*` codes in an MCP tool-error result's `structuredContent.code`. A successful response includes `execution_isolation` describing the actual launcher and profile.
 
 ## API Reference
 
@@ -610,14 +602,6 @@ Read output file contents safely.
 #### `delete_execution_outputs`
 Delete output files with confirmation.
 
-### Security & Monitoring
-
-#### `security_set_restrictions`
-Configure security restrictions.
-
-#### `monitoring_get_stats`
-Get system-wide statistics.
-
 ## Architecture
 
 ```
@@ -648,17 +632,17 @@ mcp-shell-server/
 
 1. **Execution Boundary**: Only restrictive local non-interactive execution is OS-confined by Bubblewrap; other modes are explicitly unconfined
 2. **Path Validation**: Existing request paths and working directories use canonical component-boundary checks; this alone is not a child-process filesystem sandbox
-3. **Resource Limits**: Execution-time and output limits are enforced by the server; complete cgroup-backed CPU/memory containment is not provided
+3. **Resource Limits**: Execution-time and host-memory output-retention limits are enforced by the server; complete cgroup-backed CPU/memory containment is not provided
 4. **Audit Logging**: All operations are logged for security auditing
 5. **Fail-closed Sandbox**: Restrictive requests never fall back to host execution when Bubblewrap or a covered route is unavailable
 
-The read-only restrictive workspace can still expose pre-existing sockets, FIFOs, devices, nested mounts, or FUSE endpoints located inside an approved root. Keep sensitive runtime endpoints outside approved roots; this expedited profile does not claim snapshot isolation against concurrent host mutation.
+Restrictive launch rejects observed sockets, FIFOs, devices, and unknown special entries below the approved root. Keep sensitive runtime endpoints outside approved roots: nested mounts, FUSE behavior, and concurrent host mutation after inspection remain outside this expedited profile's local-operator threat model.
 
 Every readable regular file below the selected approved root is readable inside restrictive mode. Read-only prevents modification, not disclosure, so configure the narrowest project root and never approve a home directory or another tree containing credentials.
 
 ## Error Handling
 
-The server provides comprehensive error handling with categorized error codes:
+The server provides categorized application error codes in MCP tool-error `structuredContent.code`:
 
 - `AUTH_*`: Authentication and authorization errors
 - `PARAM_*`: Parameter validation errors  

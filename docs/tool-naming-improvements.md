@@ -59,10 +59,10 @@
 | `terminal_resize` | ターミナルのリサイズ | `terminal_id` (必須), `dimensions` (必須) |
 | `terminal_close` | ターミナルセッションの終了 | `terminal_id` (必須), `save_history` |
 
-### セキュリティ・監視
+### セキュリティ・監視（旧提案・public MCP未公開）
 | ツール名 | 機能 | 主要パラメータ |
 |----------|------|----------------|
-| `security_set_restrictions` | セキュリティ制限の設定 | `allowed_commands`, `blocked_commands`, `allowed_directories`, `max_execution_time`, `max_memory_mb`, `enable_network` |
+| `security_set_restrictions` | internal APIのみ。評価対象clientによる境界downgradeを防ぐためpublic MCPには公開しない | `allowed_commands`, `blocked_commands`, `allowed_directories`, `max_execution_time`, `max_memory_mb`, `enable_network` |
 | `monitoring_get_stats` | システム統計情報の取得 | `include_metrics`, `time_range_minutes` |
 
 ## ExecutionMode 改善提案

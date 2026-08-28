@@ -57,7 +57,7 @@ export const ShellExecuteParamsSchema = z
       .describe(
         'Global timeout (1-3600s). Default: 60s.\n'
         + 'Per execution_mode (effective limits before execution starts):\n'
-        + '• foreground: Schema allows 1-3600s, but the default security policy caps runs at 300s. Setting timeout_seconds above 300s raises TIMEOUT_LIMIT_EXCEEDED unless max_execution_time is increased via security_set_restrictions.\n'
+        + '• foreground: Schema allows 1-3600s, but the default security policy caps runs at 300s. Increase MCP_SHELL_MAX_EXECUTION_TIME in trusted startup configuration when a larger cap is required.\n'
         + '• background: 1-3600s. Intended for >300s runs; still subject to the same security cap (300s by default) unless raised.\n'
         + '• detached: 1-3600s. Shares the security cap behavior with background.\n'
         + '• adaptive: 1-3600s total cap. The initial foreground phase also respects foreground_timeout_seconds (≤300s) and the security cap.\n'
@@ -516,7 +516,7 @@ export const SecuritySetRestrictionsParamsSchema = z.object({
     .boolean()
     .default(true)
     .describe(
-      'Legacy network metadata; it is not an OS network control in direct-host modes. Restrictive-v1 always has no network regardless of this value.'
+      'Legacy network metadata; it is not an OS network control in direct-host modes. Restrictive-v1 always has no IP network regardless of this value.'
     ),
 });
 

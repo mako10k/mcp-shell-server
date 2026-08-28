@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import * as net from 'net';
 import { FileManager } from '../core/file-manager.js';
 import { ProcessManager } from '../core/process-manager.js';
 import { createShellToolRuntime } from '../runtime/tool-runtime.js';
@@ -342,6 +343,34 @@ describe('Issue #24 execution boundary', () => {
       expect(tmpSize).toBeLessThanOrEqual(64 * 1024 * 1024);
       expect(fs.existsSync(path.join(root, 'forbidden'))).toBe(false);
 
+      const socketPath = path.join(root, 'host-control.sock');
+      let socketPayload = '';
+      const socketServer = net.createServer((socket) => {
+        socket.on('data', (data) => {
+          socketPayload += data.toString();
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        socketServer.once('error', reject);
+        socketServer.listen(socketPath, resolve);
+      });
+      await expect(
+        manager.executeCommand({
+          command: 'printf must-not-run',
+          executionMode: 'foreground',
+          executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+          workingDirectory: root,
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        })
+      ).rejects.toMatchObject({ code: 'SANDBOX_WORKSPACE_UNSAFE' });
+      await new Promise<void>((resolve, reject) => {
+        socketServer.close((error) => (error ? reject(error) : resolve()));
+      });
+      await fsp.rm(socketPath, { force: true });
+      expect(socketPayload).toBe('');
+
       for (let index = 0; index < 10; index += 1) {
         const quickResult = await manager.executeCommand({
           command: 'printf quick',
@@ -388,6 +417,34 @@ describe('Issue #24 execution boundary', () => {
       expect(completedBackground?.status).toBe('completed');
       expect(completedBackground?.execution_isolation?.kind).toBe('sandbox');
 
+      const boundedBackground = await manager.executeCommand({
+        command: 'yes A | head -c 4096; yes B | head -c 4096 >&2',
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let completedBounded = manager.getExecution(boundedBackground.execution_id);
+      for (let attempt = 0; attempt < 100 && completedBounded?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedBounded = manager.getExecution(boundedBackground.execution_id);
+      }
+      expect(completedBounded?.status).toBe('completed');
+      expect(completedBounded?.output_truncated).toBe(true);
+      expect(completedBounded?.output_id).toBeDefined();
+      if (!completedBounded?.output_id) {
+        throw new Error('The bounded background execution did not produce an output_id.');
+      }
+      const boundedOutput = await fileManager.readFile(
+        completedBounded.output_id,
+        0,
+        4096,
+        'utf-8'
+      );
+      expect(Buffer.byteLength(boundedOutput.content)).toBeLessThanOrEqual(1024);
+
       const backgroundTimeout = await manager.executeCommand({
         command: 'sleep 30',
         executionMode: 'background',
@@ -430,6 +487,14 @@ describe('Issue #24 execution boundary', () => {
         timedOutAdaptive = manager.getExecution(adaptiveTimeout.execution_id);
       }
       expect(timedOutAdaptive?.status).toBe('timeout');
+      for (
+        let attempt = 0;
+        attempt < 50 && !timeoutCallbackIds.includes(adaptiveTimeout.execution_id);
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(timeoutCallbackIds).toContain(adaptiveTimeout.execution_id);
       expect(completedCallbackIds).not.toContain(adaptiveTimeout.execution_id);
 
       const pipelineSource = await manager.executeCommand({

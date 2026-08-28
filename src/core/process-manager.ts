@@ -930,6 +930,7 @@ export class ProcessManager {
       // バックグラウンドに移行する関数
       const transitionToBackground = async () => {
         clearTimeout(foregroundTimeoutHandle);
+        clearTimeout(finalTimeoutHandle);
 
         const executionInfo = this.executions.get(executionId);
         if (executionInfo) {
@@ -973,13 +974,15 @@ export class ProcessManager {
           this.executions.set(executionId, executionInfo);
 
           // バックグラウンド処理の継続設定（adaptive mode専用）
-          this.handleAdaptiveBackgroundTransition(executionId, childProcess, {
-            ...options,
-            timeoutSeconds: Math.max(
-              1,
-              options.timeoutSeconds - Math.floor((Date.now() - startTime) / 1000)
-            ),
-          });
+          const remainingTimeoutMilliseconds = Math.max(
+            1,
+            options.timeoutSeconds * 1000 - (Date.now() - startTime)
+          );
+          this.handleAdaptiveBackgroundTransition(
+            executionId,
+            childProcess,
+            remainingTimeoutMilliseconds
+          );
 
           resolve(executionInfo);
         }
@@ -1142,8 +1145,23 @@ export class ProcessManager {
     options: ExecutionOptions
   ): void {
     const startTime = Date.now();
-    let stdout = '';
-    let stderr = '';
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let retainedOutputBytes = 0;
+    let outputTruncated = false;
+    const retainOutput = (target: Buffer[], data: Buffer) => {
+      const remaining = Math.max(0, options.maxOutputSize - retainedOutputBytes);
+      if (remaining > 0) {
+        const retained = Buffer.from(data.subarray(0, remaining));
+        target.push(retained);
+        retainedOutputBytes += retained.length;
+      }
+      if (data.length > remaining) {
+        outputTruncated = true;
+      }
+    };
+    const collectedStdout = () => Buffer.concat(stdoutChunks).toString();
+    const collectedStderr = () => Buffer.concat(stderrChunks).toString();
 
     // タイムアウトの設定（backgroundプロセス用）
     const timeout = setTimeout(async () => {
@@ -1156,6 +1174,8 @@ export class ProcessManager {
 
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
+        const stdout = collectedStdout();
+        const stderr = collectedStderr();
         executionInfo.status = 'timeout';
         executionInfo.stdout = stdout;
         executionInfo.stderr = stderr;
@@ -1178,34 +1198,18 @@ export class ProcessManager {
 
         this.executions.set(executionId, executionInfo);
 
-        // バックグラウンドプロセスタイムアウトのコールバック呼び出し
-        if (this.backgroundProcessCallbacks.onTimeout) {
-          setImmediate(async () => {
-            try {
-              const callback = this.backgroundProcessCallbacks.onTimeout;
-              if (callback) {
-                const result = callback(executionId, executionInfo);
-                if (result instanceof Promise) {
-                  await result;
-                }
-              }
-            } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
-              // console.error('Background process timeout callback error:', callbackError);
-            }
-          });
-        }
+        this.scheduleBackgroundTimeoutCallback(executionId, executionInfo);
       }
     }, options.timeoutSeconds * 1000);
 
     // 出力の収集
     childProcess.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
+      retainOutput(stdoutChunks, data);
     });
 
     if (options.captureStderr) {
       childProcess.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
+        retainOutput(stderrChunks, data);
       });
     }
 
@@ -1225,9 +1229,12 @@ export class ProcessManager {
         executionInfo.exit_code = code || 0;
         executionInfo.execution_time_ms = Date.now() - startTime;
         executionInfo.completed_at = getCurrentTimestamp();
+        executionInfo.output_truncated = outputTruncated;
 
         // 出力をファイルに保存
         try {
+          const stdout = collectedStdout();
+          const stderr = collectedStderr();
           const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
           executionInfo.output_id = outputFileId;
         } catch (error) {
@@ -1294,11 +1301,28 @@ export class ProcessManager {
     });
   }
 
+  private scheduleBackgroundTimeoutCallback(
+    executionId: string,
+    executionInfo: ExecutionInfo
+  ): void {
+    const callback = this.backgroundProcessCallbacks.onTimeout;
+    if (!callback) {
+      return;
+    }
+    setImmediate(async () => {
+      try {
+        await callback(executionId, executionInfo);
+      } catch {
+        // Callback errors are isolated from process lifecycle state.
+      }
+    });
+  }
+
   // adaptive modeでバックグラウンドに移行したプロセスの処理
   private handleAdaptiveBackgroundTransition(
     executionId: string,
     childProcess: ChildProcess,
-    options: ExecutionOptions
+    timeoutMilliseconds: number
   ): void {
     // タイムアウトの設定（最終タイムアウト）
     const timeout = setTimeout(async () => {
@@ -1313,11 +1337,16 @@ export class ProcessManager {
       if (executionInfo) {
         executionInfo.status = 'timeout';
         executionInfo.completed_at = getCurrentTimestamp();
+        if (executionInfo.started_at) {
+          executionInfo.execution_time_ms =
+            Date.now() - new Date(executionInfo.started_at).getTime();
+        }
 
         // 既存の出力は保持（adaptive modeで既にキャプチャ済み）
         this.executions.set(executionId, executionInfo);
+        this.scheduleBackgroundTimeoutCallback(executionId, executionInfo);
       }
-    }, options.timeoutSeconds * 1000);
+    }, timeoutMilliseconds);
 
     // プロセス終了時の処理
     childProcess.on('close', async (code) => {
@@ -1608,10 +1637,10 @@ export class ProcessManager {
         recommended_action: outputId ? 'use_read_execution_output' : undefined,
       };
 
-      executionInfo.message = `Command timed out. ${outputId ? 'Use read_execution_output with output_id for complete results.' : 'Partial output available.'}`;
+      executionInfo.message = `Command timed out. ${outputId ? 'Use read_execution_output with output_id for retained results.' : 'Partial output available.'}`;
       if (needsGuidance) {
         executionInfo.next_steps = [
-          'Use read_execution_output to get complete output',
+          'Use read_execution_output to get retained output',
           'Use output_id for pipeline processing with grep/sed/awk commands',
         ];
         executionInfo.guidance = {
@@ -1639,10 +1668,10 @@ export class ProcessManager {
       // 状況に応じたメッセージとアクションの設定
       switch (reason) {
         case 'size_limit':
-          executionInfo.message = `Output exceeded size limit. ${outputId ? 'Complete output available via output_id.' : 'Output was truncated.'}`;
+          executionInfo.message = `Output exceeded size limit. ${outputId ? 'Retained output is available via output_id; excess data was discarded.' : 'Output was truncated.'}`;
           if (needsGuidance) {
             executionInfo.next_steps = [
-              'Use read_execution_output to get complete output',
+              'Use read_execution_output to get retained output',
               'Use output_id for streaming pipeline processing',
             ];
             executionInfo.guidance = {
@@ -1656,10 +1685,10 @@ export class ProcessManager {
           }
           break;
         default:
-          executionInfo.message = `Output truncated due to ${reason}. ${outputId ? 'Complete output may be available via output_id.' : ''}`;
+          executionInfo.message = `Output truncated due to ${reason}. ${outputId ? 'Retained output is available via output_id.' : ''}`;
           if (needsGuidance) {
             executionInfo.next_steps = [
-              'Use read_execution_output to get complete output',
+              'Use read_execution_output to get retained output',
               'Use output_id for pipeline processing',
             ];
             executionInfo.guidance = {

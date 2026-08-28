@@ -393,9 +393,11 @@ export class SecurityManager {
    * Check if enhanced security mode is enabled
    */
   isEnhancedModeEnabled(): boolean {
-    const enabled = this.enhancedConfig.enhanced_mode_enabled;
-    console.error('isEnhancedModeEnabled() called:', enabled);
-    return enabled;
+    const securityMode = this.restrictions?.security_mode;
+    if (securityMode === 'restrictive' || securityMode === 'custom') {
+      return false;
+    }
+    return this.enhancedConfig.enhanced_mode_enabled;
   }
 
   /**

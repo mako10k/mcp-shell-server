@@ -2,9 +2,11 @@ import { randomUUID } from 'crypto';
 import {
   existsSync,
   lstatSync,
+  readdirSync,
   readlinkSync,
   realpathSync,
   statSync,
+  type Dirent,
 } from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
@@ -52,6 +54,7 @@ export class BwrapLauncher {
     }
     const canonicalCwd = canonicalizeExistingPath(workingDirectory);
     const workspaceRoot = this.selectWorkspaceRoot(canonicalCwd);
+    this.assertWorkspaceContainsNoSpecialEntries(workspaceRoot);
     const relativeCwd = path.relative(workspaceRoot, canonicalCwd);
     const sandboxCwd = relativeCwd
       ? path.posix.join('/workspace', relativeCwd.split(path.sep).join('/'))
@@ -277,5 +280,42 @@ export class BwrapLauncher {
       );
     }
     return root;
+  }
+
+  private assertWorkspaceContainsNoSpecialEntries(workspaceRoot: string): void {
+    const pendingDirectories = [workspaceRoot];
+    while (pendingDirectories.length > 0) {
+      const currentDirectory = pendingDirectories.pop();
+      if (!currentDirectory) {
+        continue;
+      }
+
+      let entries: Dirent[];
+      try {
+        entries = readdirSync(currentDirectory, { withFileTypes: true });
+      } catch (error) {
+        throw new SecurityBoundaryError(
+          'SANDBOX_WORKSPACE_UNSAFE',
+          'The restrictive workspace could not be inspected for special filesystem endpoints.',
+          { workspacePath: currentDirectory, error: String(error) }
+        );
+      }
+
+      for (const entry of entries) {
+        const entryPath = path.join(currentDirectory, entry.name);
+        if (entry.isDirectory()) {
+          pendingDirectories.push(entryPath);
+          continue;
+        }
+        if (entry.isFile() || entry.isSymbolicLink()) {
+          continue;
+        }
+        throw new SecurityBoundaryError(
+          'SANDBOX_WORKSPACE_UNSAFE',
+          'Restrictive execution rejects workspaces containing sockets, FIFOs, devices, or unknown special entries.',
+          { workspacePath: entryPath }
+        );
+      }
+    }
   }
 }

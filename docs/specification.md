@@ -429,35 +429,9 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 }
 ```
 
-### Security & Monitoring
+### Security Configuration
 
-#### security_set_restrictions
-
-実行制限を設定します。
-
-**パラメータ:**
-```json
-{
-  "security_mode": "string (optional) - restrictive/custom/permissive/moderate/enhanced/enhanced-fast",
-  "allowed_commands": "array (optional) - 許可するコマンドのリスト",
-  "blocked_commands": "array (optional) - 禁止するコマンドのリスト",
-  "allowed_directories": "array (optional) - アクセス可能なディレクトリ",
-  "max_execution_time": "number (optional) - 最大実行時間（秒）",
-  "max_memory_mb": "number (optional) - 最大メモリ使用量（MB）",
-  "enable_network": "boolean (optional, default: true) - ネットワークアクセスを許可するか"
-}
-```
-
-`allowed_commands`、`blocked_commands`、`allowed_directories` は旧custom設定の移行情報であり、custom modeの実行を許可しません。restrictiveのworkspace rootはtrusted startup configurationの `MCP_SHELL_ALLOWED_WORKDIRS` から取得され、networkは常に無効です。
-
-**レスポンス:**
-```json
-{
-  "restriction_id": "string - 制限設定ID",
-  "active": "boolean - 制限が有効かどうか",
-  "configured_at": "string - 設定時刻"
-}
-```
+security mode と trusted workspace root は、起動前に `MCP_SHELL_SECURITY_MODE`、`MCP_SHELL_ALLOWED_WORKDIRS`、`MCP_SHELL_DEFAULT_WORKDIR` で設定します。評価対象のMCP client自身による境界downgradeを防ぐため、public MCP APIは `security_set_restrictions` を公開しません。
 
 #### monitoring_get_stats
 
