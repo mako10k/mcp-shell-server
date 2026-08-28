@@ -121,6 +121,11 @@ export class FileManager {
     return { ...fileInfo };
   }
 
+  hasOutputFile(outputId: string): boolean {
+    const fileInfo = this.files.get(outputId);
+    return fileInfo?.output_type === 'combined';
+  }
+
   async readFile(
     outputId: string,
     offset = 0,

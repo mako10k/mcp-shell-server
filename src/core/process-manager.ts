@@ -1780,17 +1780,19 @@ export class ProcessManager {
     staleOutputId: string | undefined,
     actuallyTruncated: boolean
   ): void {
+    const staleOutputAvailable =
+      staleOutputId !== undefined && this.fileManager?.hasOutputFile(staleOutputId) === true;
     executionInfo.output_truncated = actuallyTruncated;
     if (actuallyTruncated) executionInfo.truncation_reason = 'size_limit';
     else delete executionInfo.truncation_reason;
-    if (staleOutputId) executionInfo.output_id = staleOutputId;
+    if (staleOutputAvailable) executionInfo.output_id = staleOutputId;
     else delete executionInfo.output_id;
     executionInfo.output_status = {
       complete: false,
       reason: 'persistence_failure',
-      available_via_output_id: !!staleOutputId,
+      available_via_output_id: staleOutputAvailable,
     };
-    executionInfo.message = `Final output persistence failed; ${staleOutputId ? 'output_id contains only the earlier transition snapshot.' : 'no retained output is available.'} ${error instanceof Error ? error.message : String(error)}`;
+    executionInfo.message = `Final output persistence failed; ${staleOutputAvailable ? 'output_id contains only the earlier transition snapshot.' : 'no retained output is available.'} ${error instanceof Error ? error.message : String(error)}`;
     executionInfo.next_steps = [
       'Treat any existing output_id as partial and stale',
       'Resolve the storage failure and rerun the command if complete output is required',

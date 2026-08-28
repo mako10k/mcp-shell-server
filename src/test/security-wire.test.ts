@@ -12,6 +12,17 @@ function inheritedEnvironment(): Record<string, string> {
   );
 }
 
+function parseToolText(
+  result: { content: Array<{ type: string; text?: string }> },
+  label: string
+): Record<string, unknown> {
+  const textContent = result.content.find((item) => item.type === 'text');
+  if (!textContent || typeof textContent.text !== 'string') {
+    throw new Error(`${label} did not contain text.`);
+  }
+  return JSON.parse(textContent.text) as Record<string, unknown>;
+}
+
 async function connectRestrictiveClient(
   workspaceRoot: string,
   providerPath: string
@@ -157,5 +168,67 @@ describe.runIf(process.platform === 'linux')('restrictive MCP wire contract', ()
         await fsp.rm(workspaceRoot, { recursive: true, force: true });
       }
     }
+  );
+
+  it.runIf(fs.existsSync('/usr/bin/bwrap'))(
+    'does not advertise adaptive output deleted before final persistence',
+    async () => {
+      const workspaceRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-wire-deleted-'));
+      const { client } = await connectRestrictiveClient(workspaceRoot, '/usr/bin/bwrap');
+
+      try {
+        const started = await client.callTool({
+          name: 'shell_execute',
+          arguments: {
+            command: 'printf stale; sleep 2; printf final',
+            execution_mode: 'adaptive',
+            foreground_timeout_seconds: 1,
+            timeout_seconds: 5,
+            max_output_size: 1024,
+          },
+        });
+        const startedExecution = parseToolText(started, 'adaptive deletion start response');
+        const executionId = startedExecution['execution_id'];
+        const deletedOutputId = startedExecution['output_id'];
+        expect(typeof executionId).toBe('string');
+        expect(typeof deletedOutputId).toBe('string');
+
+        const deleted = await client.callTool({
+          name: 'delete_execution_outputs',
+          arguments: { output_ids: [deletedOutputId], confirm: true },
+        });
+        expect(deleted.isError).not.toBe(true);
+
+        let completedExecution: Record<string, unknown> = startedExecution;
+        for (let attempt = 0; attempt < 100 && completedExecution['status'] === 'running'; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          const polled = await client.callTool({
+            name: 'process_get_execution',
+            arguments: { execution_id: executionId },
+          });
+          completedExecution = parseToolText(polled, 'adaptive deletion poll response');
+        }
+
+        expect(completedExecution['status']).toBe('completed');
+        expect(completedExecution['stdout']).toBe('stalefinal');
+        expect(completedExecution['output_id']).toBeUndefined();
+        expect(completedExecution['output_status']).toMatchObject({
+          complete: false,
+          reason: 'persistence_failure',
+          available_via_output_id: false,
+        });
+        expect(completedExecution['message']).toContain('no retained output is available');
+
+        const unavailable = await client.callTool({
+          name: 'read_execution_output',
+          arguments: { output_id: deletedOutputId },
+        });
+        expect(unavailable.isError).toBe(true);
+      } finally {
+        await client.close();
+        await fsp.rm(workspaceRoot, { recursive: true, force: true });
+      }
+    },
+    10_000
   );
 });
