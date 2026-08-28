@@ -17,7 +17,17 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 - **バージョン**: 2.0.0
 - **プロトコル**: Model Context Protocol (MCP) v1.0
 - **対応プラットフォーム**: Linux, macOS, Windows
-- **セキュリティレベル**: Sandboxed Execution
+- **セキュリティレベル**: mode-specific。`restrictive` のローカル非対話実行のみ Bubblewrap で隔離し、他モードはホスト直接実行
+
+### 実行境界
+
+- `restrictive`: Linux/Bubblewrap必須。承認workspaceはread-only、`/tmp`はprivate、環境は固定、networkなし。Bubblewrapの不在・probe/setup失敗でhost実行へfallbackしない。
+- `custom`: 旧command-list設定は移行専用。`CUSTOM_MODE_MIGRATION_REQUIRED` をprocess生成前に返す。
+- `permissive` / `moderate`: host直接実行。
+- `enhanced` / `enhanced-fast`: LLM/Sampling評価後にhost直接実行。評価はOS isolationではない。
+- restrictiveのPTY、remote、detached、request環境変数overrideは未対応であり、対応する `SANDBOX_*` errorでfail-closedする。
+- 成功した実行は `execution_isolation` に実際のlauncher/profileを返す。
+- path validationは既存pathのcanonical/component-boundary検査であり、host直接実行されるchild processのfilesystem sandboxではない。
 
 ## Tools
 
@@ -25,8 +35,8 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 
 #### shell_execute
 
-安全にシェルコマンドを実行します。サンドボックス環境での実行により、システムの安全性を確保します。
-新規ターミナルセッション作成にも対応しています。
+選択されたsecurity modeに従ってシェルコマンドを実行します。restrictiveではフルBash文字列をBubblewrap内で実行します。
+新規ターミナルセッション作成はhost直接実行モードのみ対応します。
 
 **パラメータ:**
 ```json
@@ -58,6 +68,7 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
   "output_truncated": "boolean - 出力が切り捨てられたかどうか",
   "execution_time_ms": "number - 実行時間（ミリ秒）",
   "process_id": "number (optional) - プロセスID（async/backgroundモードの場合）",
+  "execution_isolation": "object - 実際のhost/Bubblewrap実行境界",
   "terminal_id": "string (optional) - ターミナルID（create_terminal=trueの場合）",
   "output_id": "string (optional) - 出力ファイルID（FileManagerで管理される場合）",
   "transition_reason": "string (optional) - adaptiveモードでのバックグラウンド移行理由: 'foreground_timeout' | 'output_size_limit'",
@@ -427,6 +438,7 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 **パラメータ:**
 ```json
 {
+  "security_mode": "string (optional) - restrictive/custom/permissive/moderate/enhanced/enhanced-fast",
   "allowed_commands": "array (optional) - 許可するコマンドのリスト",
   "blocked_commands": "array (optional) - 禁止するコマンドのリスト",
   "allowed_directories": "array (optional) - アクセス可能なディレクトリ",
@@ -435,6 +447,8 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
   "enable_network": "boolean (optional, default: true) - ネットワークアクセスを許可するか"
 }
 ```
+
+`allowed_commands`、`blocked_commands`、`allowed_directories` は旧custom設定の移行情報であり、custom modeの実行を許可しません。restrictiveのworkspace rootはtrusted startup configurationの `MCP_SHELL_ALLOWED_WORKDIRS` から取得され、networkは常に無効です。
 
 **レスポンス:**
 ```json
@@ -647,4 +661,3 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
   - パフォーマンス改善
   - 新しいターミナル管理機能
   - 包括的な監視機能の追加
-

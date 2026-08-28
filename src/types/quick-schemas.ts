@@ -20,13 +20,13 @@ export const TerminalOperateParamsSchema = z
       .string()
       .optional()
       .describe(
-        'Existing terminal ID to use. If not provided, creates new terminal when command is specified.'
+        'Existing terminal ID to use. If not provided, creates a new host terminal when command is specified. Creation is unavailable in restrictive mode.'
       ),
     command: z
       .string()
       .optional()
       .describe(
-        'Command to execute. Required when creating new terminal (terminal_id not provided).'
+        'Command to execute in a terminal. Terminal creation and input are unavailable in restrictive mode.'
       ),
 
     // Terminal creation options (used when terminal_id not provided)

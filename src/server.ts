@@ -162,7 +162,7 @@ export class MCPShellServer {
         // Terminal Management - Unified Operations
         {
           name: 'terminal_operate',
-          description: 'Unified terminal operations: create sessions, send input, get output with automatic position tracking. Combines terminal_create, terminal_send_input, and terminal_get_output into a single streamlined interface for efficient terminal workflows.',
+          description: 'Unified host-terminal operations: create sessions, send input, and get output with automatic position tracking. Creation and input are unavailable in restrictive sandbox mode.',
           inputSchema: zodToJsonSchema(TerminalOperateParamsSchema, { target: 'jsonSchema7' })
         },
         

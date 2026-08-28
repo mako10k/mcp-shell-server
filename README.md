@@ -99,7 +99,7 @@ Add to MCP settings:
 - ✅ MCP integration complete
 
 ### Key Achievements
-- 🔐 **Comprehensive Security**: Advanced command validation and sandboxing
+- 🔐 **Explicit Security Boundaries**: Bubblewrap-backed restrictive execution and clearly identified unconfined modes
 - 🖥️ **18 MCP Tools**: Complete API covering all shell operations
 - 📊 **Real-time Monitoring**: System and process metrics
 - 🖥️ **Terminal Sessions**: Interactive PTY-based terminals
@@ -109,10 +109,10 @@ Add to MCP settings:
 ## Features
 
 ### 🛡️ Security-First Design
-- Sandboxed command execution
-- Configurable command restrictions
-- Path access control
-- Resource usage limits
+- Bubblewrap sandboxing for restrictive local non-interactive execution
+- Fail-closed unsupported restrictive routes
+- Canonical request-path validation
+- Execution-time and output limits
 - Real-time security monitoring
 
 ### 🔧 Shell Operations
@@ -145,8 +145,8 @@ Add to MCP settings:
   - Session leader detection and validation
   - Safe fallback behavior for unknown processes
 - **🆕 Control Code Validation**: Secure handling of terminal control sequences
-- Process isolation and sandboxing
-- Configurable security restrictions
+- Mode-specific isolation receipts
+- Explicit migration failure for legacy custom command lists
 
 ### 📁 File Operations
 - Output file management
@@ -406,7 +406,7 @@ The server supports the following environment variables for configuration:
   ```
 - `MCP_SHELL_ALLOWED_WORKDIRS`: Comma-separated list of allowed working directories
   ```bash
-  export MCP_SHELL_ALLOWED_WORKDIRS="/home/user,/tmp,/var/log"
+  export MCP_SHELL_ALLOWED_WORKDIRS="/home/user/projects/project-a,/home/user/projects/project-b"
   ```
 
 #### Security Configuration
@@ -414,6 +414,7 @@ The server supports the following environment variables for configuration:
   ```bash
   export MCP_SHELL_SECURITY_MODE="enhanced"
   ```
+- `MCP_SHELL_BWRAP_PATH`: Optional trusted absolute path to Bubblewrap. Restrictive mode otherwise checks `/usr/bin/bwrap` and `/bin/bwrap`.
 - `MCP_SHELL_ELICITATION`: Enable user intent elicitation for complex scenarios (for enhanced modes)
   ```bash
   export MCP_SHELL_ELICITATION="true"
@@ -440,7 +441,7 @@ export MCP_SHELL_MAX_MEMORY_MB="1024"
 
 # Working directory settings
 export MCP_SHELL_DEFAULT_WORKDIR="/home/user/projects"
-export MCP_SHELL_ALLOWED_WORKDIRS="/home/user,/tmp"
+export MCP_SHELL_ALLOWED_WORKDIRS="/home/user/projects/project-a"
 
 # Tool restrictions
 export MCP_DISABLED_TOOLS="process_terminate,delete_execution_outputs"
@@ -449,36 +450,34 @@ export MCP_DISABLED_TOOLS="process_terminate,delete_execution_outputs"
 npm start
 ```
 
-**Note**: Additional configuration options can be set at runtime using the `security_set_restrictions` tool for more granular control over allowed/blocked commands, directories, and other security parameters.
+**Note**: `restrictive` requires Linux and a successfully probed Bubblewrap provider. Provider absence or setup failure stops the request; it never falls back to direct host execution.
 
 ### Runtime Security Configuration
 
-Use the `security_set_restrictions` tool to dynamically configure security settings:
+Use the `security_set_restrictions` tool to select the runtime security mode:
 
 ```json
 {
-  "security_mode": "custom",
-  "allowed_commands": ["ls", "cat", "grep"],
-  "blocked_commands": ["rm", "sudo"],
-  "allowed_directories": ["/tmp", "/home/user"],
+  "security_mode": "restrictive",
   "max_execution_time": 300,
   "max_memory_mb": 1024
 }
 ```
 
 **Security Modes:**
-- `permissive`: Allow most commands with basic safety checks
-- `restrictive`: Only allow read-only commands (ls, cat, grep, etc.)
-- `enhanced`: AI-powered safety evaluation with LLM-based analysis (recommended)
-- `enhanced-fast`: Optimized enhanced mode for better performance
-- `custom`: Use detailed configuration with allowed/blocked commands
+- `permissive` / `moderate`: Direct, unconfined host execution. Command evaluation is not an OS isolation boundary.
+- `restrictive`: Full Bash syntax runs inside `restrictive-v1`: approved workspace mounted read-only, private `/tmp`, fixed environment, and no network. Foreground, background, and adaptive local execution are supported.
+- `enhanced` / `enhanced-fast`: LLM/Sampling evaluation followed by direct, unconfined host execution. Evaluation does not provide filesystem or process isolation.
+- `custom`: Legacy command-list configurations return `CUSTOM_MODE_MIGRATION_REQUIRED` before process creation.
+
+Restrictive mode temporarily rejects interactive terminals, remote execution, detached execution, and request environment overrides with stable `SANDBOX_*` errors. A successful response includes `execution_isolation` describing the actual launcher and profile.
 
 ## API Reference
 
 ### Shell Operations
 
 #### `shell_execute`
-Execute shell commands with various execution modes. Can also create new interactive terminal sessions.
+Execute shell commands with various execution modes. Interactive terminal creation is unavailable in restrictive mode until a reviewed sandboxed PTY boundary is provided.
 
 **Parameters:**
 - `command` (required): Command to execute
@@ -647,11 +646,15 @@ mcp-shell-server/
 
 ## Security Considerations
 
-1. **Command Validation**: All commands are validated against security policies
-2. **Path Restrictions**: File system access is limited to allowed directories  
-3. **Resource Limits**: CPU, memory, and execution time limits are enforced
+1. **Execution Boundary**: Only restrictive local non-interactive execution is OS-confined by Bubblewrap; other modes are explicitly unconfined
+2. **Path Validation**: Existing request paths and working directories use canonical component-boundary checks; this alone is not a child-process filesystem sandbox
+3. **Resource Limits**: Execution-time and output limits are enforced by the server; complete cgroup-backed CPU/memory containment is not provided
 4. **Audit Logging**: All operations are logged for security auditing
-5. **Sandboxed Execution**: Commands run in isolated environments
+5. **Fail-closed Sandbox**: Restrictive requests never fall back to host execution when Bubblewrap or a covered route is unavailable
+
+The read-only restrictive workspace can still expose pre-existing sockets, FIFOs, devices, nested mounts, or FUSE endpoints located inside an approved root. Keep sensitive runtime endpoints outside approved roots; this expedited profile does not claim snapshot isolation against concurrent host mutation.
+
+Every readable regular file below the selected approved root is readable inside restrictive mode. Read-only prevents modification, not disclosure, so configure the narrowest project root and never approve a home directory or another tree containing credentials.
 
 ## Error Handling
 

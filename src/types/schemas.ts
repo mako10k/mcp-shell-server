@@ -16,7 +16,7 @@ export const ShellExecuteParamsSchema = z
       .string()
       .min(1)
       .describe(
-        'Shell command to execute (e.g., "ls -la", "npm install", "python script.py"). Command will be validated against security restrictions. NOTE: This is MCP Shell Server - do NOT use VS Code internal run_in_terminal parameters like "explanation".'
+        'Shell command to execute (e.g., "ls -la", "npm install", "python script.py"). Restrictive mode permits full shell syntax only inside its required Bubblewrap profile; other executable modes are not OS-confined. NOTE: This is MCP Shell Server - do NOT use VS Code internal run_in_terminal parameters like "explanation".'
       ),
     comment: z
       .string()
@@ -34,7 +34,7 @@ export const ShellExecuteParamsSchema = z
         'Directory where the command should be executed. If not specified, uses the default working directory set by shell_set_default_workdir or the initial server directory.'
       ),
     environment_variables: EnvironmentVariablesSchema.optional().describe(
-      'Environment variables to set for this command execution. These are added to or override the current environment.'
+      'Environment variables to set for direct host execution. Restrictive mode rejects request environment overrides with SANDBOX_ENV_UNSUPPORTED.'
     ),
     input_data: z
       .string()
@@ -107,7 +107,7 @@ export const ShellExecuteParamsSchema = z
       .boolean()
       .default(false)
       .describe(
-        'Create a new interactive terminal session instead of running command directly. Use for commands requiring interactive input/output.'
+        'Create a new interactive terminal session instead of running command directly. Restrictive mode rejects this route with SANDBOX_TERMINAL_UNAVAILABLE.'
       ),
     terminal_shell: ShellTypeSchema.optional().describe(
       'Shell type for the new terminal (bash, zsh, fish, cmd, powershell). Only used when create_terminal is true.'
@@ -470,7 +470,7 @@ export const TerminalCloseParamsSchema = z.object({
 // Security & Monitoring
 export const SecuritySetRestrictionsParamsSchema = z.object({
   security_mode: SecurityModeSchema.optional().describe(
-    'Security preset: "permissive" (basic safety only), "restrictive" (read-only commands only), or "custom" (use detailed configuration below)'
+    'Security mode: "restrictive" requires the Linux Bubblewrap restrictive-v1 profile; "custom" is migration-only and cannot execute; permissive/moderate/enhanced modes use direct host execution.'
   ),
 
   // customモード時のみ有効 - 他のモードでは無視される
@@ -478,19 +478,19 @@ export const SecuritySetRestrictionsParamsSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      'Whitelist of allowed commands (custom mode only). Commands not in this list will be blocked. Use command names like ["ls", "cat", "python"] or patterns.'
+      'Legacy custom-mode migration input. Command lists are not an execution security boundary and custom mode cannot execute.'
     ),
   blocked_commands: z
     .array(z.string())
     .optional()
     .describe(
-      'Blacklist of forbidden commands (custom mode only). These commands will be blocked even if in allowed_commands. Takes precedence over allowed_commands.'
+      'Legacy custom-mode migration input. Command lists are not an execution security boundary and custom mode cannot execute.'
     ),
   allowed_directories: z
     .array(z.string())
     .optional()
     .describe(
-      'List of allowed directories (custom mode only). Commands cannot access files outside these directories. Use absolute paths like ["/home/user", "/tmp"].'
+      'Legacy custom-mode migration input. Restrictive workspace roots come from trusted MCP_SHELL_ALLOWED_WORKDIRS configuration.'
     ),
 
   // 全モード共通設定
@@ -516,7 +516,7 @@ export const SecuritySetRestrictionsParamsSchema = z.object({
     .boolean()
     .default(true)
     .describe(
-      'Whether to allow network access for executed commands. Disable for security in untrusted environments.'
+      'Legacy network metadata; it is not an OS network control in direct-host modes. Restrictive-v1 always has no network regardless of this value.'
     ),
 });
 

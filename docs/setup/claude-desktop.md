@@ -32,7 +32,7 @@ Add the following to your configuration file:
       "args": ["@mako10k/mcp-shell-server"],
       "env": {
         "MCP_SHELL_DEFAULT_WORKDIR": "/your/preferred/working/directory",
-        "MCP_SHELL_ALLOWED_WORKDIRS": "/your/allowed/directories,/tmp"
+        "MCP_SHELL_ALLOWED_WORKDIRS": "/your/preferred/working/directory"
       }
     }
   }
@@ -42,7 +42,7 @@ Add the following to your configuration file:
 ## Environment Variables
 
 - `MCP_SHELL_DEFAULT_WORKDIR`: Default working directory for commands
-- `MCP_SHELL_ALLOWED_WORKDIRS`: Comma-separated list of allowed directories
+- `MCP_SHELL_ALLOWED_WORKDIRS`: Comma-separated list of narrow approved project roots. Restrictive mode can read regular files below the selected root; do not include home directories, credential trees, or shared host `/tmp`.
 - `MCP_SHELL_MAX_CONCURRENT`: Maximum concurrent processes (default: 50)
 - `MCP_LOG_LEVEL`: Logging level (debug, info, warn, error)
 

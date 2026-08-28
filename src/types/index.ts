@@ -86,6 +86,16 @@ export interface ExecutionInfo {
   default_working_directory?: string;
   working_directory_changed?: boolean;
   environment_variables?: EnvironmentVariables;
+  execution_isolation?:
+    | { kind: 'host'; launcher: 'direct' }
+    | {
+        kind: 'sandbox';
+        launcher: 'bwrap';
+        profile: 'restrictive-v1';
+        provider_version: string;
+        workspace_access: 'read-only';
+        network_access: 'none';
+      };
   execution_time_ms?: number;
   memory_usage_mb?: number;
   cpu_usage_percent?: number;

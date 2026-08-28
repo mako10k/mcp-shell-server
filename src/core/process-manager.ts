@@ -16,12 +16,15 @@ import {
   getSafeEnvironment,
   sanitizeString,
   ensureDirectory,
+  canonicalizeExistingPath,
+  isValidPath,
 } from '../utils/helpers.js';
 import {
   ExecutionError,
   TimeoutError,
   ResourceNotFoundError,
   ResourceLimitError,
+  SecurityBoundaryError,
 } from '../utils/errors.js';
 import type { TerminalManager, TerminalOptions } from './terminal-manager.js';
 import type { FileManager } from './file-manager.js';
@@ -29,10 +32,13 @@ import { StreamPublisher } from './stream-publisher.js';
 import { FileStorageSubscriber } from './file-storage-subscriber.js';
 import { StreamingPipelineReader } from './streaming-pipeline-reader.js';
 import { RealtimeStreamSubscriber } from './realtime-stream-subscriber.js';
+import { BwrapLauncher } from '../security/bwrap-launcher.js';
+import type { ExecutionBoundary } from '../security/execution-boundary.js';
 
 export interface ExecutionOptions {
   command: string;
   executionMode: ExecutionMode;
+  executionBoundary?: ExecutionBoundary;
   workingDirectory?: string;
   environmentVariables?: EnvironmentVariables;
   inputData?: string;
@@ -68,6 +74,8 @@ export class ProcessManager {
   private fileManager: FileManager | undefined; // FileManager への参照
   private defaultWorkingDirectory: string;
   private allowedWorkingDirectories: string[];
+  private readonly sandboxLauncher: BwrapLauncher;
+  private readonly trustedDefaultExecutionBoundary: ExecutionBoundary | undefined;
   private backgroundProcessCallbacks: BackgroundProcessCallback = {}; // バックグラウンドプロセス終了コールバック
 
   // Issue #13: PUB/SUB統合 - Feature Flag付きで段階的統合
@@ -79,15 +87,31 @@ export class ProcessManager {
   constructor(
     maxConcurrentProcesses = 50,
     outputDir = '/tmp/mcp-shell-outputs',
-    fileManager?: FileManager
+    fileManager?: FileManager,
+    sandboxLauncher?: BwrapLauncher,
+    trustedDefaultExecutionBoundary?: ExecutionBoundary
   ) {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
     this.outputDir = outputDir;
     this.fileManager = fileManager;
-    this.defaultWorkingDirectory = process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd();
-    this.allowedWorkingDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS']
+    const configuredAllowedDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS']
       ? process.env['MCP_SHELL_ALLOWED_WORKDIRS'].split(',').map((dir) => dir.trim())
       : [process.cwd()];
+    this.allowedWorkingDirectories = configuredAllowedDirectories.map((directory) =>
+      canonicalizeExistingPath(directory)
+    );
+    this.defaultWorkingDirectory = canonicalizeExistingPath(
+      process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd()
+    );
+    if (!this.isAllowedWorkingDirectory(this.defaultWorkingDirectory)) {
+      throw new SecurityBoundaryError(
+        'SECURITY_CONFIGURATION_INVALID',
+        'The default working directory is outside the approved working-directory roots.',
+        { defaultWorkingDirectory: this.defaultWorkingDirectory }
+      );
+    }
+    this.sandboxLauncher = sandboxLauncher || new BwrapLauncher(this.allowedWorkingDirectories);
+    this.trustedDefaultExecutionBoundary = trustedDefaultExecutionBoundary;
 
     // StreamPublisher初期化
     this.streamPublisher = new StreamPublisher({
@@ -186,6 +210,16 @@ export class ProcessManager {
   }
 
   async executeCommand(options: ExecutionOptions): Promise<ExecutionInfo> {
+    const executionBoundary =
+      options.executionBoundary ?? this.trustedDefaultExecutionBoundary;
+    if (!executionBoundary) {
+      throw new SecurityBoundaryError(
+        'ISOLATION_REQUIREMENT_MISSING',
+        'Execution requires an explicit host or sandbox boundary.'
+      );
+    }
+    options = { ...options, executionBoundary };
+    this.assertExecutionRoute(options);
     // 同時実行数のチェック
     const runningProcesses = Array.from(this.executions.values()).filter(
       (exec) => exec.status === 'running'
@@ -345,6 +379,169 @@ export class ProcessManager {
     }
   }
 
+  private assertExecutionRoute(options: ExecutionOptions): void {
+    if (options.executionBoundary?.kind !== 'sandbox') {
+      return;
+    }
+    if (options.createTerminal) {
+      throw new SecurityBoundaryError(
+        'SANDBOX_TERMINAL_UNAVAILABLE',
+        'Interactive terminal execution is unavailable for restrictive sandbox requests.'
+      );
+    }
+    if (options.executionMode === 'detached') {
+      throw new SecurityBoundaryError(
+        'SANDBOX_DETACHED_UNAVAILABLE',
+        'Detached execution is unavailable for restrictive sandbox requests.'
+      );
+    }
+    if (options.environmentVariables && Object.keys(options.environmentVariables).length > 0) {
+      throw new SecurityBoundaryError(
+        'SANDBOX_ENV_UNSUPPORTED',
+        'Environment overrides are unavailable for restrictive sandbox requests.'
+      );
+    }
+  }
+
+  private async spawnExecutionProcess(
+    executionId: string,
+    options: ExecutionOptions,
+    hostShell: '/bin/bash' | 'sh' = '/bin/bash',
+    hostDetached = false,
+    ignoreStdin = false
+  ): Promise<ChildProcess> {
+    const workingDirectory = this.resolveWorkingDirectory(options.workingDirectory);
+    if (options.executionBoundary?.kind === 'sandbox') {
+      const spec = this.sandboxLauncher.buildLaunchSpec(options.command, workingDirectory);
+      const child = spawn(spec.executable, spec.args, {
+        cwd: spec.cwd,
+        env: spec.env,
+        stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'],
+      });
+      await this.waitForSandboxReadiness(child, spec.readinessToken);
+      this.scheduleSandboxStart(child, spec.readinessToken);
+      const executionInfo = this.executions.get(executionId);
+      if (executionInfo) {
+        executionInfo.execution_isolation = {
+          kind: 'sandbox',
+          launcher: 'bwrap',
+          profile: 'restrictive-v1',
+          provider_version: spec.providerVersion,
+          workspace_access: 'read-only',
+          network_access: 'none',
+        };
+        this.executions.set(executionId, executionInfo);
+      }
+      return child;
+    }
+
+    const env = getSafeEnvironment(
+      process.env as Record<string, string>,
+      options.environmentVariables
+    );
+    const child = spawn(hostShell, ['-c', options.command], {
+      cwd: workingDirectory,
+      env,
+      stdio: [ignoreStdin ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      detached: hostDetached,
+    });
+    const executionInfo = this.executions.get(executionId);
+    if (executionInfo) {
+      executionInfo.execution_isolation = { kind: 'host', launcher: 'direct' };
+      this.executions.set(executionId, executionInfo);
+    }
+    return child;
+  }
+
+  private scheduleSandboxStart(child: ChildProcess, readinessToken: string): void {
+    const startGate = child.stdio[4];
+    if (!startGate || !('write' in startGate)) {
+      child.kill('SIGKILL');
+      throw new SecurityBoundaryError(
+        'SANDBOX_SETUP_FAILED',
+        'The sandbox start gate was not created.'
+      );
+    }
+
+    startGate.once('error', () => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // The provider may already have exited.
+      }
+    });
+    setImmediate(() => {
+      startGate.end(`${readinessToken}\n`);
+    });
+  }
+
+  private async waitForSandboxReadiness(
+    child: ChildProcess,
+    readinessToken: string
+  ): Promise<void> {
+    const readinessStream = child.stdio[3];
+    if (!readinessStream) {
+      child.kill('SIGKILL');
+      throw new SecurityBoundaryError(
+        'SANDBOX_SETUP_FAILED',
+        'The sandbox readiness channel was not created.'
+      );
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let buffer = '';
+      let settled = false;
+      const timer = setTimeout(() => {
+        fail('Timed out while waiting for the sandbox readiness receipt.');
+      }, 5000);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        readinessStream.off('data', onData);
+        child.off('error', onError);
+        child.off('close', onClose);
+      };
+      const fail = (message: string, details: Record<string, unknown> = {}) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // The provider may already have exited.
+        }
+        reject(new SecurityBoundaryError('SANDBOX_SETUP_FAILED', message, details));
+      };
+      const onData = (chunk: Buffer | string) => {
+        buffer += chunk.toString();
+        if (buffer.length > 512) {
+          fail('The sandbox readiness receipt exceeded its maximum size.');
+          return;
+        }
+        const newline = buffer.indexOf('\n');
+        if (newline === -1) return;
+        const receipt = buffer.slice(0, newline);
+        if (receipt !== readinessToken || buffer.slice(newline + 1).length > 0) {
+          fail('The sandbox readiness receipt was invalid.');
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const onError = (error: Error) => {
+        fail('Bubblewrap failed before the sandbox became ready.', { error: error.message });
+      };
+      const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
+        fail('Bubblewrap exited before the sandbox became ready.', { code, signal });
+      };
+
+      readinessStream.on('data', onData);
+      child.once('error', onError);
+      child.once('close', onClose);
+    });
+  }
+
   /**
    * Issue #13: StreamingPipelineReaderを使用したコマンド実行
    */
@@ -354,25 +551,13 @@ export class ProcessManager {
     inputStream: StreamingPipelineReader
   ): Promise<ExecutionInfo> {
     console.error(`ProcessManager: Executing command with input stream for ${executionId}`);
+    const child = await this.spawnExecutionProcess(executionId, options, 'sh');
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
       let stdout = '';
       let stderr = '';
       let outputTruncated = false;
-
-      // 環境変数の準備
-      const env = getSafeEnvironment(
-        process.env as Record<string, string>,
-        options.environmentVariables
-      );
-
-      // プロセスの起動
-      const child = spawn('sh', ['-c', options.command], {
-        cwd: this.resolveWorkingDirectory(options.workingDirectory),
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
 
       // StreamingPipelineReaderをSTDINに接続
       if (child.stdin) {
@@ -486,7 +671,7 @@ export class ProcessManager {
         child.kill('SIGTERM');
 
         setTimeout(() => {
-          if (!child.killed) {
+          if (child.exitCode === null && child.signalCode === null) {
             child.kill('SIGKILL');
           }
         }, 5000);
@@ -502,24 +687,12 @@ export class ProcessManager {
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
+    const childProcess = await this.spawnExecutionProcess(executionId, options);
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
       let stdout = '';
       let stderr = '';
       let outputTruncated = false;
-
-      // 環境変数の準備
-      const env = getSafeEnvironment(
-        process.env as Record<string, string>,
-        options.environmentVariables
-      );
-
-      // プロセスの起動
-      const childProcess = spawn('/bin/bash', ['-c', options.command], {
-        cwd: this.resolveWorkingDirectory(options.workingDirectory),
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
 
       if (childProcess.pid) {
         this.processes.set(childProcess.pid, childProcess);
@@ -529,7 +702,7 @@ export class ProcessManager {
       const timeout = setTimeout(async () => {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
-          if (!childProcess.killed) {
+          if (childProcess.exitCode === null && childProcess.signalCode === null) {
             childProcess.kill('SIGKILL');
           }
         }, 5000);
@@ -618,6 +791,9 @@ export class ProcessManager {
         const executionInfo = this.executions.get(executionId);
 
         if (executionInfo) {
+          if (executionInfo.status === 'timeout' || executionInfo.status === 'failed') {
+            return;
+          }
           executionInfo.status = 'completed';
           executionInfo.exit_code = code || 0;
           executionInfo.stdout = sanitizeString(stdout);
@@ -688,6 +864,7 @@ export class ProcessManager {
     // 2. 出力サイズ制限に達した場合
     const returnPartialOnTimeout = options.returnPartialOnTimeout ?? true;
     const foregroundTimeout = options.foregroundTimeoutSeconds ?? 10;
+    const childProcess = await this.spawnExecutionProcess(executionId, options);
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
@@ -695,19 +872,6 @@ export class ProcessManager {
       let stderr = '';
       let outputTruncated = false;
       let backgroundTransitionReason: 'timeout' | 'output_size_limit' | null = null;
-
-      // 環境変数の準備
-      const env = getSafeEnvironment(
-        process.env as Record<string, string>,
-        options.environmentVariables
-      );
-
-      // プロセスの起動（バックグラウンド対応）
-      const childProcess = spawn('/bin/bash', ['-c', options.command], {
-        cwd: this.resolveWorkingDirectory(options.workingDirectory),
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
 
       if (childProcess.pid) {
         this.processes.set(childProcess.pid, childProcess);
@@ -725,7 +889,7 @@ export class ProcessManager {
       const finalTimeoutHandle = setTimeout(async () => {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
-          if (!childProcess.killed) {
+          if (childProcess.exitCode === null && childProcess.signalCode === null) {
             childProcess.kill('SIGKILL');
           }
         }, 5000);
@@ -940,17 +1104,12 @@ export class ProcessManager {
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
-    const env = getSafeEnvironment(
-      process.env as Record<string, string>,
-      options.environmentVariables
+    const childProcess = await this.spawnExecutionProcess(
+      executionId,
+      options,
+      '/bin/bash',
+      true
     );
-
-    const childProcess = spawn('/bin/bash', ['-c', options.command], {
-      cwd: this.resolveWorkingDirectory(options.workingDirectory),
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: options.executionMode === 'background',
-    });
 
     if (childProcess.pid) {
       this.processes.set(childProcess.pid, childProcess);
@@ -987,7 +1146,7 @@ export class ProcessManager {
     const timeout = setTimeout(async () => {
       childProcess.kill('SIGTERM');
       setTimeout(() => {
-        if (!childProcess.killed) {
+        if (childProcess.exitCode === null && childProcess.signalCode === null) {
           childProcess.kill('SIGKILL');
         }
       }, 5000);
@@ -1139,7 +1298,7 @@ export class ProcessManager {
     const timeout = setTimeout(async () => {
       childProcess.kill('SIGTERM');
       setTimeout(() => {
-        if (!childProcess.killed) {
+        if (childProcess.exitCode === null && childProcess.signalCode === null) {
           childProcess.kill('SIGKILL');
         }
       }, 5000);
@@ -1238,17 +1397,13 @@ export class ProcessManager {
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
     // detachedモード: 完全にバックグラウンドで実行し、親プロセスとの接続を切断
-    const env = getSafeEnvironment(
-      process.env as Record<string, string>,
-      options.environmentVariables
+    const childProcess = await this.spawnExecutionProcess(
+      executionId,
+      options,
+      '/bin/bash',
+      true,
+      true
     );
-
-    const childProcess = spawn('/bin/bash', ['-c', options.command], {
-      cwd: this.resolveWorkingDirectory(options.workingDirectory),
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'], // stdin は無視
-      detached: true, // 完全にデタッチ
-    });
 
     // デタッチされたプロセスのPIDは記録するが、プロセス管理からは除外
     const executionInfo = this.executions.get(executionId);
@@ -1666,7 +1821,7 @@ export class ProcessManager {
       try {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
-          if (!childProcess.killed) {
+          if (childProcess.exitCode === null && childProcess.signalCode === null) {
             childProcess.kill('SIGKILL');
           }
         }, 5000);
@@ -1689,18 +1844,14 @@ export class ProcessManager {
   } {
     const previousWorkdir = this.defaultWorkingDirectory;
 
-    // ディレクトリの検証
-    if (!this.isAllowedWorkingDirectory(workingDirectory)) {
-      throw new Error(`Working directory not allowed: ${workingDirectory}`);
-    }
-
-    this.defaultWorkingDirectory = workingDirectory;
+    const canonicalWorkingDirectory = this.resolveWorkingDirectory(workingDirectory);
+    this.defaultWorkingDirectory = canonicalWorkingDirectory;
 
     return {
       success: true,
       previous_working_directory: previousWorkdir,
-      new_working_directory: workingDirectory,
-      working_directory_changed: previousWorkdir !== workingDirectory,
+      new_working_directory: canonicalWorkingDirectory,
+      working_directory_changed: previousWorkdir !== canonicalWorkingDirectory,
     };
   }
 
@@ -1713,15 +1864,7 @@ export class ProcessManager {
   }
 
   private isAllowedWorkingDirectory(workingDirectory: string): boolean {
-    // パスの正規化を行って比較
-    const normalizedPath = path.resolve(workingDirectory);
-    return this.allowedWorkingDirectories.some((allowedDir) => {
-      const normalizedAllowed = path.resolve(allowedDir);
-      return (
-        normalizedPath === normalizedAllowed ||
-        normalizedPath.startsWith(normalizedAllowed + path.sep)
-      );
-    });
+    return isValidPath(workingDirectory, this.allowedWorkingDirectories);
   }
 
   private resolveWorkingDirectory(workingDirectory?: string): string {
@@ -1731,6 +1874,6 @@ export class ProcessManager {
       throw new Error(`Working directory not allowed: ${resolved}`);
     }
 
-    return resolved;
+    return canonicalizeExistingPath(resolved);
   }
 }

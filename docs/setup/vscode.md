@@ -21,7 +21,7 @@ Create or edit `.vscode/mcp.json` in your workspace:
       "args": ["@mako10k/mcp-shell-server"],
       "env": {
         "MCP_SHELL_DEFAULT_WORKDIR": "${workspaceFolder}",
-        "MCP_SHELL_ALLOWED_WORKDIRS": "${workspaceFolder},/tmp"
+        "MCP_SHELL_ALLOWED_WORKDIRS": "${workspaceFolder}"
       }
     }
   }
@@ -39,7 +39,7 @@ Alternatively, configure in VS Code settings:
 
 - `${workspaceFolder}`: Current workspace root directory
 - `MCP_SHELL_DEFAULT_WORKDIR`: Default working directory for commands
-- `MCP_SHELL_ALLOWED_WORKDIRS`: Comma-separated list of allowed directories
+- `MCP_SHELL_ALLOWED_WORKDIRS`: Comma-separated list of narrow approved project roots. Restrictive mode can read regular files below the selected root; do not include home directories, credential trees, or shared host `/tmp`.
 - `MCP_LOG_LEVEL`: Logging level (debug, info, warn, error)
 
 ## Usage

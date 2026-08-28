@@ -221,7 +221,7 @@ if (result.output_truncated && result.output_id) {
 MCP_SHELL_DEFAULT_WORKDIR=/path/to/default
 
 # 許可されたワーキングディレクトリ（セキュリティ）
-MCP_SHELL_ALLOWED_WORKDIRS=/home/user,/tmp,/var/log
+MCP_SHELL_ALLOWED_WORKDIRS=/home/user/projects/project-a,/home/user/projects/project-b
 ```
 
 #### 新しいツール: `shell_set_default_workdir`
