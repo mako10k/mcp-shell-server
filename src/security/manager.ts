@@ -43,7 +43,6 @@ export class SecurityManager {
       process.env['MCP_SHELL_SECURITY_MODE'] ?? 'permissive'
     );
     const defaultExecutionTime = parseInt(process.env['MCP_SHELL_MAX_EXECUTION_TIME'] || '300');
-    const defaultMemoryMb = parseInt(process.env['MCP_SHELL_MAX_MEMORY_MB'] || '1024');
     const defaultNetworkEnabled = process.env['MCP_SHELL_ENABLE_NETWORK'] !== 'false';
 
     // Automatic configuration for Enhanced Mode
@@ -59,7 +58,6 @@ export class SecurityManager {
       restriction_id: generateId(),
       security_mode: defaultMode,
       max_execution_time: defaultExecutionTime, // 5 minutes
-      max_memory_mb: defaultMemoryMb, // 1GB
       enable_network: defaultNetworkEnabled,
       active: true,
       configured_at: getCurrentTimestamp(),
@@ -136,7 +134,6 @@ export class SecurityManager {
       security_mode: securityMode,
       max_execution_time:
         restrictions.max_execution_time || this.restrictions?.max_execution_time || 300,
-      max_memory_mb: restrictions.max_memory_mb || this.restrictions?.max_memory_mb || 1024,
       enable_network: restrictions.enable_network ?? this.restrictions?.enable_network ?? true,
       active: true,
       configured_at: getCurrentTimestamp(),
@@ -300,22 +297,6 @@ export class SecurityManager {
         {
           requestedTime: timeoutSeconds,
           maxAllowedTime: this.restrictions.max_execution_time,
-        }
-      );
-    }
-  }
-
-  validateMemoryUsage(memoryMb: number): void {
-    if (!this.restrictions?.active) {
-      return;
-    }
-
-    if (this.restrictions.max_memory_mb && memoryMb > this.restrictions.max_memory_mb) {
-      throw new SecurityError(
-        `Memory usage ${memoryMb}MB exceeds maximum allowed ${this.restrictions.max_memory_mb}MB`,
-        {
-          requestedMemory: memoryMb,
-          maxAllowedMemory: this.restrictions.max_memory_mb,
         }
       );
     }

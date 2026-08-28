@@ -383,7 +383,7 @@ The server security mode and trusted workspace roots are startup configuration s
 - Blocked dangerous commands (rm, sudo, etc.)
 - Limited to safe directories
 - 5-minute execution timeout
-- 1GB memory limit
+- Bounded retained command output; no per-process CPU, PID, or memory containment
 
 ### Disabling Tools
 Set `MCP_DISABLED_TOOLS` to a comma-separated list of tool names to disable.
@@ -422,22 +422,19 @@ The server supports the following environment variables for configuration:
 - `MCP_SHELL_LLM_API_KEY`: API key for LLM-based safety evaluation (optional, falls back to MCP sampling)
 - `MCP_SHELL_LLM_TIMEOUT`: Timeout for LLM evaluation in seconds (default: 30)
 
-#### Resource Limits
+#### Execution Limits
 - `MCP_SHELL_MAX_EXECUTION_TIME`: Default maximum execution time in seconds
   ```bash
   export MCP_SHELL_MAX_EXECUTION_TIME="300"
   ```
-- `MCP_SHELL_MAX_MEMORY_MB`: Default maximum memory usage in MB
-  ```bash
-  export MCP_SHELL_MAX_MEMORY_MB="1024"
-  ```
+
+Per-process memory is not limited by this server. Apply an external cgroup or service-manager limit when memory containment is required.
 
 #### Complete Configuration Example
 ```bash
 # Security settings
 export MCP_SHELL_SECURITY_MODE="restrictive"
 export MCP_SHELL_MAX_EXECUTION_TIME="300"
-export MCP_SHELL_MAX_MEMORY_MB="1024"
 
 # Working directory settings
 export MCP_SHELL_DEFAULT_WORKDIR="/home/user/projects"

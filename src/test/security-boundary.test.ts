@@ -272,9 +272,9 @@ describe('Issue #24 execution boundary', () => {
   it.runIf(process.platform === 'linux' && fs.existsSync('/usr/bin/bwrap'))(
     'confines compound commands in the real Bubblewrap execution path',
     async () => {
-      const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-bwrap-real-'));
-      const outputDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-output-'));
-      const fileDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-files-'));
+      const root = await fsp.mkdtemp(path.join('/tmp', 'mcp-shell-bwrap-real-'));
+      const outputDir = await fsp.mkdtemp(path.join('/tmp', 'mcp-shell-output-'));
+      const fileDir = await fsp.mkdtemp(path.join('/tmp', 'mcp-shell-files-'));
       process.env['MCP_SHELL_ALLOWED_WORKDIRS'] = root;
       process.env['MCP_SHELL_DEFAULT_WORKDIR'] = root;
       process.env['MCP_SHELL_ENABLE_STREAMING'] = 'false';
@@ -399,6 +399,36 @@ describe('Issue #24 execution boundary', () => {
       expect(adaptiveResult.stdout).toBe('adaptive');
       expect(adaptiveResult.execution_isolation?.kind).toBe('sandbox');
 
+      const adaptiveBurst = await manager.executeCommand({
+        command: 'head -c 2048 /dev/zero',
+        executionMode: 'adaptive',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 3,
+        foregroundTimeoutSeconds: 2,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let completedAdaptiveBurst = manager.getExecution(adaptiveBurst.execution_id);
+      for (
+        let attempt = 0;
+        attempt < 100 && completedAdaptiveBurst?.status === 'running';
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedAdaptiveBurst = manager.getExecution(adaptiveBurst.execution_id);
+      }
+      expect(completedAdaptiveBurst?.status).toBe('completed');
+      for (
+        let attempt = 0;
+        attempt < 50 && !completedCallbackIds.includes(adaptiveBurst.execution_id);
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(completedCallbackIds).toContain(adaptiveBurst.execution_id);
+      expect(timeoutCallbackIds).not.toContain(adaptiveBurst.execution_id);
+
       const backgroundResult = await manager.executeCommand({
         command: 'sleep 0.05; printf background',
         executionMode: 'background',
@@ -445,6 +475,64 @@ describe('Issue #24 execution boundary', () => {
       );
       expect(Buffer.byteLength(boundedOutput.content)).toBeLessThanOrEqual(1024);
 
+      const exactCombined = await manager.executeCommand({
+        command: "printf '%0512d' 0; printf '%0512d' 0 >&2",
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let completedExactCombined = manager.getExecution(exactCombined.execution_id);
+      for (
+        let attempt = 0;
+        attempt < 100 && completedExactCombined?.status === 'running';
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedExactCombined = manager.getExecution(exactCombined.execution_id);
+      }
+      expect(completedExactCombined?.status).toBe('completed');
+      expect(completedExactCombined?.output_truncated).toBe(true);
+      expect(completedExactCombined?.output_id).toBeDefined();
+      const exactCombinedOutputId = completedExactCombined?.output_id;
+      if (!exactCombinedOutputId) {
+        throw new Error('The exact combined background execution did not produce an output_id.');
+      }
+      const exactCombinedOutput = await fileManager.readFile(
+        exactCombinedOutputId,
+        0,
+        4096,
+        'utf-8'
+      );
+      expect(Buffer.byteLength(exactCombinedOutput.content, 'utf8')).toBeLessThanOrEqual(1024);
+
+      const utf8Bounded = await manager.executeCommand({
+        command: 'i=0; while [ "$i" -lt 400 ]; do printf "€"; i=$((i + 1)); done',
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let completedUtf8 = manager.getExecution(utf8Bounded.execution_id);
+      for (let attempt = 0; attempt < 100 && completedUtf8?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedUtf8 = manager.getExecution(utf8Bounded.execution_id);
+      }
+      expect(completedUtf8?.status).toBe('completed');
+      expect(completedUtf8?.output_truncated).toBe(true);
+      expect(completedUtf8?.output_id).toBeDefined();
+      const utf8OutputId = completedUtf8?.output_id;
+      if (!utf8OutputId) {
+        throw new Error('The UTF-8 background execution did not produce an output_id.');
+      }
+      const utf8Output = await fileManager.readFile(utf8OutputId, 0, 4096, 'utf-8');
+      expect(Buffer.byteLength(utf8Output.content, 'utf8')).toBeLessThanOrEqual(1024);
+      expect(utf8Output.content.endsWith('\uFFFD')).toBe(false);
+
       const backgroundTimeout = await manager.executeCommand({
         command: 'sleep 30',
         executionMode: 'background',
@@ -469,6 +557,7 @@ describe('Issue #24 execution boundary', () => {
       }
       expect(timeoutCallbackIds).toContain(backgroundTimeout.execution_id);
       expect(completedCallbackIds).not.toContain(backgroundTimeout.execution_id);
+      expect(timedOutBackground?.output_truncated).toBe(false);
 
       const adaptiveTimeout = await manager.executeCommand({
         command: 'sleep 30',

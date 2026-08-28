@@ -222,7 +222,6 @@ export interface SecurityRestrictions {
 
   // 共通設定
   max_execution_time?: number;
-  max_memory_mb?: number;
   enable_network?: boolean;
 
   active: boolean;

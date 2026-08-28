@@ -62,7 +62,7 @@
 ### セキュリティ・監視（旧提案・public MCP未公開）
 | ツール名 | 機能 | 主要パラメータ |
 |----------|------|----------------|
-| `security_set_restrictions` | internal APIのみ。評価対象clientによる境界downgradeを防ぐためpublic MCPには公開しない | `allowed_commands`, `blocked_commands`, `allowed_directories`, `max_execution_time`, `max_memory_mb`, `enable_network` |
+| `security_set_restrictions` | internal APIのみ。評価対象clientによる境界downgradeを防ぐためpublic MCPには公開しない | `allowed_commands`, `blocked_commands`, `allowed_directories`, `max_execution_time`, `enable_network` |
 | `monitoring_get_stats` | システム統計情報の取得 | `include_metrics`, `time_range_minutes` |
 
 ## ExecutionMode 改善提案
@@ -132,7 +132,6 @@
 - `foreground_timeout_seconds`: 1-300秒 (adaptiveモード、デフォルト: 10秒)
 - `max_output_size`: 1KB-100MB
 - `max_execution_time`: 1-86400秒
-- `max_memory_mb`: 1-32768MB
 - `monitor_interval_ms`: 100-60000ミリ秒
 - `line_count`: 1-10000行
 - `limit`: ツールによって異なる（50-1000）
@@ -173,7 +172,7 @@
 
 ### 1. 応答パラメータ名の改善
 
-**問題**: 出力が切り詰められた場合、LLMがどのツールで完全な内容を取得できるかが不明確
+**問題**: 出力が切り詰められた場合、LLMがどのツールで保持済みの内容を取得できるかが不明確
 
 **改善案**:
 ```json
@@ -187,7 +186,7 @@
 ```
 
 **新しい応答フィールド**:
-- `output_id`: 完全な出力を取得するためのID（`read_execution_output`ツールで使用）
+- `output_id`: 保持済み出力を取得するためのID（`read_execution_output`ツールで使用）。`max_output_size`を超えた部分は復元できない
 
 **使用例とワークフロー**:
 ```typescript
@@ -195,7 +194,7 @@
 const result = await shell_execute({ command: "find /var/log -name '*.log'" });
 // → { output_truncated: true, output_id: "exec_output_12345", ... }
 
-// 2. LLMが完全な出力を取得
+// 2. LLMが保持済みの出力を取得
 if (result.output_truncated && result.output_id) {
   const fullOutput = await read_execution_output({ 
     output_id: result.output_id 
@@ -275,7 +274,6 @@ SecurityMode = 'permissive' | 'restrictive' | 'custom'
   
   // 共通設定
   max_execution_time?: number,
-  max_memory_mb?: number,
   enable_network?: boolean
 }
 ```

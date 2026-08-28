@@ -535,7 +535,7 @@ security mode と trusted workspace root は、起動前に `MCP_SHELL_SECURITY_
 - 最大ターミナルセッション数: 20
 - 最大ファイルサイズ: 100MB
 - 最大実行時間: 300秒
-- 最大メモリ使用量: 1GB
+- プロセス単位のCPU・PID・メモリ制限: 未実装（必要な場合は外部cgroup等を使用）
 
 ### スケーラビリティ
 - 非同期処理による高いスループット

@@ -617,10 +617,6 @@ export class ShellTools {
       if (params.max_execution_time !== undefined) {
         restrictionParams['max_execution_time'] = params.max_execution_time;
       }
-      if (params.max_memory_mb !== undefined) {
-        restrictionParams['max_memory_mb'] = params.max_memory_mb;
-      }
-
       const restrictions = this.securityManager.setRestrictions(restrictionParams);
 
       return {
@@ -1032,7 +1028,7 @@ export class ShellTools {
             ...(entry.was_executed && {
               // These can be used with process_get_execution and read_execution_output
               reference_note:
-                'Use process_get_execution with execution_id for detailed execution info, or read_execution_output for full output',
+                'Use process_get_execution with execution_id for detailed execution info, or read_execution_output for retained output',
             }),
           };
         }

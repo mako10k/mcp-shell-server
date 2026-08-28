@@ -82,7 +82,7 @@ timeout_seconds: "Maximum time in seconds to wait for foreground execution befor
 #### ✅ Include in descriptions:
 - セキュリティ制限による実行失敗の可能性
 - タイムアウト時の動作
-- リソース制限（メモリ、出力サイズ）
+- リソース制限（実行時間、出力保持サイズ）
 - パーミッション要件
 
 #### Example:

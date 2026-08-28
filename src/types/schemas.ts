@@ -503,15 +503,6 @@ export const SecuritySetRestrictionsParamsSchema = z.object({
     .describe(
       'Maximum execution time in seconds for any command (1s-24h). Commands exceeding this limit will be terminated.'
     ),
-  max_memory_mb: z
-    .number()
-    .int()
-    .min(1)
-    .max(32768)
-    .optional()
-    .describe(
-      'Maximum memory usage in MB for command execution (1MB-32GB). Commands exceeding this limit will be terminated.'
-    ),
   enable_network: z
     .boolean()
     .default(true)
