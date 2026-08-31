@@ -1,4 +1,5 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { createRequire } from 'node:module';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
@@ -17,7 +18,6 @@ import { ShellTools } from './tools/shell-tools.js';
 import { logger } from './utils/helpers.js';
 import { ExecutionInfo } from './types/index.js';
 import { createShellToolRuntime } from './runtime/tool-runtime.js';
-
 import {
   ShellExecuteParamsSchema,
   ShellGetExecutionParamsSchema,
@@ -38,6 +38,11 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 
 import { MCPShellError } from './utils/errors.js';
 import { BackofficeServer } from './backoffice/server.js';
+
+const require = createRequire(import.meta.url);
+const packageMetadata = require('../package.json') as { version?: unknown };
+const serverVersion =
+  typeof packageMetadata.version === 'string' ? packageMetadata.version : 'unknown';
 
 // Tools can be disabled by specifying a comma-separated list in the
 // MCP_DISABLED_TOOLS environment variable. Disabled tools will not be
@@ -61,13 +66,12 @@ export class MCPShellServer {
     this.server = new Server(
       {
         name: 'mcp-shell-server',
-        version: '2.0.0',
+        version: serverVersion,
       },
       {
         capabilities: {
           tools: {},
           logging: {}, // Enable log notification functionality
-          sampling: {}, // Enable Function Calling and LLM integration capabilities
         },
       }
     );

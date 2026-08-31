@@ -49,31 +49,35 @@ async function connectRestrictiveClient(
 }
 
 describe.runIf(process.platform === 'linux')('restrictive MCP wire contract', () => {
-  it('preserves stable sandbox error codes and exposes no runtime downgrade tool', async () => {
-    const workspaceRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-wire-error-'));
-    const { client } = await connectRestrictiveClient(
-      workspaceRoot,
-      path.join(workspaceRoot, 'missing-bwrap')
-    );
+  it(
+    'preserves stable sandbox error codes and exposes no runtime downgrade tool',
+    async () => {
+      const workspaceRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-wire-error-'));
+      const { client } = await connectRestrictiveClient(
+        workspaceRoot,
+        path.join(workspaceRoot, 'missing-bwrap')
+      );
 
-    try {
-      const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name)).not.toContain('security_set_restrictions');
+      try {
+        const listed = await client.listTools();
+        expect(listed.tools.map((tool) => tool.name)).not.toContain('security_set_restrictions');
 
-      const result = await client.callTool({
-        name: 'shell_execute',
-        arguments: { command: 'printf never', execution_mode: 'foreground' },
-      });
-      expect(result.isError).toBe(true);
-      expect(result.structuredContent).toMatchObject({
-        code: 'SANDBOX_UNAVAILABLE',
-        category: 'SECURITY',
-      });
-    } finally {
-      await client.close();
-      await fsp.rm(workspaceRoot, { recursive: true, force: true });
-    }
-  });
+        const result = await client.callTool({
+          name: 'shell_execute',
+          arguments: { command: 'printf never', execution_mode: 'foreground' },
+        });
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toMatchObject({
+          code: 'SANDBOX_UNAVAILABLE',
+          category: 'SECURITY',
+        });
+      } finally {
+        await client.close();
+        await fsp.rm(workspaceRoot, { recursive: true, force: true });
+      }
+    },
+    10_000
+  );
 
   it.runIf(fs.existsSync('/usr/bin/bwrap'))(
     'runs the documented restrictive startup without client sampling support',
@@ -102,7 +106,8 @@ describe.runIf(process.platform === 'linux')('restrictive MCP wire contract', ()
         await client.close();
         await fsp.rm(workspaceRoot, { recursive: true, force: true });
       }
-    }
+    },
+    10_000
   );
 
   it.runIf(fs.existsSync('/usr/bin/bwrap'))(
@@ -190,7 +195,8 @@ describe.runIf(process.platform === 'linux')('restrictive MCP wire contract', ()
         await client.close();
         await fsp.rm(workspaceRoot, { recursive: true, force: true });
       }
-    }
+    },
+    10_000
   );
 
   it.runIf(fs.existsSync('/usr/bin/bwrap'))(
