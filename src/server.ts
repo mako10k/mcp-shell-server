@@ -65,7 +65,7 @@ export class MCPShellServer {
       },
       {
         capabilities: {
-          tools: {},
+          tools: { listChanged: true },
           logging: {}, // Enable log notification functionality
           sampling: {}, // Enable Function Calling and LLM integration capabilities
         },
