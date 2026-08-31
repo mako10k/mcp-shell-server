@@ -694,6 +694,7 @@ MIT License - see LICENSE file for details.
 - [API Specification](docs/specification.md) - Complete API reference
 - [Control Codes Guide](docs/control-codes.md) - Terminal control sequences and escape codes
 - [Program Guard Manual](docs/program-guard.md) - Security features and process targeting
+- [Document Provenance](docs/document-provenance.md) - Sealgraph dependency and review workflow
 
 ### Examples
 - [Control Codes Demo](examples/control-codes-demo.js) - Control code usage examples
