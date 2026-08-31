@@ -587,7 +587,10 @@ export function createMessageCallbackFromMCPServer(server: Server): CreateMessag
           function: { name: string; arguments: string; };
         }>;
       } = {
-        content: { type: 'text', text: String(result.content?.text || '') },
+        content: {
+          type: 'text',
+          text: result.content.type === 'text' ? result.content.text : '',
+        },
       };
 
       if (result.model) {
@@ -616,5 +619,4 @@ export function createMessageCallbackFromMCPServer(server: Server): CreateMessag
 }
 // Tools for Function Calling (external use only)
 // import { securityEvaluationTool } from './security-tools.js';
-
 

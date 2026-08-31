@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.8.0] - 2026-08-31
+
+### Added
+- Add the Linux Bubblewrap-backed `restrictive-v1` execution boundary with a read-only workspace, private `/tmp`, fixed environment, and no IP network.
+- Report the effective launcher and isolation profile in successful execution receipts, with stable fail-closed error codes when restrictive execution cannot be satisfied.
+
+### Changed
+- Run supported local non-interactive restrictive requests inside Bubblewrap instead of relying on command-token classification and lexical path checks as a confinement boundary.
+- Reject restrictive terminal, remote, detached, request-environment, provider-failure, and unsafe-workspace routes before process creation rather than falling back to direct host execution.
+- Treat legacy `custom` command-list configurations as migration-only and return `CUSTOM_MODE_MIGRATION_REQUIRED` before execution.
+- Document permissive, moderate, enhanced, and enhanced-fast modes as direct, unconfined host execution, and route vulnerability reports through GitHub Private Vulnerability Reporting or `mako10k@mk10.org`.
+
+### Fixed
+- Preserve adaptive output identity and final bounded output across foreground-to-background transitions and persistence failures.
+- Serialize retained-output replacement, deletion, and cleanup so a concurrent replacement cannot resurrect deleted output.
+- Align public output availability, deletion receipts, and removed-byte counts with the authoritative retained file state.
+- Load `node-pty` dynamically and improve terminal startup error handling across supported Node.js environments.
+- Report the installed package version in the MCP server handshake and align sampling capability ownership with the current SDK contract.
+
+### Security
+- Canonicalize existing request paths, enforce component boundaries, reject special filesystem endpoints in restrictive workspaces, and expose the remaining local-operator threat-model limits.
+- Update the MCP TypeScript SDK and UUID runtime dependencies, and pin the SDK parser dependency to a security-clean version that preserves Node.js 18 support.
+
 ## [2.7.1] - 2026-02-11
 ### Fixed
 - Apply Zod defaults consistently for extension and MCP tool calls via validated wrappers.
