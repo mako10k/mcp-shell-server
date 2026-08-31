@@ -4,10 +4,19 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
-[![MCP](https://img.shields.io/badge/MCP-0.6.0-purple.svg)](https://modelcontextprotocol.io/)
+[![MCP](https://img.shields.io/badge/MCP-server-purple.svg)](https://modelcontextprotocol.io/)
 [![npm](https://img.shields.io/npm/v/@mako10k/mcp-shell-server.svg)](https://www.npmjs.com/package/@mako10k/mcp-shell-server)
 
-A secure and comprehensive Model Context Protocol (MCP) server for shell operations, terminal management, and process control.
+A Model Context Protocol server for shell command execution, terminal sessions,
+and retained output management.
+
+> [!WARNING]
+> Only Linux `restrictive` mode runs supported local non-interactive commands in
+> the Bubblewrap-backed `restrictive-v1` sandbox. The default `permissive` mode,
+> `moderate`, `enhanced`, and `enhanced-fast` execute commands directly on the
+> host. LLM or sampling evaluation is not filesystem, process, or network
+> isolation. Interactive terminals, remote execution, and detached execution
+> are not currently available in restrictive mode.
 
 ## 🚀 Quick Start
 
@@ -42,12 +51,22 @@ mcp-shell-server --help
 
 ### Configuration for Popular MCP Clients
 
+> [!CAUTION]
+> The minimal configurations below are direct host execution: an omitted mode
+> defaults to `permissive`, while `enhanced` adds evaluation but not OS
+> isolation. On Linux, set `MCP_SHELL_SECURITY_MODE` to `restrictive` when the
+> supported Bubblewrap boundary is required; otherwise provide isolation and
+> access control outside this server.
+
 #### Claude Desktop
 ```json
 {
   "mcpServers": {
     "mcp-shell-server": {
-      "command": "mcp-shell-server"
+      "command": "mcp-shell-server",
+      "env": {
+        "MCP_SHELL_SECURITY_MODE": "permissive"
+      }
     }
   }
 }
@@ -79,41 +98,46 @@ Add to MCP settings:
   "servers": {
     "mcp-shell-server": {
       "type": "stdio",
-      "command": "mcp-shell-server"
+      "command": "mcp-shell-server",
+      "env": {
+        "MCP_SHELL_SECURITY_MODE": "permissive"
+      }
     }
   }
 }
 ```
 
-📚 **[Detailed Setup Guides](docs/setup/)** | 📁 **[Configuration Examples](examples/)**
+📚 **[Documentation Map](docs/README.md)** | **[Setup Guides](docs/setup/)** | 📁 **[Configuration Examples](examples/)**
 
-## 🎉 Status: Production Ready
+## Implementation Status
 
-✅ **COMPLETE** - The MCP Shell Server is fully implemented and ready for production use.
+Core features are implemented. Production suitability depends on the selected
+execution mode and the surrounding host, identity, access-control, and resource
+containment measures.
 
 ### Build Status
 - ✅ TypeScript compilation successful
 - ✅ All strict type checking passed
-- ✅ Security validation working
+- ✅ Mode-specific execution-boundary validation working
 - ✅ Core managers operational
 - ✅ MCP integration complete
 
 ### Key Achievements
-- 🔐 **Explicit Security Boundaries**: Bubblewrap-backed restrictive execution and clearly identified unconfined modes
-- 🖥️ **18 MCP Tools**: Complete API covering all shell operations
-- 📊 **Real-time Monitoring**: System and process metrics
+- 🔐 **Explicit Execution Boundaries**: Bubblewrap-backed restrictive execution and clearly identified direct-host modes
+- 🖥️ **13 MCP Tools**: Shell execution, retained outputs, terminals, and command history
+- 📊 **Execution Tracking**: Query execution state and retained output
 - 🖥️ **Terminal Sessions**: Interactive PTY-based terminals
-- 📁 **File Management**: Secure file operations and storage
-- 🔌 **MCP Standards**: Full Model Context Protocol compliance
+- 📁 **Retained Outputs**: Managed output reading, deletion, and cleanup
+- 🔌 **MCP Integration**: Tool discovery and invocation over the MCP SDK
 
 ## Features
 
-### 🛡️ Security-First Design
+### 🛡️ Security Controls and Execution Boundaries
 - Bubblewrap sandboxing for restrictive local non-interactive execution
 - Fail-closed unsupported restrictive routes
 - Canonical request-path validation
 - Execution-time and output limits
-- Real-time security monitoring
+- Mode and launcher receipts in successful execution responses
 
 ### 🔧 Shell Operations
 - Multiple execution modes: foreground, background, detached, adaptive
@@ -128,41 +152,38 @@ Add to MCP settings:
 - Interactive terminal sessions
 - Multiple shell support (bash, zsh, fish, PowerShell)
 - **🆕 Control Code Support**: Send control characters and escape sequences
-- **🆕 Program Guard**: Secure input targeting with process validation
-- **🆕 Foreground Process Detection**: Real-time process information
+- **🆕 Program Guard**: Guarded input targeting with process validation
+- **🆕 Foreground Process Detection**: On-demand process information
 - Resizable terminals
 - Command history
-- Real-time output streaming
+- Incremental output reads with tracked positions
 
-### 🔐 Advanced Security Features
-- **🆕 Enhanced Safety Evaluator**: AI-powered command safety analysis
+### 🔐 Evaluation and Guard Features
+- **🆕 Enhanced Evaluator**: LLM-assisted command evaluation
   - LLM-based security evaluation with detailed reasoning
   - Context-aware risk assessment
   - Intelligent alternative suggestions
   - Built-in user intent elicitation for complex scenarios
-- **🆕 Program Guard System**: Prevents unintended input delivery
+- **🆕 Program Guard System**: Checks a requested process target before terminal input
   - Target specific processes by name, path, or PID
   - Session leader detection and validation
-  - Safe fallback behavior for unknown processes
-- **🆕 Control Code Validation**: Secure handling of terminal control sequences
+  - Fail-closed behavior when a requested target cannot be verified
+- **🆕 Control Code Parsing**: Text forms for terminal control sequences
 - Mode-specific isolation receipts
 - Explicit migration failure for legacy custom command lists
 
 ### 📁 File Operations
 - Output file management
-- **🆕 Automatic Cleanup**: Smart suggestions for old file cleanup with configurable retention policies
-- **🆕 Storage Analysis**: Real-time disk usage monitoring and optimization recommendations
-- Log file handling
-- Temporary file storage
-- Safe file reading with encoding support
-- Batch file operations
+- **🆕 Automatic Cleanup**: Age- and size-based cleanup suggestions with configurable retention policies
+- **🆕 Storage Analysis**: Managed-output counts and sizes used for cleanup suggestions
+- Managed retained-output metadata
+- Retained-output reading with encoding support
+- Batch retained-output deletion
 
-### 📊 Monitoring & Statistics
-- Real-time process monitoring
-- System resource tracking
-- Performance metrics
-- Usage statistics
-- Health monitoring
+### 📊 Execution State and History
+- Execution status lookup
+- Retained-output metadata and cleanup
+- Command-history query and analytics
 
 ## Installation
 
@@ -245,7 +266,7 @@ console.log(result.guidance.pipeline_usage);
 ```
 
 #### Automatic File Cleanup
-Smart cleanup suggestions and automated maintenance:
+Cleanup suggestions and automated maintenance:
 ```typescript
 // Get cleanup suggestions
 const suggestions = await client.request({
@@ -281,7 +302,7 @@ const cleanup = await client.request({
 await client.request({
   method: 'tools/call',
   params: {
-    name: 'terminal_send_input',
+    name: 'terminal_operate',
     arguments: {
       terminal_id: 'terminal_123',
       input: '^C',
@@ -294,7 +315,7 @@ await client.request({
 await client.request({
   method: 'tools/call',
   params: {
-    name: 'terminal_send_input',
+    name: 'terminal_operate',
     arguments: {
       terminal_id: 'terminal_123',
       input: '\\x1b[31mRed Text\\x1b[0m',
@@ -304,16 +325,16 @@ await client.request({
 });
 ```
 
-#### Program Guard Security
+#### Program Guard
 ```typescript
 // Only allow input to bash processes
 await client.request({
   method: 'tools/call',
   params: {
-    name: 'terminal_send_input',
+    name: 'terminal_operate',
     arguments: {
       terminal_id: 'terminal_123',
-      input: 'echo "secure command"',
+      input: 'echo "guarded command"',
       send_to: 'bash',
       execute: true
     }
@@ -324,7 +345,7 @@ await client.request({
 await client.request({
   method: 'tools/call',
   params: {
-    name: 'terminal_send_input',
+    name: 'terminal_operate',
     arguments: {
       terminal_id: 'terminal_123',
       input: '^C',
@@ -354,7 +375,7 @@ The server supports various environment variables (see sections below), such as:
 - `BACKOFFICE_ENABLED`, `BACKOFFICE_PORT`
 - `EXECUTION_BACKEND` and `EXECUTOR_*` for remote executor
 - `MCP_SHELL_DEFAULT_WORKDIR`, `MCP_SHELL_ALLOWED_WORKDIRS`
-- `MCP_DISABLED_TOOLS`, `LOG_LEVEL`
+- `MCP_DISABLED_TOOLS`
 
 ### Development
 
@@ -378,11 +399,11 @@ npm test
 
 The server security mode and trusted workspace roots are startup configuration supplied through environment variables. They are not mutable through the public MCP tool surface.
 
-### Default Security Settings
+### Default Execution Settings
 
 - The default mode is `permissive`: commands execute directly on the host and are not blocked by a command allow/block policy
 - Working-directory roots limit which existing directory may be selected; this validation is not a child-process sandbox or filesystem confinement boundary
-- 5-minute execution timeout
+- 60-second request timeout, subject to the default 300-second startup policy cap
 - Bounded retained command output; no per-process CPU, PID, or memory containment
 
 Use `MCP_SHELL_SECURITY_MODE=restrictive` on Linux with Bubblewrap for the fail-closed
@@ -400,7 +421,7 @@ The server supports the following environment variables for configuration:
 #### General Configuration
 - `MCP_DISABLED_TOOLS`: Comma-separated list of tool names to disable
   ```bash
-  export MCP_DISABLED_TOOLS="terminal_create,process_terminate"
+  export MCP_DISABLED_TOOLS="terminal_operate,delete_execution_outputs"
   ```
 
 #### Working Directory Configuration
@@ -414,7 +435,7 @@ The server supports the following environment variables for configuration:
   ```
 
 #### Security Configuration
-- `MCP_SHELL_SECURITY_MODE`: Set the default security mode (`permissive`, `restrictive`, `enhanced`, `enhanced-fast`, or `custom`)
+- `MCP_SHELL_SECURITY_MODE`: Set the default security mode (`permissive`, `moderate`, `restrictive`, `enhanced`, `enhanced-fast`, or `custom`)
   ```bash
   export MCP_SHELL_SECURITY_MODE="enhanced"
   ```
@@ -423,7 +444,7 @@ The server supports the following environment variables for configuration:
   ```bash
   export MCP_SHELL_ELICITATION="true"
   ```
-- `MCP_SHELL_LLM_API_KEY`: API key for LLM-based safety evaluation (optional, falls back to MCP sampling)
+- `MCP_SHELL_LLM_API_KEY`: API key for LLM-based command evaluation (optional, falls back to MCP sampling)
 - `MCP_SHELL_LLM_TIMEOUT`: Timeout for LLM evaluation in seconds (default: 30)
 
 #### Execution Limits
@@ -445,7 +466,7 @@ export MCP_SHELL_DEFAULT_WORKDIR="/home/user/projects"
 export MCP_SHELL_ALLOWED_WORKDIRS="/home/user/projects/project-a"
 
 # Tool restrictions
-export MCP_DISABLED_TOOLS="process_terminate,delete_execution_outputs"
+export MCP_DISABLED_TOOLS="terminal_operate,delete_execution_outputs"
 
 # Start the server
 npm start
@@ -476,16 +497,16 @@ Execute shell commands with various execution modes. Interactive terminal creati
 - `command` (required): Command to execute
 - `execution_mode`: Execution strategy for the command:
   - `'foreground'`: Wait for command completion within timeout_seconds. Best for quick commands
-  - `'background'`: Run asynchronously, monitor via process_list. Best for long-running processes
+  - `'background'`: Run asynchronously, monitor via `process_get_execution`. Best for long-running processes
   - `'detached'`: Fire-and-forget execution, minimal monitoring. Best for independent processes
   - `'adaptive'` (default): Start foreground for foreground_timeout_seconds, then switch to background if needed. Best for unknown execution times
 - `input_output_id`: Use output from another command as input (Pipeline feature)
 - `working_directory`: Working directory
 - `environment_variables`: Environment variables
-- `timeout_seconds`: Maximum execution timeout (all modes respect this limit)
-- `foreground_timeout_seconds`: For adaptive mode: initial foreground phase timeout (default: 10s)
+- `timeout_seconds`: Maximum execution timeout (default: 60s; all modes respect this limit)
+- `foreground_timeout_seconds`: For adaptive mode: initial foreground phase timeout (default: 15s)
 - `return_partial_on_timeout`: Return partial output on timeout
-- `max_output_size`: Maximum output size
+- `max_output_size`: Maximum retained output size (default: 5 MiB; schema maximum: 100 MiB)
 - `create_terminal`: Create new interactive terminal session
 - `terminal_shell`: Shell type for new terminal ('bash', 'zsh', 'fish', etc.)
 - `terminal_dimensions`: Terminal dimensions {width, height}
@@ -514,15 +535,18 @@ Adaptive execution with intelligent background transition:
 **Pipeline Feature - Command Chaining:**
 The MCP Shell Server supports command chaining through the Pipeline feature, allowing output from one command to be used as input for another command:
 
+Step 1: execute the first command and retain its `output_id`:
+
 ```json
-// Step 1: Execute first command and get output_id
 {
   "command": "cat input.txt",
   "execution_mode": "foreground"
 }
-// Response includes: "output_id": "abc123..."
+```
 
-// Step 2: Use output from first command as input for second command
+Step 2: use the returned `output_id` as input:
+
+```json
 {
   "command": "grep 'pattern'",
   "execution_mode": "foreground",
@@ -536,7 +560,7 @@ The MCP Shell Server supports command chaining through the Pipeline feature, all
 - Use `output_id` from first command's response as `input_output_id` for second command
 - If the source execution is still running, `input_output_id` reads its retained transition snapshot; it is not a live stream. Wait for completion before consuming final output
 - FileManager automatically handles data transfer between commands
-- Supports large output files (up to 100MB)
+- The schema accepts retained-output limits up to 100 MiB; the default is 5 MiB
 
 **Adaptive Mode Features:**
 - Automatically transitions to background when `foreground_timeout_seconds` is reached
@@ -562,47 +586,44 @@ Get detailed information about a command execution.
 #### `shell_set_default_workdir`
 Set the default working directory for command execution.
 
-### Process Management
+### Retained Output Management
 
-#### `process_list`
-List running processes with filtering options.
+#### `list_execution_outputs`
+List retained command outputs with execution, type, and name filters.
 
-#### `process_terminate`
-Safely terminate processes with signal control.
+#### `read_execution_output`
+Read retained output by `output_id`.
 
-#### `process_monitor`
-Start real-time process monitoring.
+#### `delete_execution_outputs`
+Delete retained outputs with explicit confirmation.
+
+#### `get_cleanup_suggestions`
+Inspect retained-output age and storage usage and return cleanup candidates.
+
+#### `perform_auto_cleanup`
+Apply age and retention policies, with dry-run support.
 
 ### Terminal Management
 
-#### `terminal_create`
-Create interactive terminal sessions.
+#### `terminal_operate`
+Create a host terminal, send input, resize it, and retrieve output through one
+tool. Mutation is unavailable in restrictive mode. Important parameters include
+`terminal_id`, `command`, `input`, `execute`, `control_codes`, `send_to`,
+`dimensions`, and `get_output`.
 
-#### `terminal_send_input`
-Send input to terminals.
-
-#### `terminal_get_output`
-Get terminal output with ANSI support.
+#### `terminal_list`
+List active terminal sessions.
 
 #### `terminal_get_info`
 Get detailed terminal information.
 
-#### `terminal_resize`
-Resize terminal dimensions.
-
 #### `terminal_close`
-Close terminal sessions.
+Close a terminal session.
 
-### File Operations
+### Command History
 
-#### `list_execution_outputs`
-List managed output files with filtering.
-
-#### `read_execution_output`
-Read output file contents safely.
-
-#### `delete_execution_outputs`
-Delete output files with confirmation.
+#### `command_history_query`
+Query command history by execution ID, search filters, pagination, or analytics.
 
 ## Architecture
 
@@ -635,7 +656,7 @@ mcp-shell-server/
 1. **Execution Boundary**: Only restrictive local non-interactive execution is OS-confined by Bubblewrap; other modes are explicitly unconfined
 2. **Path Validation**: Existing request paths and working directories use canonical component-boundary checks; this alone is not a child-process filesystem sandbox
 3. **Resource Limits**: Execution-time and host-memory output-retention limits are enforced by the server; complete cgroup-backed CPU/memory containment is not provided
-4. **Audit Logging**: All operations are logged for security auditing
+4. **Operational Records**: After `shell_execute` obtains an initial execution result, it attempts to add command metadata to command history; selected lifecycle and error events are also logged. This is not a complete or tamper-evident audit trail for every MCP tool call
 5. **Fail-closed Sandbox**: Restrictive requests never fall back to host execution when Bubblewrap or a covered route is unavailable
 
 Restrictive launch rejects observed sockets, FIFOs, devices, and unknown special entries below the approved root. Keep sensitive runtime endpoints outside approved roots: nested mounts, FUSE behavior, and concurrent host mutation after inspection remain outside this expedited profile's local-operator threat model.
@@ -655,17 +676,17 @@ The server provides categorized application error codes in MCP tool-error `struc
 
 ## Performance
 
-- **Concurrent Processes**: Up to 50 simultaneous processes
-- **Terminal Sessions**: Up to 20 active terminals
-- **File Management**: Up to 10,000 managed files
-- **Memory Efficient**: Automatic cleanup and garbage collection
-- **Scalable**: Designed for high-throughput operations
+- **Concurrent Processes**: Default limit of 50 simultaneous processes
+- **Terminal Sessions**: Default limit of 20 active terminals
+- **Retained Outputs**: Up to 10,000 managed output entries
+- **Output Bound**: Default 5 MiB and maximum 100 MiB per `shell_execute` request
+- **External Containment**: CPU, PID, and per-process memory limits require an external service manager or cgroup
 
 ## Platform Support
 
-- ✅ Linux (Full support)
-- ✅ macOS (Full support)
-- ⚠️ Windows (Basic support)
+- Linux, macOS, and Windows support direct-host execution
+- The `restrictive-v1` Bubblewrap boundary is Linux-only
+- Interactive terminal availability depends on a working `node-pty` installation
 
 ## Contributing
 
@@ -681,26 +702,23 @@ MIT License - see LICENSE file for details.
 
 ## Version History
 
-### v2.0.0 (2025-06-13)
-- Complete API redesign
-- Enhanced security features
-- Performance improvements
-- New terminal management
-- Comprehensive monitoring
+The current package version is 2.8.0. See [CHANGELOG.md](CHANGELOG.md) for
+release history and behavior changes.
 
 ## Documentation
 
 ### Core Documentation
 - [API Specification](docs/specification.md) - Complete API reference
 - [Control Codes Guide](docs/control-codes.md) - Terminal control sequences and escape codes
-- [Program Guard Manual](docs/program-guard.md) - Security features and process targeting
+- [Program Guard Manual](docs/program-guard.md) - Guarded terminal input and process targeting
 - [Document Provenance](docs/document-provenance.md) - Sealgraph dependency and review workflow
+- [Documentation Map](docs/README.md) - Current documents and historical design material
 
 ### Examples
 - [Control Codes Demo](examples/control-codes-demo.js) - Control code usage examples
-- [Program Guard Demo](examples/program-guard-demo.js) - Security feature demonstrations
+- [Program Guard Demo](examples/program-guard-demo.js) - Guarded-input examples
 
 ### Getting Started
 - Review the [API Specification](docs/specification.md) for complete tool documentation
 - Check out [Control Codes Guide](docs/control-codes.md) for advanced terminal features
-- Learn about [Program Guard](docs/program-guard.md) for enhanced security
+- Learn about [Program Guard](docs/program-guard.md) for process-targeted terminal input

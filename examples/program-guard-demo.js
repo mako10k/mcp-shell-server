@@ -1,157 +1,77 @@
 #!/usr/bin/env node
 
 /**
- * MCP Shell Server - プログラムガード機能のデモ
- * 
- * このスクリプトは、プログラムガード機能の使用例を示します。
+ * MCP Shell Server - terminal_operate Program Guard request examples.
+ *
+ * The script prints request payloads; it does not inspect processes or send
+ * terminal input. Replace the placeholder terminal ID and PID with values from
+ * the target host terminal.
  */
 
-console.log('MCP Shell Server - プログラムガード機能');
-console.log('==========================================');
-console.log();
+const terminalId = 'terminal_123';
 
-// 1. ターミナル作成の例
-console.log('1. ターミナル作成');
-console.log('=================');
-const createTerminalExample = {
-  shell_type: 'bash',
-  dimensions: { width: 80, height: 24 },
-  session_name: 'demo-terminal',
-  auto_save_history: true
+const creationRequest = {
+  tool: 'terminal_operate',
+  arguments: {
+    command: 'printf "terminal ready\\n"',
+    shell_type: 'bash',
+    get_output: true,
+  },
 };
-console.log('terminal_create:');
-console.log(JSON.stringify(createTerminalExample, null, 2));
-console.log();
 
-// 2. プログラムガード付き入力の例
-console.log('2. プログラムガード付き入力');
-console.log('============================');
-
-const guardExamples = [
-  {
-    name: 'bashプロセスのみに送信',
-    params: {
-      terminal_id: 'terminal_123',
+const guardRequests = {
+  processName: {
+    tool: 'terminal_operate',
+    arguments: {
+      terminal_id: terminalId,
       input: 'echo "Hello from bash"',
+      execute: true,
       send_to: 'bash',
-      execute: true
-    }
+      get_output: true,
+    },
   },
-  {
-    name: '特定のPIDのプロセスのみに送信',
-    params: {
-      terminal_id: 'terminal_123',
+  exactPid: {
+    tool: 'terminal_operate',
+    arguments: {
+      terminal_id: terminalId,
       input: '^C',
+      execute: false,
+      control_codes: true,
       send_to: 'pid:12345',
-      control_codes: true
-    }
+      get_output: true,
+    },
   },
-  {
-    name: 'セッションリーダーのみに送信',
-    params: {
-      terminal_id: 'terminal_123',
+  sessionLeader: {
+    tool: 'terminal_operate',
+    arguments: {
+      terminal_id: terminalId,
       input: 'logout',
+      execute: true,
       send_to: 'sessionleader:',
-      execute: true
-    }
+      get_output: true,
+    },
   },
-  {
-    name: 'フルパス指定',
-    params: {
-      terminal_id: 'terminal_123',
-      input: 'ls -la',
-      send_to: '/bin/bash',
-      execute: true
-    }
+  executablePath: {
+    tool: 'terminal_operate',
+    arguments: {
+      terminal_id: terminalId,
+      input: 'pwd',
+      execute: true,
+      send_to: '/usr/bin/bash',
+      get_output: true,
+    },
   },
-  {
-    name: '制限なし',
-    params: {
-      terminal_id: 'terminal_123',
-      input: 'any command',
-      send_to: '*',
-      execute: true
-    }
-  }
-];
-
-guardExamples.forEach((example, index) => {
-  console.log(`${index + 1}. ${example.name}`);
-  console.log('terminal_input:');
-  console.log(JSON.stringify(example.params, null, 2));
-  console.log();
-});
-
-// 3. フォアグラウンドプロセス情報取得の例
-console.log('3. フォアグラウンドプロセス情報取得');
-console.log('==================================');
-
-const getProcessInfoExample = {
-  terminal_id: 'terminal_123',
-  include_foreground_process: true
 };
-console.log('terminal_output:');
-console.log(JSON.stringify(getProcessInfoExample, null, 2));
+
+console.log('Create a host terminal:');
+console.log(JSON.stringify(creationRequest, null, 2));
 console.log();
+console.log('Program Guard requests for the returned terminal_id:');
 
-// 4. 期待されるレスポンス例
-console.log('4. 期待されるレスポンス例');
-console.log('========================');
+for (const [name, request] of Object.entries(guardRequests)) {
+  console.log(`\n${name}:`);
+  console.log(JSON.stringify(request, null, 2));
+}
 
-console.log('terminal_input のレスポンス（成功）:');
-const successResponse = {
-  success: true,
-  input_sent: 'echo "Hello from bash"',
-  control_codes_enabled: false,
-  raw_bytes_mode: false,
-  program_guard: {
-    passed: true,
-    target: 'bash'
-  },
-  timestamp: '2025-06-17T10:30:00Z'
-};
-console.log(JSON.stringify(successResponse, null, 2));
-console.log();
-
-console.log('terminal_input のレスポンス（ガード失敗）:');
-const guardFailResponse = {
-  error: {
-    code: 'EXECUTION_ERROR',
-    message: 'Program guard failed: input rejected for target "vim"'
-  }
-};
-console.log(JSON.stringify(guardFailResponse, null, 2));
-console.log();
-
-console.log('terminal_output のレスポンス（プロセス情報付き）:');
-const outputWithProcessResponse = {
-  terminal_id: 'terminal_123',
-  output: 'Hello from bash\\nuser@host:~$ ',
-  line_count: 2,
-  total_lines: 50,
-  has_more: true,
-  foreground_process: {
-    available: true,
-    process: {
-      pid: 12345,
-      name: 'bash',
-      path: '/bin/bash',
-      sessionId: 12340,
-      isSessionLeader: true,
-      parentPid: 1234
-    }
-  }
-};
-console.log(JSON.stringify(outputWithProcessResponse, null, 2));
-console.log();
-
-// 5. セキュリティのポイント
-console.log('5. セキュリティのポイント');
-console.log('========================');
-console.log('• フォアグラウンドプロセスが検出できない場合、入力は拒否されます');
-console.log('• プロセス情報はキャッシュされ、パフォーマンスが最適化されています');
-console.log('• ガード条件に一致しないプロセスへの入力は安全に拒否されます');
-console.log('• セッションリーダーの検出により、シェルレベルの制御が可能です');
-console.log();
-
-console.log('使用方法の詳細は docs/program-guard.md を参照してください。');
+console.log('\nProgram Guard is a point-in-time foreground-process check.');
+console.log('It is not an OS isolation boundary and is unavailable in restrictive mode.');

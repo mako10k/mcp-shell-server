@@ -1,5 +1,8 @@
 # 修正計画: Confidence と Safety Level に基づく改善
 
+Status: historical implementation plan. Completed checkboxes do not define the
+current public API or execution boundary.
+
 ## 概要
 本修正計画は、`confidence` と `safety_level` に関する議論および結論に基づき、システムの設計と実装を改善するための具体的な手順を示します。
 

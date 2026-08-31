@@ -10,7 +10,7 @@ import {
 
 const PROVIDER_ID = 'mcp-shell-server.provider';
 const SERVER_LABEL = 'MCP Shell Server';
-const SERVER_VERSION = '2.7.0';
+const SERVER_VERSION = '2.8.0';
 const TOOL_NAMES = [
   'shell_execute',
   'process_get_execution',

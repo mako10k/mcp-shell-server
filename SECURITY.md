@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.0.x   | :white_check_mark: |
-| < 2.0   | :x:                |
+| 2.8.x   | :white_check_mark: |
+| < 2.8   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -26,15 +26,15 @@ We take security vulnerabilities seriously. Please follow these steps to report 
 - **Confirmation**: Within 7 days
 - **Fix Release**: Within 30 days (for critical issues)
 
-### Security Features
+### Execution-Boundary Controls and Disclosures
 
-This project includes several security features:
+The current implementation provides the following controls and receipts:
 
 - **Restrictive Sandbox**: Restrictive local non-interactive commands run through a required Bubblewrap profile with a read-only workspace, private temporary storage, fixed environment, and no IP network
 - **Canonical Path Validation**: Existing request paths use real-path and component-boundary checks; path validation alone is not filesystem confinement
 - **Fail-closed Routes**: Restrictive terminal, remote, detached, environment-override, and provider-failure paths stop before the requested command starts
 - **Resource Limits**: Execution-time and host-memory output-retention limits are enforced; complete cgroup-backed CPU and memory containment is not currently provided
-- **Audit Logging**: All operations are logged for security auditing
+- **Operational Records**: After `shell_execute` obtains an initial execution result, it attempts to add command metadata to command history. Selected lifecycle and error events are also logged. These records are not a complete or tamper-evident audit trail of every MCP tool call
 - **Explicit Receipts**: Successful executions identify whether they used the direct host launcher or the restrictive Bubblewrap profile
 
 ### Security Best Practices
@@ -44,7 +44,7 @@ When using this server:
 1. Always run with minimal required permissions
 2. Regularly update to the latest version
 3. Configure appropriate security restrictions
-4. Monitor audit logs for suspicious activity
+4. Monitor the available command history and operational logs, accounting for their coverage limits
 5. Use network restrictions when possible
 
 ### Known Security Considerations
@@ -58,4 +58,4 @@ When using this server:
 - Bubblewrap and its host installation path are trusted operator-managed dependencies; deliberate host-side replacement or concurrent mount-tree mutation is outside this local-user threat model
 - Terminal sessions can persist in unconfined modes - implement session timeouts
 - File-operation path checks do not constrain arbitrary effects of an unconfined child process
-- Process monitoring requires appropriate system permissions
+- Program Guard foreground-process discovery currently depends on Linux `/proc` data and is a point-in-time application check, not an isolation boundary

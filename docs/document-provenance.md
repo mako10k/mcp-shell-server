@@ -35,37 +35,51 @@ runtime directories are not. Run `sealgraph init` once in the checkout to
 recreate `index` and `locks` before inspection. On an existing valid format-4
 repository this does not replace the canonical graph.
 
-## Initial document graph
+## Current document graph
 
 `Depends on` lists direct upstream Cause links. Transitive dependencies are
 committed through the resulting Merkle DAG.
 
 | Document REF | Depends on |
 | --- | --- |
-| `docs/document-provenance.md` | root |
-| `docs/specification.md` | root |
-| `SECURITY.md` | root |
-| `docs/control-codes.md` | `docs/specification.md` |
-| `docs/program-guard.md` | `docs/specification.md`, `SECURITY.md` |
-| `docs/setup/claude-desktop.md` | `docs/specification.md`, `SECURITY.md` |
-| `docs/setup/vscode.md` | `docs/specification.md`, `SECURITY.md` |
-| `README.md` | all documents above |
+| `package.json`, `CHANGELOG.md`, `docs/document-provenance.md` | root |
+| `src/index.ts`, `src/server.ts`, `src/types/schemas.ts`, `src/types/quick-schemas.ts` | root |
+| `src/security/manager.ts`, `src/tools/shell-tools.ts` | root |
+| `src/core/process-manager.ts`, `src/core/terminal-manager.ts` | root |
+| `src/core/enhanced-history-manager.ts`, `src/utils/helpers.ts` | root |
+| `extensions/vscode-mcp-shell/package.json` | `package.json`, server and schema roots |
+| `extensions/vscode-mcp-shell/src/extension.ts` | `package.json`, `src/server.ts`, extension package metadata |
+| `docs/specification.md` | package, CLI, server, schema, policy, handler, process, terminal, history, and logger roots |
+| `SECURITY.md` | `package.json`, policy, handler, process, terminal, and logger roots |
+| `docs/control-codes.md` | specification, quick schema, terminal manager |
+| `docs/program-guard.md` | specification, security policy, quick schema, terminal manager |
+| each setup guide | `package.json`, specification, security policy |
+| `CONTRIBUTING.md` | `package.json` |
+| `GITHUB_SETUP.md` | `package.json`, security policy, changelog, contributing guide |
+| each JSON client example | matching setup guide, security policy |
+| each JavaScript terminal demo | matching terminal guide, quick schema |
+| `docs/README.md` | all current and maintainer documents above, plus changelog |
+| `README.md` | `package.json`, extension package metadata, documentation map, all packaged examples |
 
-The public README is intentionally downstream of the security policy, API
-specification, feature guides, and copyable setup guides. Advancing any of
-those upstream REFs makes the existing README Seal stale until it is reviewed
-against the new exact generations and resealed.
+The specification is intentionally downstream of the implementation files that
+define the registered tools, schemas, execution boundaries, terminal behavior,
+history, and logging. The public README is downstream of the resulting current
+documentation set and packaged examples. Advancing an upstream REF makes each
+affected downstream Seal stale until it is reviewed against the new exact
+generation and resealed.
 
 ## Updating one document
 
-After editing a document, refresh only that REF and inspect the candidate before
-sealing it:
+After editing an authoritative source, refresh only that REF and inspect the
+candidate before sealing it:
 
 ```bash
-sealgraph add SECURITY.md --content-file SECURITY.md --root
-sealgraph candidate show SECURITY.md
-sealgraph candidate compare SECURITY.md
-sealgraph seal SECURITY.md
+sealgraph add src/security/manager.ts \
+  --content-file src/security/manager.ts \
+  --root
+sealgraph candidate show src/security/manager.ts
+sealgraph candidate compare src/security/manager.ts
+sealgraph seal src/security/manager.ts
 ```
 
 For a dependent document, provide the complete intended dependency set. Bare
@@ -99,6 +113,7 @@ Before committing graph changes, run:
 
 ```bash
 sealgraph init
+npm run docs:check
 sealgraph fsck
 sealgraph status
 sealgraph stale --scan
@@ -107,4 +122,6 @@ git status --short
 ```
 
 Canonical graph files must be committed together with the corresponding
-document changes. Runtime-only paths must remain ignored and untracked.
+document changes. For every tracked REF, `sealgraph show REF --raw-content`
+must byte-compare equal to its repository file. Runtime-only paths must remain
+ignored and untracked.

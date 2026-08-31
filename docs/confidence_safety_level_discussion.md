@@ -1,5 +1,8 @@
 # Confidence と Safety Level に関する仕様検討
 
+Status: historical design discussion. It may describe superseded evaluator
+behavior and is not a current public contract.
+
 ## 概要
 本ドキュメントでは、`confidence` と `safety_level` の役割、問題点、代替案について議論します。これらのパラメータは現在のコードベースで使用されていますが、ユーザーからその有効性に疑問が呈されており、削除または改善が求められています。
 

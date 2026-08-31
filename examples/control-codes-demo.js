@@ -1,89 +1,76 @@
 #!/usr/bin/env node
 
 /**
- * MCP Shell Server - 制御コード送信のデモ
- * 
- * このスクリプトは、MCP Shell Serverの制御コード送信機能をデモンストレーションします。
+ * MCP Shell Server - terminal_operate control-code request examples.
+ *
+ * The script prints request payloads; it does not start the MCP server or send
+ * terminal input. Replace the placeholder terminal ID with one returned by a
+ * terminal_operate creation request.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+const terminalId = 'terminal_123';
 
-// サーバーの設定
-const server = new Server(
-  {
-    name: 'mcp-shell-demo',
-    version: '1.0.0',
+const creationRequest = {
+  tool: 'terminal_operate',
+  arguments: {
+    command: 'printf "terminal ready\\n"',
+    shell_type: 'bash',
+    get_output: true,
   },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
-
-// 制御コード送信の例
-const controlCodeExamples = {
-  // プロセス中断
-  interruptProcess: {
-    terminal_id: 'terminal_123',
-    input: '^C',
-    control_codes: true
-  },
-  
-  // 画面クリア
-  clearScreen: {
-    terminal_id: 'terminal_123', 
-    input: '^L',
-    control_codes: true
-  },
-  
-  // ESCキー送信
-  escapeKey: {
-    terminal_id: 'terminal_123',
-    input: '\\x1b',
-    control_codes: true
-  },
-  
-  // 色付きテキスト (ANSI エスケープシーケンス)
-  coloredText: {
-    terminal_id: 'terminal_123',
-    input: '\\x1b[31mRed Text\\x1b[0m',
-    control_codes: true
-  },
-  
-  // 上矢印キー（生バイト）
-  upArrow: {
-    terminal_id: 'terminal_123',
-    input: '1b5b41',  // ESC[A
-    raw_bytes: true
-  },
-  
-  // Tab補完
-  tabCompletion: {
-    terminal_id: 'terminal_123',
-    input: '\\t',
-    control_codes: true
-  }
 };
 
-console.log('MCP Shell Server - 制御コード送信機能');
-console.log('=====================================');
-console.log();
-console.log('利用可能な制御コード例:');
-console.log();
+const controlCodeRequests = {
+  interruptProcess: {
+    tool: 'terminal_operate',
+    arguments: {
+      terminal_id: terminalId,
+      input: '^C',
+      execute: false,
+      control_codes: true,
+      get_output: true,
+    },
+  },
+  clearScreen: {
+    tool: 'terminal_operate',
+    arguments: {
+      terminal_id: terminalId,
+      input: '^L',
+      execute: false,
+      control_codes: true,
+      get_output: true,
+    },
+  },
+  escapeKey: {
+    tool: 'terminal_operate',
+    arguments: {
+      terminal_id: terminalId,
+      input: '\\x1b',
+      execute: false,
+      control_codes: true,
+      get_output: true,
+    },
+  },
+  tabKey: {
+    tool: 'terminal_operate',
+    arguments: {
+      terminal_id: terminalId,
+      input: '\\t',
+      execute: false,
+      control_codes: true,
+      get_output: true,
+    },
+  },
+};
 
-Object.entries(controlCodeExamples).forEach(([name, params]) => {
-  console.log(`${name}:`);
-  console.log(JSON.stringify(params, null, 2));
-  console.log();
-});
-
-console.log('使用方法:');
-console.log('1. ターミナルを作成: terminal_create');
-console.log('2. 制御コード送信: terminal_input (上記パラメータを使用)');
-console.log('3. 出力確認: terminal_output');
+console.log('Create a host terminal:');
+console.log(JSON.stringify(creationRequest, null, 2));
 console.log();
-console.log('注意: control_codes=true または raw_bytes=true を設定することで');
-console.log('     制御コードの送信が有効になります。');
+console.log('Control-code requests for the returned terminal_id:');
+
+for (const [name, request] of Object.entries(controlCodeRequests)) {
+  console.log(`\n${name}:`);
+  console.log(JSON.stringify(request, null, 2));
+}
+
+console.log('\nControl-code input and terminal creation are unavailable in restrictive mode.');
+console.log('The public terminal_operate schema does not expose raw byte input.');

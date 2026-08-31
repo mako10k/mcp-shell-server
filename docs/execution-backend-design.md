@@ -1,6 +1,8 @@
 # Execution Backend Separation Design (Draft / Phase 1)
 
-This document proposes splitting command execution and terminal operations into a dedicated backend service, while keeping the MCP server as the secure “frontend”.
+Status: design reference; not the current public API contract.
+
+This document proposes splitting command execution and terminal operations into a dedicated backend service, while keeping policy evaluation and orchestration in the MCP frontend.
 
 ## Goals
 - MCP server remains the frontend: security evaluation, history, backoffice UI.

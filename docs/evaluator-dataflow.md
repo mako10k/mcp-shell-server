@@ -1,5 +1,8 @@
 # Enhanced Safety Evaluator Data Flow Visualization
 
+Status: historical implementation visualization. Verify current evaluator
+behavior in `src/security/enhanced-evaluator.ts`.
+
 ## 1. Main Evaluation Flow
 
 ```mermaid

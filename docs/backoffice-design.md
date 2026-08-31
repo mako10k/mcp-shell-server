@@ -1,5 +1,8 @@
 # Backoffice Web Server Design (Phase 1)
 
+Status: implementation design reference. Verify current behavior in
+`src/backoffice/server.ts`; this document is not a public API contract.
+
 Scope: Monitoring dashboard to view command history, execution results, and terminal list. Localhost only; no authentication for now.
 
 ## Goals

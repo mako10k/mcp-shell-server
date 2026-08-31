@@ -3,8 +3,9 @@
     "mcp-shell-server": {
       "command": "mcp-shell-server",
       "env": {
+        "MCP_SHELL_SECURITY_MODE": "permissive",
         "MCP_SHELL_DEFAULT_WORKDIR": "/Users/yourusername/projects",
-        "MCP_SHELL_ALLOWED_WORKDIRS": "/Users/yourusername/projects,/tmp"
+        "MCP_SHELL_ALLOWED_WORKDIRS": "/Users/yourusername/projects"
       }
     }
   }

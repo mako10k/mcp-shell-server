@@ -1,24 +1,43 @@
-# ターミナル制御コード送信機能
+# Terminal Control Codes
 
-`terminal_input` ツールを使用して、ターミナルに制御コード（制御文字、エスケープシーケンス）を送信できます。
+Public control-code input is provided through the `terminal_operate` tool.
+Terminal creation and input use host terminals and are unavailable in
+`restrictive` mode.
 
-## 使用方法
+## Basic request
 
-### 基本的な使い方
+Set `control_codes` to true. Set `execute` to false unless an additional Enter
+key should be sent after the control sequence.
 
 ```json
 {
   "terminal_id": "terminal_123",
-  "input": "echo hello",
+  "input": "^C",
   "execute": false,
-  "control_codes": false,
-  "raw_bytes": false
+  "control_codes": true,
+  "get_output": true
 }
 ```
 
-### 制御コードの送信
+## Accepted text forms
 
-制御コードを送信するには、`control_codes` を `true` に設定します：
+`terminal_operate` passes control-code text to the terminal manager, which
+recognizes these forms:
+
+| Form | Examples |
+| --- | --- |
+| Ctrl notation | `^C`, `^D`, `^L`, `^Z` |
+| Common escapes | `\n`, `\r`, `\t`, `\b`, `\f`, `\v`, `\0` |
+| Hex escape | `\x1b`, `\x03` |
+| Octal escape | `\033`, `\003` |
+| Unicode escape | `\u001b`, `\u0003` |
+
+The JSON representation must escape the backslash. For example, the text
+`\x1b` is written as `"\\x1b"` in JSON.
+
+## Examples
+
+Interrupt the foreground process:
 
 ```json
 {
@@ -29,112 +48,46 @@
 }
 ```
 
-### サポートしている制御コード形式
+Clear the terminal:
 
-#### 1. Ctrl+文字形式
-- `^C` - Ctrl+C (プロセス中断)
-- `^Z` - Ctrl+Z (プロセス一時停止)
-- `^D` - Ctrl+D (EOF)
-- `^L` - Ctrl+L (画面クリア)
-
-#### 2. エスケープシーケンス
-- `\n` - 改行
-- `\r` - キャリッジリターン
-- `\t` - タブ
-- `\b` - バックスペース
-- `\f` - フォームフィード
-- `\v` - 垂直タブ
-- `\0` - ヌル文字
-
-#### 3. 16進数エスケープ
-- `\x1b` - ESCキー (ASCII 27)
-- `\x03` - Ctrl+C (ASCII 3)
-- `\x04` - Ctrl+D (ASCII 4)
-
-#### 4. 8進数エスケープ
-- `\033` - ESCキー (8進数で27)
-- `\003` - Ctrl+C (8進数で3)
-
-#### 5. Unicode エスケープ
-- `\u001b` - ESCキー (Unicode U+001B)
-- `\u0003` - Ctrl+C (Unicode U+0003)
-
-### 生バイト送信
-
-16進数文字列として生のバイトデータを送信する場合：
-
-```json
-{
-  "terminal_id": "terminal_123",
-  "input": "1b5b413",  // ESC[A (上矢印キー)
-  "execute": false,
-  "control_codes": false,
-  "raw_bytes": true
-}
-```
-
-## 実用例
-
-### プロセスを中断する
-```json
-{
-  "terminal_id": "terminal_123",
-  "input": "^C",
-  "control_codes": true
-}
-```
-
-### 画面をクリアする
 ```json
 {
   "terminal_id": "terminal_123",
   "input": "^L",
+  "execute": false,
   "control_codes": true
 }
 ```
 
-### ESCキーを送信する
+Send Escape:
+
 ```json
 {
   "terminal_id": "terminal_123",
-  "input": "\x1b",
+  "input": "\\x1b",
+  "execute": false,
   "control_codes": true
 }
 ```
 
-### ANSIエスケープシーケンスを送信する（色変更）
+Send an ANSI sequence:
+
 ```json
 {
   "terminal_id": "terminal_123",
-  "input": "\x1b[31mRed Text\x1b[0m",
-  "control_codes": true
+  "input": "\\x1b[31mRed Text\\x1b[0m",
+  "execute": false,
+  "control_codes": true,
+  "include_ansi": true
 }
 ```
 
-### 矢印キーを送信する（生バイト）
-```json
-{
-  "terminal_id": "terminal_123",
-  "input": "1b5b41",  // ESC[A (上矢印)
-  "raw_bytes": true
-}
-```
+## Public boundary
 
-## 注意事項
+The internal terminal manager contains a raw-byte helper, but version 2.8.0
+does not expose `raw_bytes` in the public `terminal_operate` schema. Clients
+must not send that parameter.
 
-1. **制御コードは慎重に使用する**: 制御コードはターミナルの状態を変更する可能性があります
-2. **raw_bytes モードでは16進数文字列を使用**: バイトデータは16進数文字列として指定する必要があります
-3. **履歴には記録されない**: 制御コードや生バイトは履歴に保存されません
-4. **ターミナル依存**: 一部の制御コードはターミナルエミュレータに依存する場合があります
-
-## よく使用される制御コード
-
-| 制御コード | 16進数 | 機能 |
-|-----------|--------|------|
-| ^C | \x03 | プロセス中断 |
-| ^D | \x04 | EOF / ログアウト |
-| ^Z | \x1a | プロセス一時停止 |
-| ^L | \x0c | 画面クリア |
-| ESC | \x1b | エスケープキー |
-| Tab | \x09 | タブ補完 |
-| Enter | \x0d | コマンド実行 |
+Control-code input is not added to normal command history. It can still change
+or terminate the foreground process, so clients should use `send_to` when a
+specific process identity is required. See [Program Guard](program-guard.md).
