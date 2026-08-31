@@ -116,7 +116,7 @@ export class MCPShellServer {
         // Shell Operations
         {
           name: 'shell_execute',
-          description: 'Execute shell commands securely with intelligent output handling. When output_truncated=true, use output_id with read_execution_output to get complete results. Returns partial output for immediate context while preserving full results in files. Supports adaptive execution mode that automatically switches to background for long-running commands. New: Support pipeline operations with input_output_id to use previous command output as input. NOTE: This is MCP Shell Server tool - do NOT use VS Code internal run_in_terminal parameters like "explanation" or "isBackground".',
+          description: 'Execute shell commands with bounded output retention. When output_id is present, read_execution_output returns the retained output; output_truncated=true means data beyond max_output_size was not retained. Supports adaptive execution mode and input_output_id pipeline operations. NOTE: This is MCP Shell Server tool - do NOT use VS Code internal run_in_terminal parameters like "explanation" or "isBackground".',
           inputSchema: zodToJsonSchema(ShellExecuteParamsSchema, { target: 'jsonSchema7' })
         },
         {
@@ -138,7 +138,7 @@ export class MCPShellServer {
         },
         {
           name: 'read_execution_output',
-          description: 'Read complete output from command executions when output_truncated=true. Use output_id from shell_execute response to get full stdout/stderr that exceeded size limits or was cut off due to timeouts. Essential for viewing complete results of long commands or large outputs.',
+          description: 'Read retained output from a command execution. The output_id does not bypass max_output_size; output_truncated=true means additional data was discarded to protect server memory.',
           inputSchema: zodToJsonSchema(FileReadParamsSchema, { target: 'jsonSchema7' })
         },
         {
@@ -162,7 +162,7 @@ export class MCPShellServer {
         // Terminal Management - Unified Operations
         {
           name: 'terminal_operate',
-          description: 'Unified terminal operations: create sessions, send input, get output with automatic position tracking. Combines terminal_create, terminal_send_input, and terminal_get_output into a single streamlined interface for efficient terminal workflows.',
+          description: 'Unified host-terminal operations: create sessions, send input, and get output with automatic position tracking. Creation and input are unavailable in restrictive sandbox mode.',
           inputSchema: zodToJsonSchema(TerminalOperateParamsSchema, { target: 'jsonSchema7' })
         },
         
@@ -350,7 +350,12 @@ export class MCPShellServer {
         }
       } catch (error) {
         if (error instanceof MCPShellError) {
-          throw new McpError(ErrorCode.InvalidRequest, error.message);
+          const errorInfo = { ...error.toErrorInfo() };
+          return {
+            isError: true,
+            content: [{ type: 'text', text: JSON.stringify(errorInfo, null, 2) }],
+            structuredContent: errorInfo,
+          };
         }
         throw error;
       }

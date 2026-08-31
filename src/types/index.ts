@@ -55,7 +55,8 @@ export type OutputTruncationReason =
   | 'timeout'
   | 'user_interrupt'
   | 'error'
-  | 'background_transition';
+  | 'background_transition'
+  | 'persistence_failure';
 
 // 出力状態情報
 export interface OutputStatus {
@@ -86,6 +87,16 @@ export interface ExecutionInfo {
   default_working_directory?: string;
   working_directory_changed?: boolean;
   environment_variables?: EnvironmentVariables;
+  execution_isolation?:
+    | { kind: 'host'; launcher: 'direct' }
+    | {
+        kind: 'sandbox';
+        launcher: 'bwrap';
+        profile: 'restrictive-v1';
+        provider_version: string;
+        workspace_access: 'read-only';
+        network_access: 'none';
+      };
   execution_time_ms?: number;
   memory_usage_mb?: number;
   cpu_usage_percent?: number;
@@ -212,7 +223,6 @@ export interface SecurityRestrictions {
 
   // 共通設定
   max_execution_time?: number;
-  max_memory_mb?: number;
   enable_network?: boolean;
 
   active: boolean;

@@ -67,7 +67,8 @@ export type OutputTruncationReason =
   | 'timeout'
   | 'user_interrupt'
   | 'error'
-  | 'background_transition';
+  | 'background_transition'
+  | 'persistence_failure';
 
 // 出力状態情報
 export interface OutputStatus {
@@ -224,7 +225,6 @@ export interface SecurityRestrictions {
 
   // 共通設定
   max_execution_time?: number;
-  max_memory_mb?: number;
   enable_network?: boolean;
 
   active: boolean;

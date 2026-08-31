@@ -17,22 +17,35 @@ export function getCurrentTimestamp(): string {
 // ファイルパスの検証
 export function isValidPath(filePath: string, allowedPaths?: string[]): boolean {
   try {
-    const resolvedPath = path.resolve(filePath);
-
-    // 基本的なセキュリティチェック
-    if (resolvedPath.includes('..')) {
-      return false;
-    }
+    const resolvedPath = canonicalizeExistingPath(filePath);
 
     // 許可されたパスのチェック
     if (allowedPaths && allowedPaths.length > 0) {
-      return allowedPaths.some((allowedPath) => resolvedPath.startsWith(path.resolve(allowedPath)));
+      return allowedPaths.some((allowedPath) => {
+        try {
+          return isPathWithin(canonicalizeExistingPath(allowedPath), resolvedPath);
+        } catch {
+          return false;
+        }
+      });
     }
 
     return true;
   } catch {
     return false;
   }
+}
+
+export function canonicalizeExistingPath(filePath: string): string {
+  return fsSync.realpathSync.native(path.resolve(filePath));
+}
+
+export function isPathWithin(allowedRoot: string, candidate: string): boolean {
+  const relative = path.relative(allowedRoot, candidate);
+  return (
+    relative === '' ||
+    (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`))
+  );
 }
 
 // コマンドの検証

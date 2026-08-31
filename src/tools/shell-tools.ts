@@ -154,6 +154,14 @@ export class ShellTools {
       // Traditional security checks (still performed)
       this.securityManager.auditCommand(params.command, params.working_directory);
       this.securityManager.validateExecutionTime(params.timeout_seconds);
+      const executionBoundary = this.securityManager.resolveExecutionBoundary({
+        remote: this.isRemoteBackend(),
+        executionMode: params.execution_mode,
+        createTerminal: params.create_terminal === true,
+        hasEnvironmentOverrides:
+          params.environment_variables !== undefined &&
+          Object.keys(params.environment_variables).length > 0,
+      });
 
       // foreground_timeout_secondsの最大値チェック
       if (
@@ -171,6 +179,7 @@ export class ShellTools {
       const executionOptions: ExecutionOptions = {
         command: params.command,
         executionMode: params.execution_mode,
+        executionBoundary,
         timeoutSeconds: params.timeout_seconds,
         foregroundTimeoutSeconds: params.foreground_timeout_seconds,
         maxOutputSize: params.max_output_size,
@@ -456,6 +465,7 @@ export class ShellTools {
   // ...existing code...
   async createTerminal(params: TerminalCreateParams) {
     try {
+      this.securityManager.assertTerminalMutationAllowed();
       const terminalOptions: TerminalOptions = {
         shellType: params.shell_type as ShellType,
         dimensions: params.dimensions as Dimensions,
@@ -509,6 +519,7 @@ export class ShellTools {
 
   async sendTerminalInput(params: TerminalInputParams) {
     try {
+      this.securityManager.assertTerminalMutationAllowed();
       const result = await this.terminalManager.sendInput(
         params.terminal_id,
         params.input,
@@ -590,6 +601,7 @@ export class ShellTools {
   async setSecurityRestrictions(params: SecuritySetRestrictionsParams) {
     try {
       const restrictionParams: Record<string, unknown> = {
+        security_mode: params.security_mode,
         enable_network: params.enable_network,
       };
 
@@ -605,10 +617,6 @@ export class ShellTools {
       if (params.max_execution_time !== undefined) {
         restrictionParams['max_execution_time'] = params.max_execution_time;
       }
-      if (params.max_memory_mb !== undefined) {
-        restrictionParams['max_memory_mb'] = params.max_memory_mb;
-      }
-
       const restrictions = this.securityManager.setRestrictions(restrictionParams);
 
       return {
@@ -716,6 +724,14 @@ export class ShellTools {
   // 統合ターミナル操作 (create + send_input + get_output を統合)
   async terminalOperate(params: TerminalOperateParams) {
     try {
+      const requestedInput = params.input || params.command;
+      if (
+        !params.terminal_id ||
+        params.dimensions !== undefined ||
+        (typeof requestedInput === 'string' && requestedInput.length > 0)
+      ) {
+        this.securityManager.assertTerminalMutationAllowed();
+      }
       let terminalId = params.terminal_id;
       let terminalInfo = null;
       let inputRejected = false;
@@ -1012,7 +1028,7 @@ export class ShellTools {
             ...(entry.was_executed && {
               // These can be used with process_get_execution and read_execution_output
               reference_note:
-                'Use process_get_execution with execution_id for detailed execution info, or read_execution_output for full output',
+                'Use process_get_execution with execution_id for detailed execution info, or read_execution_output for retained output',
             }),
           };
         }

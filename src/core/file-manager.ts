@@ -12,6 +12,7 @@ import { ResourceNotFoundError } from '../utils/errors.js';
 
 export class FileManager {
   private files = new Map<string, FileInfo>();
+  private readonly fileOperationTails = new Map<string, Promise<void>>();
   private readonly baseDir: string;
   private readonly maxFiles: number;
 
@@ -71,6 +72,30 @@ export class FileManager {
     return await this.registerFile(filePath, 'combined', executionId, fileName);
   }
 
+  async replaceOutputFile(outputId: string, content: string): Promise<void> {
+    await this.withFileOperation(outputId, async () => {
+      const fileInfo = this.files.get(outputId);
+      if (!fileInfo || fileInfo.output_type !== 'combined') {
+        throw new ResourceNotFoundError('output file', outputId);
+      }
+
+      const temporaryPath = path.join(
+        path.dirname(fileInfo.path),
+        `.${path.basename(fileInfo.path)}.${generateId()}.tmp`
+      );
+      try {
+        await fs.writeFile(temporaryPath, content, 'utf-8');
+        await fs.rename(temporaryPath, fileInfo.path);
+      } catch (error) {
+        await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+        throw error;
+      }
+
+      fileInfo.size = await getFileSize(fileInfo.path);
+      this.files.set(outputId, fileInfo);
+    });
+  }
+
   async createLogFile(content: string, executionId?: string): Promise<string> {
     const outputId = generateId();
     const fileName = `log_${outputId}.log`;
@@ -97,6 +122,11 @@ export class FileManager {
       throw new ResourceNotFoundError('file', outputId);
     }
     return { ...fileInfo };
+  }
+
+  hasOutputFile(outputId: string): boolean {
+    const fileInfo = this.files.get(outputId);
+    return fileInfo?.output_type === 'combined';
   }
 
   async readFile(
@@ -182,6 +212,7 @@ export class FileManager {
     deleted_files: string[];
     failed_files: string[];
     total_deleted: number;
+    deleted_bytes: number;
   }> {
     if (!confirm) {
       throw new Error('Deletion must be confirmed');
@@ -189,21 +220,28 @@ export class FileManager {
 
     const deletedFiles: string[] = [];
     const failedFiles: string[] = [];
+    let deletedBytes = 0;
 
     for (const outputId of outputIds) {
       try {
-        const fileInfo = this.files.get(outputId);
-        if (!fileInfo) {
+        const deleted = await this.withFileOperation(outputId, async () => {
+          const fileInfo = this.files.get(outputId);
+          if (!fileInfo) return false;
+
+          const fileSize = await getFileSize(fileInfo.path);
+          // ファイルシステムからファイルを削除
+          await fs.unlink(fileInfo.path);
+
+          // マップから削除
+          this.files.delete(outputId);
+          return fileSize;
+        });
+        if (deleted === false) {
           failedFiles.push(outputId);
           continue;
         }
-
-        // ファイルシステムからファイルを削除
-        await fs.unlink(fileInfo.path);
-
-        // マップから削除
-        this.files.delete(outputId);
         deletedFiles.push(outputId);
+        deletedBytes += deleted;
       } catch (error) {
         // エラーログを内部ログに記録（標準出力を避ける）
         // console.error(`Failed to delete file ${outputId}:`, error);
@@ -215,6 +253,7 @@ export class FileManager {
       deleted_files: deletedFiles,
       failed_files: failedFiles,
       total_deleted: deletedFiles.length,
+      deleted_bytes: deletedBytes,
     };
   }
 
@@ -228,13 +267,31 @@ export class FileManager {
 
     const filesToDelete = files.slice(0, deleteCount);
 
-    for (const [fileId, fileInfo] of filesToDelete) {
-      try {
-        await fs.unlink(fileInfo.path);
-        this.files.delete(fileId);
-      } catch (error) {
-        // エラーログを内部ログに記録（標準出力を避ける）
-        // console.error(`Failed to cleanup file ${fileId}:`, error);
+    await this.deleteFiles(
+      filesToDelete.map(([fileId]) => fileId),
+      true
+    );
+  }
+
+  private async withFileOperation<T>(outputId: string, operation: () => Promise<T>): Promise<T> {
+    const previousTail = this.fileOperationTails.get(outputId) ?? Promise.resolve();
+    let releaseCurrent!: () => void;
+    const currentOperation = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const currentTail = previousTail.then(
+      () => currentOperation,
+      () => currentOperation
+    );
+    this.fileOperationTails.set(outputId, currentTail);
+
+    await previousTail.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      releaseCurrent();
+      if (this.fileOperationTails.get(outputId) === currentTail) {
+        this.fileOperationTails.delete(outputId);
       }
     }
   }
@@ -447,26 +504,20 @@ export class FileManager {
 
     const spaceFreedMB = Math.round((spaceFeed / (1024 * 1024)) * 100) / 100;
 
-    // 実際の削除実行（dryRunでない場合）
-    if (!dryRun && deleteCandidates.length > 0) {
-      try {
-        await this.deleteFiles(deleteCandidates, true);
-      } catch (error) {
-        console.error('Auto cleanup failed:', error);
-        // エラーの場合は削除されなかった扱い
-        return {
-          deleted_files: [],
-          preserved_files: Array.from(this.files.keys()),
-          space_freed_mb: 0,
-          dry_run: dryRun,
-        };
-      }
+    if (dryRun || deleteCandidates.length === 0) {
+      return {
+        deleted_files: deleteCandidates,
+        preserved_files: preserveCandidates,
+        space_freed_mb: spaceFreedMB,
+        dry_run: dryRun,
+      };
     }
 
+    const deletionResult = await this.deleteFiles(deleteCandidates, true);
     return {
-      deleted_files: deleteCandidates,
-      preserved_files: preserveCandidates,
-      space_freed_mb: spaceFreedMB,
+      deleted_files: deletionResult.deleted_files,
+      preserved_files: Array.from(this.files.keys()),
+      space_freed_mb: Math.round((deletionResult.deleted_bytes / (1024 * 1024)) * 100) / 100,
       dry_run: dryRun,
     };
   }

@@ -16,12 +16,15 @@ import {
   getSafeEnvironment,
   sanitizeString,
   ensureDirectory,
+  canonicalizeExistingPath,
+  isValidPath,
 } from '../utils/helpers.js';
 import {
   ExecutionError,
   TimeoutError,
   ResourceNotFoundError,
   ResourceLimitError,
+  SecurityBoundaryError,
 } from '../utils/errors.js';
 import type { TerminalManager, TerminalOptions } from './terminal-manager.js';
 import type { FileManager } from './file-manager.js';
@@ -29,10 +32,13 @@ import { StreamPublisher } from './stream-publisher.js';
 import { FileStorageSubscriber } from './file-storage-subscriber.js';
 import { StreamingPipelineReader } from './streaming-pipeline-reader.js';
 import { RealtimeStreamSubscriber } from './realtime-stream-subscriber.js';
+import { BwrapLauncher } from '../security/bwrap-launcher.js';
+import type { ExecutionBoundary } from '../security/execution-boundary.js';
 
 export interface ExecutionOptions {
   command: string;
   executionMode: ExecutionMode;
+  executionBoundary?: ExecutionBoundary;
   workingDirectory?: string;
   environmentVariables?: EnvironmentVariables;
   inputData?: string;
@@ -59,6 +65,94 @@ interface BackgroundProcessCallback {
   onTimeout?: (executionId: string, executionInfo: ExecutionInfo) => void | Promise<void>;
 }
 
+interface BoundedOutputSnapshot {
+  stdout: string;
+  stderr: string;
+  combinedOutput: string;
+  truncated: boolean;
+}
+
+class BoundedOutputCollector {
+  private readonly stdoutChunks: Buffer[] = [];
+  private readonly stderrChunks: Buffer[] = [];
+  private retainedBytes = 0;
+  private dataTruncated = false;
+
+  constructor(private readonly maxBytes: number) {}
+
+  appendStdout(data: Buffer): boolean {
+    return this.append(this.stdoutChunks, data);
+  }
+
+  appendStderr(data: Buffer): boolean {
+    return this.append(this.stderrChunks, data);
+  }
+
+  snapshot(): BoundedOutputSnapshot {
+    const rawStdout = Buffer.concat(this.stdoutChunks).toString('utf8');
+    const rawStderr = Buffer.concat(this.stderrChunks).toString('utf8');
+    const stdoutResult = this.fitUtf8(rawStdout, this.maxBytes);
+    let remainingBytes = this.maxBytes - Buffer.byteLength(stdoutResult.text, 'utf8');
+    let stderr = '';
+    let combinedOutput = stdoutResult.text;
+    let representationTruncated = stdoutResult.truncated;
+
+    if (rawStderr.length > 0) {
+      const separator = '\n--- STDERR ---\n';
+      const separatorBytes = Buffer.byteLength(separator, 'utf8');
+      if (remainingBytes > separatorBytes) {
+        remainingBytes -= separatorBytes;
+        const stderrResult = this.fitUtf8(rawStderr, remainingBytes);
+        if (stderrResult.text.length > 0) {
+          stderr = stderrResult.text;
+          combinedOutput += separator + stderr;
+        } else {
+          representationTruncated = true;
+        }
+        representationTruncated ||= stderrResult.truncated;
+      } else {
+        representationTruncated = true;
+      }
+    }
+
+    return {
+      stdout: stdoutResult.text,
+      stderr,
+      combinedOutput,
+      truncated: this.dataTruncated || representationTruncated,
+    };
+  }
+
+  private append(target: Buffer[], data: Buffer): boolean {
+    const wasTruncated = this.dataTruncated;
+    const remaining = Math.max(0, this.maxBytes - this.retainedBytes);
+    if (remaining > 0) {
+      const retained = Buffer.from(data.subarray(0, remaining));
+      target.push(retained);
+      this.retainedBytes += retained.length;
+    }
+    if (data.length > remaining) {
+      this.dataTruncated = true;
+    }
+    return !wasTruncated && this.dataTruncated;
+  }
+
+  private fitUtf8(value: string, maxBytes: number): { text: string; truncated: boolean } {
+    const encoded = Buffer.from(value, 'utf8');
+    if (encoded.length <= maxBytes) {
+      return { text: value, truncated: false };
+    }
+
+    let end = Math.max(0, maxBytes);
+    while (end > 0 && end < encoded.length) {
+      const nextByte = encoded[end];
+      if (nextByte === undefined || (nextByte & 0xc0) !== 0x80) break;
+      end -= 1;
+    }
+    return { text: encoded.subarray(0, end).toString('utf8'), truncated: true };
+  }
+}
+
 export class ProcessManager {
   private executions = new Map<string, ExecutionInfo>();
   private processes = new Map<number, ChildProcess>();
@@ -68,6 +162,8 @@ export class ProcessManager {
   private fileManager: FileManager | undefined; // FileManager への参照
   private defaultWorkingDirectory: string;
   private allowedWorkingDirectories: string[];
+  private readonly sandboxLauncher: BwrapLauncher;
+  private readonly trustedDefaultExecutionBoundary: ExecutionBoundary | undefined;
   private backgroundProcessCallbacks: BackgroundProcessCallback = {}; // バックグラウンドプロセス終了コールバック
 
   // Issue #13: PUB/SUB統合 - Feature Flag付きで段階的統合
@@ -79,15 +175,31 @@ export class ProcessManager {
   constructor(
     maxConcurrentProcesses = 50,
     outputDir = '/tmp/mcp-shell-outputs',
-    fileManager?: FileManager
+    fileManager?: FileManager,
+    sandboxLauncher?: BwrapLauncher,
+    trustedDefaultExecutionBoundary?: ExecutionBoundary
   ) {
     this.maxConcurrentProcesses = maxConcurrentProcesses;
     this.outputDir = outputDir;
     this.fileManager = fileManager;
-    this.defaultWorkingDirectory = process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd();
-    this.allowedWorkingDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS']
+    const configuredAllowedDirectories = process.env['MCP_SHELL_ALLOWED_WORKDIRS']
       ? process.env['MCP_SHELL_ALLOWED_WORKDIRS'].split(',').map((dir) => dir.trim())
       : [process.cwd()];
+    this.allowedWorkingDirectories = configuredAllowedDirectories.map((directory) =>
+      canonicalizeExistingPath(directory)
+    );
+    this.defaultWorkingDirectory = canonicalizeExistingPath(
+      process.env['MCP_SHELL_DEFAULT_WORKDIR'] || process.cwd()
+    );
+    if (!this.isAllowedWorkingDirectory(this.defaultWorkingDirectory)) {
+      throw new SecurityBoundaryError(
+        'SECURITY_CONFIGURATION_INVALID',
+        'The default working directory is outside the approved working-directory roots.',
+        { defaultWorkingDirectory: this.defaultWorkingDirectory }
+      );
+    }
+    this.sandboxLauncher = sandboxLauncher || new BwrapLauncher(this.allowedWorkingDirectories);
+    this.trustedDefaultExecutionBoundary = trustedDefaultExecutionBoundary;
 
     // StreamPublisher初期化
     this.streamPublisher = new StreamPublisher({
@@ -186,6 +298,16 @@ export class ProcessManager {
   }
 
   async executeCommand(options: ExecutionOptions): Promise<ExecutionInfo> {
+    const executionBoundary =
+      options.executionBoundary ?? this.trustedDefaultExecutionBoundary;
+    if (!executionBoundary) {
+      throw new SecurityBoundaryError(
+        'ISOLATION_REQUIREMENT_MISSING',
+        'Execution requires an explicit host or sandbox boundary.'
+      );
+    }
+    options = { ...options, executionBoundary };
+    this.assertExecutionRoute(options);
     // 同時実行数のチェック
     const runningProcesses = Array.from(this.executions.values()).filter(
       (exec) => exec.status === 'running'
@@ -345,6 +467,169 @@ export class ProcessManager {
     }
   }
 
+  private assertExecutionRoute(options: ExecutionOptions): void {
+    if (options.executionBoundary?.kind !== 'sandbox') {
+      return;
+    }
+    if (options.createTerminal) {
+      throw new SecurityBoundaryError(
+        'SANDBOX_TERMINAL_UNAVAILABLE',
+        'Interactive terminal execution is unavailable for restrictive sandbox requests.'
+      );
+    }
+    if (options.executionMode === 'detached') {
+      throw new SecurityBoundaryError(
+        'SANDBOX_DETACHED_UNAVAILABLE',
+        'Detached execution is unavailable for restrictive sandbox requests.'
+      );
+    }
+    if (options.environmentVariables && Object.keys(options.environmentVariables).length > 0) {
+      throw new SecurityBoundaryError(
+        'SANDBOX_ENV_UNSUPPORTED',
+        'Environment overrides are unavailable for restrictive sandbox requests.'
+      );
+    }
+  }
+
+  private async spawnExecutionProcess(
+    executionId: string,
+    options: ExecutionOptions,
+    hostShell: '/bin/bash' | 'sh' = '/bin/bash',
+    hostDetached = false,
+    ignoreStdin = false
+  ): Promise<ChildProcess> {
+    const workingDirectory = this.resolveWorkingDirectory(options.workingDirectory);
+    if (options.executionBoundary?.kind === 'sandbox') {
+      const spec = this.sandboxLauncher.buildLaunchSpec(options.command, workingDirectory);
+      const child = spawn(spec.executable, spec.args, {
+        cwd: spec.cwd,
+        env: spec.env,
+        stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'],
+      });
+      await this.waitForSandboxReadiness(child, spec.readinessToken);
+      this.scheduleSandboxStart(child, spec.readinessToken);
+      const executionInfo = this.executions.get(executionId);
+      if (executionInfo) {
+        executionInfo.execution_isolation = {
+          kind: 'sandbox',
+          launcher: 'bwrap',
+          profile: 'restrictive-v1',
+          provider_version: spec.providerVersion,
+          workspace_access: 'read-only',
+          network_access: 'none',
+        };
+        this.executions.set(executionId, executionInfo);
+      }
+      return child;
+    }
+
+    const env = getSafeEnvironment(
+      process.env as Record<string, string>,
+      options.environmentVariables
+    );
+    const child = spawn(hostShell, ['-c', options.command], {
+      cwd: workingDirectory,
+      env,
+      stdio: [ignoreStdin ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      detached: hostDetached,
+    });
+    const executionInfo = this.executions.get(executionId);
+    if (executionInfo) {
+      executionInfo.execution_isolation = { kind: 'host', launcher: 'direct' };
+      this.executions.set(executionId, executionInfo);
+    }
+    return child;
+  }
+
+  private scheduleSandboxStart(child: ChildProcess, readinessToken: string): void {
+    const startGate = child.stdio[4];
+    if (!startGate || !('write' in startGate)) {
+      child.kill('SIGKILL');
+      throw new SecurityBoundaryError(
+        'SANDBOX_SETUP_FAILED',
+        'The sandbox start gate was not created.'
+      );
+    }
+
+    startGate.once('error', () => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // The provider may already have exited.
+      }
+    });
+    setImmediate(() => {
+      startGate.end(`${readinessToken}\n`);
+    });
+  }
+
+  private async waitForSandboxReadiness(
+    child: ChildProcess,
+    readinessToken: string
+  ): Promise<void> {
+    const readinessStream = child.stdio[3];
+    if (!readinessStream) {
+      child.kill('SIGKILL');
+      throw new SecurityBoundaryError(
+        'SANDBOX_SETUP_FAILED',
+        'The sandbox readiness channel was not created.'
+      );
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let buffer = '';
+      let settled = false;
+      const timer = setTimeout(() => {
+        fail('Timed out while waiting for the sandbox readiness receipt.');
+      }, 5000);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        readinessStream.off('data', onData);
+        child.off('error', onError);
+        child.off('close', onClose);
+      };
+      const fail = (message: string, details: Record<string, unknown> = {}) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // The provider may already have exited.
+        }
+        reject(new SecurityBoundaryError('SANDBOX_SETUP_FAILED', message, details));
+      };
+      const onData = (chunk: Buffer | string) => {
+        buffer += chunk.toString();
+        if (buffer.length > 512) {
+          fail('The sandbox readiness receipt exceeded its maximum size.');
+          return;
+        }
+        const newline = buffer.indexOf('\n');
+        if (newline === -1) return;
+        const receipt = buffer.slice(0, newline);
+        if (receipt !== readinessToken || buffer.slice(newline + 1).length > 0) {
+          fail('The sandbox readiness receipt was invalid.');
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const onError = (error: Error) => {
+        fail('Bubblewrap failed before the sandbox became ready.', { error: error.message });
+      };
+      const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
+        fail('Bubblewrap exited before the sandbox became ready.', { code, signal });
+      };
+
+      readinessStream.on('data', onData);
+      child.once('error', onError);
+      child.once('close', onClose);
+    });
+  }
+
   /**
    * Issue #13: StreamingPipelineReaderを使用したコマンド実行
    */
@@ -354,25 +639,11 @@ export class ProcessManager {
     inputStream: StreamingPipelineReader
   ): Promise<ExecutionInfo> {
     console.error(`ProcessManager: Executing command with input stream for ${executionId}`);
+    const child = await this.spawnExecutionProcess(executionId, options, 'sh');
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
-      let stdout = '';
-      let stderr = '';
-      let outputTruncated = false;
-
-      // 環境変数の準備
-      const env = getSafeEnvironment(
-        process.env as Record<string, string>,
-        options.environmentVariables
-      );
-
-      // プロセスの起動
-      const child = spawn('sh', ['-c', options.command], {
-        cwd: this.resolveWorkingDirectory(options.workingDirectory),
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      const output = new BoundedOutputCollector(options.maxOutputSize);
 
       // StreamingPipelineReaderをSTDINに接続
       if (child.stdin) {
@@ -393,11 +664,7 @@ export class ProcessManager {
       if (child.stdout) {
         child.stdout.on('data', (data) => {
           const chunk = data.toString();
-          if (stdout.length + chunk.length <= options.maxOutputSize) {
-            stdout += chunk;
-          } else {
-            outputTruncated = true;
-          }
+          output.appendStdout(data);
 
           // StreamPublisher通知
           if (this.streamPublisher) {
@@ -410,11 +677,7 @@ export class ProcessManager {
       if (options.captureStderr && child.stderr) {
         child.stderr.on('data', (data) => {
           const chunk = data.toString();
-          if (stderr.length + chunk.length <= options.maxOutputSize) {
-            stderr += chunk;
-          } else {
-            outputTruncated = true;
-          }
+          output.appendStderr(data);
 
           // StreamPublisher通知
           if (this.streamPublisher) {
@@ -435,21 +698,26 @@ export class ProcessManager {
         const executionTime = Date.now() - startTime;
 
         // 実行情報の更新
+        const snapshot = output.snapshot();
         executionInfo.status = code === 0 ? 'completed' : 'failed';
         executionInfo.completed_at = getCurrentTimestamp();
         if (code !== null) {
           executionInfo.exit_code = code;
         }
         executionInfo.execution_time_ms = executionTime;
+        executionInfo.stdout = sanitizeString(snapshot.stdout);
+        executionInfo.stderr = sanitizeString(snapshot.stderr);
+        executionInfo.output_truncated = snapshot.truncated;
 
         // 出力の保存
         if (this.fileManager) {
           try {
-            const combinedOutput = stdout + (options.captureStderr ? stderr : '');
-            if (combinedOutput) {
-              const outputId = await this.fileManager.createOutputFile(combinedOutput, executionId);
+            if (snapshot.combinedOutput) {
+              const outputId = await this.fileManager.createOutputFile(
+                snapshot.combinedOutput,
+                executionId
+              );
               executionInfo.output_id = outputId;
-              executionInfo.output_truncated = outputTruncated;
             }
           } catch (error) {
             console.error(`Failed to save output for ${executionId}: ${error}`);
@@ -486,7 +754,7 @@ export class ProcessManager {
         child.kill('SIGTERM');
 
         setTimeout(() => {
-          if (!child.killed) {
+          if (child.exitCode === null && child.signalCode === null) {
             child.kill('SIGKILL');
           }
         }, 5000);
@@ -502,24 +770,10 @@ export class ProcessManager {
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
+    const childProcess = await this.spawnExecutionProcess(executionId, options);
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
-      let stdout = '';
-      let stderr = '';
-      let outputTruncated = false;
-
-      // 環境変数の準備
-      const env = getSafeEnvironment(
-        process.env as Record<string, string>,
-        options.environmentVariables
-      );
-
-      // プロセスの起動
-      const childProcess = spawn('/bin/bash', ['-c', options.command], {
-        cwd: this.resolveWorkingDirectory(options.workingDirectory),
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      const output = new BoundedOutputCollector(options.maxOutputSize);
 
       if (childProcess.pid) {
         this.processes.set(childProcess.pid, childProcess);
@@ -529,7 +783,7 @@ export class ProcessManager {
       const timeout = setTimeout(async () => {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
-          if (!childProcess.killed) {
+          if (childProcess.exitCode === null && childProcess.signalCode === null) {
             childProcess.kill('SIGKILL');
           }
         }, 5000);
@@ -537,9 +791,10 @@ export class ProcessManager {
         const executionTime = Date.now() - startTime;
         const executionInfo = this.executions.get(executionId);
         if (executionInfo) {
+          const snapshot = output.snapshot();
           executionInfo.status = 'timeout';
-          executionInfo.stdout = sanitizeString(stdout);
-          executionInfo.stderr = sanitizeString(stderr);
+          executionInfo.stdout = sanitizeString(snapshot.stdout);
+          executionInfo.stderr = sanitizeString(snapshot.stderr);
           executionInfo.completed_at = getCurrentTimestamp();
           executionInfo.execution_time_ms = executionTime;
           if (childProcess.pid !== undefined) {
@@ -549,7 +804,12 @@ export class ProcessManager {
           // 出力をFileManagerに保存（サイズに関係なく）
           let outputFileId: string | undefined;
           try {
-            outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            outputFileId = await this.saveOutputToFile(
+              executionId,
+              snapshot.stdout,
+              snapshot.stderr,
+              snapshot.combinedOutput
+            );
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
@@ -561,7 +821,7 @@ export class ProcessManager {
           }
 
           // 出力状態の詳細情報を設定
-          this.setOutputStatus(executionInfo, outputTruncated, 'timeout', outputFileId);
+          this.setOutputStatus(executionInfo, snapshot.truncated, 'timeout', outputFileId);
 
           this.executions.set(executionId, executionInfo);
 
@@ -585,25 +845,13 @@ export class ProcessManager {
 
       // 標準出力の処理
       childProcess.stdout?.on('data', (data: Buffer) => {
-        const output = data.toString();
-        if (stdout.length + output.length <= options.maxOutputSize) {
-          stdout += output;
-        } else {
-          stdout += output.substring(0, options.maxOutputSize - stdout.length);
-          outputTruncated = true;
-        }
+        output.appendStdout(data);
       });
 
       // 標準エラー出力の処理
       if (options.captureStderr) {
         childProcess.stderr?.on('data', (data: Buffer) => {
-          const output = data.toString();
-          if (stderr.length + output.length <= options.maxOutputSize) {
-            stderr += output;
-          } else {
-            stderr += output.substring(0, options.maxOutputSize - stderr.length);
-            outputTruncated = true;
-          }
+          output.appendStderr(data);
         });
       }
 
@@ -618,10 +866,14 @@ export class ProcessManager {
         const executionInfo = this.executions.get(executionId);
 
         if (executionInfo) {
+          const snapshot = output.snapshot();
+          if (executionInfo.status === 'timeout' || executionInfo.status === 'failed') {
+            return;
+          }
           executionInfo.status = 'completed';
           executionInfo.exit_code = code || 0;
-          executionInfo.stdout = sanitizeString(stdout);
-          executionInfo.stderr = sanitizeString(stderr);
+          executionInfo.stdout = sanitizeString(snapshot.stdout);
+          executionInfo.stderr = sanitizeString(snapshot.stderr);
           executionInfo.execution_time_ms = executionTime;
           if (childProcess.pid !== undefined) {
             executionInfo.process_id = childProcess.pid;
@@ -631,7 +883,12 @@ export class ProcessManager {
           // 出力をFileManagerに保存（サイズに関係なく）
           let outputFileId: string | undefined;
           try {
-            outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            outputFileId = await this.saveOutputToFile(
+              executionId,
+              snapshot.stdout,
+              snapshot.stderr,
+              snapshot.combinedOutput
+            );
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
@@ -643,7 +900,7 @@ export class ProcessManager {
           }
 
           // 出力状態の詳細情報を設定
-          if (outputTruncated) {
+          if (snapshot.truncated) {
             this.setOutputStatus(executionInfo, true, 'size_limit', outputFileId);
           } else {
             // 通常完了時 - actuallyTruncated=false, 適当なreasonで完了時ガイダンスを表示
@@ -688,26 +945,12 @@ export class ProcessManager {
     // 2. 出力サイズ制限に達した場合
     const returnPartialOnTimeout = options.returnPartialOnTimeout ?? true;
     const foregroundTimeout = options.foregroundTimeoutSeconds ?? 10;
+    const childProcess = await this.spawnExecutionProcess(executionId, options);
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
-      let stdout = '';
-      let stderr = '';
-      let outputTruncated = false;
+      const output = new BoundedOutputCollector(options.maxOutputSize);
       let backgroundTransitionReason: 'timeout' | 'output_size_limit' | null = null;
-
-      // 環境変数の準備
-      const env = getSafeEnvironment(
-        process.env as Record<string, string>,
-        options.environmentVariables
-      );
-
-      // プロセスの起動（バックグラウンド対応）
-      const childProcess = spawn('/bin/bash', ['-c', options.command], {
-        cwd: this.resolveWorkingDirectory(options.workingDirectory),
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
 
       if (childProcess.pid) {
         this.processes.set(childProcess.pid, childProcess);
@@ -725,23 +968,29 @@ export class ProcessManager {
       const finalTimeoutHandle = setTimeout(async () => {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
-          if (!childProcess.killed) {
+          if (childProcess.exitCode === null && childProcess.signalCode === null) {
             childProcess.kill('SIGKILL');
           }
         }, 5000);
 
         const executionInfo = this.executions.get(executionId);
         if (executionInfo) {
+          const snapshot = output.snapshot();
           executionInfo.status = 'timeout';
-          executionInfo.stdout = sanitizeString(stdout);
-          executionInfo.stderr = sanitizeString(stderr);
-          executionInfo.output_truncated = outputTruncated;
+          executionInfo.stdout = sanitizeString(snapshot.stdout);
+          executionInfo.stderr = sanitizeString(snapshot.stderr);
+          executionInfo.output_truncated = snapshot.truncated;
           executionInfo.completed_at = getCurrentTimestamp();
           executionInfo.execution_time_ms = Date.now() - startTime;
 
           // 出力をFileManagerに保存
           try {
-            const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            const outputFileId = await this.saveOutputToFile(
+              executionId,
+              snapshot.stdout,
+              snapshot.stderr,
+              snapshot.combinedOutput
+            );
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
@@ -766,12 +1015,30 @@ export class ProcessManager {
       // バックグラウンドに移行する関数
       const transitionToBackground = async () => {
         clearTimeout(foregroundTimeoutHandle);
+        clearTimeout(finalTimeoutHandle);
 
         const executionInfo = this.executions.get(executionId);
         if (executionInfo) {
+          const snapshot = output.snapshot();
+          const remainingTimeoutMilliseconds = Math.max(
+            1,
+            options.timeoutSeconds * 1000 - (Date.now() - startTime)
+          );
+          let releaseTransitionPersistence: () => void = () => undefined;
+          const transitionPersistence = new Promise<void>((release) => {
+            releaseTransitionPersistence = release;
+          });
+          this.handleAdaptiveBackgroundTransition(
+            executionId,
+            childProcess,
+            remainingTimeoutMilliseconds,
+            transitionPersistence,
+            output
+          );
+
           executionInfo.status = 'running';
-          executionInfo.stdout = sanitizeString(stdout);
-          executionInfo.stderr = sanitizeString(stderr);
+          executionInfo.stdout = sanitizeString(snapshot.stdout);
+          executionInfo.stderr = sanitizeString(snapshot.stderr);
 
           // 移行理由を記録
           if (backgroundTransitionReason === 'timeout') {
@@ -787,7 +1054,12 @@ export class ProcessManager {
           // 出力をFileManagerに保存
           let outputFileId: string | undefined;
           try {
-            outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+            outputFileId = await this.saveOutputToFile(
+              executionId,
+              snapshot.stdout,
+              snapshot.stderr,
+              snapshot.combinedOutput
+            );
             executionInfo.output_id = outputFileId;
           } catch (error) {
             // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
@@ -801,21 +1073,13 @@ export class ProcessManager {
           // 出力状態の詳細情報を設定（バックグラウンド移行）
           this.setOutputStatus(
             executionInfo,
-            outputTruncated,
+            snapshot.truncated,
             'background_transition',
             outputFileId
           );
 
           this.executions.set(executionId, executionInfo);
-
-          // バックグラウンド処理の継続設定（adaptive mode専用）
-          this.handleAdaptiveBackgroundTransition(executionId, childProcess, {
-            ...options,
-            timeoutSeconds: Math.max(
-              1,
-              options.timeoutSeconds - Math.floor((Date.now() - startTime) / 1000)
-            ),
-          });
+          releaseTransitionPersistence();
 
           resolve(executionInfo);
         }
@@ -831,36 +1095,20 @@ export class ProcessManager {
 
       // 標準出力の処理
       childProcess.stdout?.on('data', (data: Buffer) => {
-        const output = data.toString();
-        if (stdout.length + output.length <= options.maxOutputSize) {
-          stdout += output;
-        } else {
-          stdout += output.substring(0, options.maxOutputSize - stdout.length);
-          outputTruncated = true;
-
-          // 出力サイズ制限に達した場合、バックグラウンドに移行
-          if (!backgroundTransitionReason) {
-            backgroundTransitionReason = 'output_size_limit';
-            transitionToBackground();
-          }
+        const newlyTruncated = output.appendStdout(data);
+        if (newlyTruncated && !backgroundTransitionReason) {
+          backgroundTransitionReason = 'output_size_limit';
+          transitionToBackground();
         }
       });
 
       // 標準エラー出力の処理
       if (options.captureStderr) {
         childProcess.stderr?.on('data', (data: Buffer) => {
-          const output = data.toString();
-          if (stderr.length + output.length <= options.maxOutputSize) {
-            stderr += output;
-          } else {
-            stderr += output.substring(0, options.maxOutputSize - stderr.length);
-            outputTruncated = true;
-
-            // 出力サイズ制限に達した場合、バックグラウンドに移行
-            if (!backgroundTransitionReason) {
-              backgroundTransitionReason = 'output_size_limit';
-              transitionToBackground();
-            }
+          const newlyTruncated = output.appendStderr(data);
+          if (newlyTruncated && !backgroundTransitionReason) {
+            backgroundTransitionReason = 'output_size_limit';
+            transitionToBackground();
           }
         });
       }
@@ -879,11 +1127,15 @@ export class ProcessManager {
           const executionInfo = this.executions.get(executionId);
 
           if (executionInfo) {
+            const snapshot = output.snapshot();
+            if (executionInfo.status === 'timeout' || executionInfo.status === 'failed') {
+              return;
+            }
             executionInfo.status = 'completed';
             executionInfo.exit_code = code || 0;
-            executionInfo.stdout = sanitizeString(stdout);
-            executionInfo.stderr = sanitizeString(stderr);
-            executionInfo.output_truncated = outputTruncated;
+            executionInfo.stdout = sanitizeString(snapshot.stdout);
+            executionInfo.stderr = sanitizeString(snapshot.stderr);
+            executionInfo.output_truncated = snapshot.truncated;
             executionInfo.execution_time_ms = executionTime;
             if (childProcess.pid !== undefined) {
               executionInfo.process_id = childProcess.pid;
@@ -892,7 +1144,12 @@ export class ProcessManager {
 
             // 出力をFileManagerに保存
             try {
-              const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+              const outputFileId = await this.saveOutputToFile(
+                executionId,
+                snapshot.stdout,
+                snapshot.stderr,
+                snapshot.combinedOutput
+              );
               executionInfo.output_id = outputFileId;
             } catch (error) {
               // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
@@ -940,17 +1197,12 @@ export class ProcessManager {
     executionId: string,
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
-    const env = getSafeEnvironment(
-      process.env as Record<string, string>,
-      options.environmentVariables
+    const childProcess = await this.spawnExecutionProcess(
+      executionId,
+      options,
+      '/bin/bash',
+      true
     );
-
-    const childProcess = spawn('/bin/bash', ['-c', options.command], {
-      cwd: this.resolveWorkingDirectory(options.workingDirectory),
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: options.executionMode === 'background',
-    });
 
     if (childProcess.pid) {
       this.processes.set(childProcess.pid, childProcess);
@@ -980,30 +1232,45 @@ export class ProcessManager {
     options: ExecutionOptions
   ): void {
     const startTime = Date.now();
-    let stdout = '';
-    let stderr = '';
+    const output = new BoundedOutputCollector(options.maxOutputSize);
+    let terminalStateClaimed = false;
 
     // タイムアウトの設定（backgroundプロセス用）
     const timeout = setTimeout(async () => {
+      if (terminalStateClaimed) return;
+      terminalStateClaimed = true;
       childProcess.kill('SIGTERM');
+      if (childProcess.pid) {
+        this.processes.delete(childProcess.pid);
+      }
       setTimeout(() => {
-        if (!childProcess.killed) {
+        if (childProcess.exitCode === null && childProcess.signalCode === null) {
           childProcess.kill('SIGKILL');
         }
       }, 5000);
 
-      const executionInfo = this.executions.get(executionId);
-      if (executionInfo) {
-        executionInfo.status = 'timeout';
-        executionInfo.stdout = stdout;
-        executionInfo.stderr = stderr;
-        executionInfo.output_truncated = true;
-        executionInfo.completed_at = getCurrentTimestamp();
-        executionInfo.execution_time_ms = Date.now() - startTime;
+      const currentExecutionInfo = this.executions.get(executionId);
+      if (currentExecutionInfo) {
+        const snapshot = output.snapshot();
+        const executionInfo: ExecutionInfo = {
+          ...currentExecutionInfo,
+          status: 'timeout',
+          stdout: snapshot.stdout,
+          stderr: snapshot.stderr,
+          output_truncated: snapshot.truncated,
+          completed_at: getCurrentTimestamp(),
+          execution_time_ms: Date.now() - startTime,
+        };
 
         // 出力をFileManagerに保存
+        let outputFileId: string | undefined;
         try {
-          const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+          outputFileId = await this.saveOutputToFile(
+            executionId,
+            snapshot.stdout,
+            snapshot.stderr,
+            snapshot.combinedOutput
+          );
           executionInfo.output_id = outputFileId;
         } catch (error) {
           // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
@@ -1014,56 +1281,56 @@ export class ProcessManager {
           executionInfo.message = `Output file save failed: ${error instanceof Error ? error.message : String(error)}`;
         }
 
+        this.setOutputStatus(executionInfo, snapshot.truncated, 'timeout', outputFileId);
+
         this.executions.set(executionId, executionInfo);
 
-        // バックグラウンドプロセスタイムアウトのコールバック呼び出し
-        if (this.backgroundProcessCallbacks.onTimeout) {
-          setImmediate(async () => {
-            try {
-              const callback = this.backgroundProcessCallbacks.onTimeout;
-              if (callback) {
-                const result = callback(executionId, executionInfo);
-                if (result instanceof Promise) {
-                  await result;
-                }
-              }
-            } catch (callbackError) {
-              // コールバックエラーは内部ログに記録のみ
-              // console.error('Background process timeout callback error:', callbackError);
-            }
-          });
-        }
+        this.scheduleBackgroundTimeoutCallback(executionId, executionInfo);
       }
     }, options.timeoutSeconds * 1000);
 
     // 出力の収集
     childProcess.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
+      output.appendStdout(data);
     });
 
     if (options.captureStderr) {
       childProcess.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
+        output.appendStderr(data);
       });
     }
 
     // プロセス終了時の処理
     childProcess.on('close', async (code) => {
       clearTimeout(timeout);
+      if (terminalStateClaimed) return;
+      terminalStateClaimed = true;
       if (childProcess.pid) {
         this.processes.delete(childProcess.pid);
       }
 
-      const executionInfo = this.executions.get(executionId);
-      if (executionInfo) {
-        executionInfo.status = 'completed';
-        executionInfo.exit_code = code || 0;
-        executionInfo.execution_time_ms = Date.now() - startTime;
-        executionInfo.completed_at = getCurrentTimestamp();
+      const currentExecutionInfo = this.executions.get(executionId);
+      if (currentExecutionInfo) {
+        const snapshot = output.snapshot();
+        const executionInfo: ExecutionInfo = {
+          ...currentExecutionInfo,
+          status: 'completed',
+          exit_code: code || 0,
+          stdout: snapshot.stdout,
+          stderr: snapshot.stderr,
+          execution_time_ms: Date.now() - startTime,
+          completed_at: getCurrentTimestamp(),
+          output_truncated: snapshot.truncated,
+        };
 
         // 出力をファイルに保存
         try {
-          const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+          const outputFileId = await this.saveOutputToFile(
+            executionId,
+            snapshot.stdout,
+            snapshot.stderr,
+            snapshot.combinedOutput
+          );
           executionInfo.output_id = outputFileId;
         } catch (error) {
           // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
@@ -1098,6 +1365,8 @@ export class ProcessManager {
 
     childProcess.on('error', (error) => {
       clearTimeout(timeout);
+      if (terminalStateClaimed) return;
+      terminalStateClaimed = true;
       if (childProcess.pid) {
         this.processes.delete(childProcess.pid);
       }
@@ -1129,43 +1398,119 @@ export class ProcessManager {
     });
   }
 
+  private scheduleBackgroundTimeoutCallback(
+    executionId: string,
+    executionInfo: ExecutionInfo
+  ): void {
+    const callback = this.backgroundProcessCallbacks.onTimeout;
+    if (!callback) {
+      return;
+    }
+    setImmediate(async () => {
+      try {
+        await callback(executionId, executionInfo);
+      } catch {
+        // Callback errors are isolated from process lifecycle state.
+      }
+    });
+  }
+
   // adaptive modeでバックグラウンドに移行したプロセスの処理
   private handleAdaptiveBackgroundTransition(
     executionId: string,
     childProcess: ChildProcess,
-    options: ExecutionOptions
+    timeoutMilliseconds: number,
+    transitionPersistence: Promise<void>,
+    output: BoundedOutputCollector
   ): void {
+    let terminalStateClaimed = false;
     // タイムアウトの設定（最終タイムアウト）
     const timeout = setTimeout(async () => {
+      if (terminalStateClaimed) return;
+      terminalStateClaimed = true;
       childProcess.kill('SIGTERM');
+      if (childProcess.pid) {
+        this.processes.delete(childProcess.pid);
+      }
       setTimeout(() => {
-        if (!childProcess.killed) {
+        if (childProcess.exitCode === null && childProcess.signalCode === null) {
           childProcess.kill('SIGKILL');
         }
       }, 5000);
 
-      const executionInfo = this.executions.get(executionId);
-      if (executionInfo) {
-        executionInfo.status = 'timeout';
-        executionInfo.completed_at = getCurrentTimestamp();
+      await transitionPersistence;
+      const currentExecutionInfo = this.executions.get(executionId);
+      if (currentExecutionInfo) {
+        const snapshot = output.snapshot();
+        const executionInfo: ExecutionInfo = {
+          ...currentExecutionInfo,
+          status: 'timeout',
+          stdout: sanitizeString(snapshot.stdout),
+          stderr: sanitizeString(snapshot.stderr),
+          output_truncated: snapshot.truncated,
+          completed_at: getCurrentTimestamp(),
+        };
+        if (executionInfo.started_at) {
+          executionInfo.execution_time_ms =
+            Date.now() - new Date(executionInfo.started_at).getTime();
+        }
 
-        // 既存の出力は保持（adaptive modeで既にキャプチャ済み）
+        let outputFileId = executionInfo.output_id;
+        let outputPersistenceSucceeded = false;
+        try {
+          outputFileId = await this.saveOutputToFile(
+            executionId,
+            snapshot.stdout,
+            snapshot.stderr,
+            snapshot.combinedOutput,
+            outputFileId
+          );
+          executionInfo.output_id = outputFileId;
+          outputPersistenceSucceeded = true;
+        } catch (error) {
+          this.setOutputPersistenceFailure(
+            executionInfo,
+            error,
+            outputFileId,
+            snapshot.truncated
+          );
+        }
+
+        if (outputPersistenceSucceeded) {
+          this.setOutputStatus(
+            executionInfo,
+            snapshot.truncated,
+            'timeout',
+            outputFileId
+          );
+        }
         this.executions.set(executionId, executionInfo);
+        this.scheduleBackgroundTimeoutCallback(executionId, executionInfo);
       }
-    }, options.timeoutSeconds * 1000);
+    }, timeoutMilliseconds);
 
     // プロセス終了時の処理
     childProcess.on('close', async (code) => {
       clearTimeout(timeout);
+      if (terminalStateClaimed) return;
+      terminalStateClaimed = true;
       if (childProcess.pid) {
         this.processes.delete(childProcess.pid);
       }
 
-      const executionInfo = this.executions.get(executionId);
-      if (executionInfo) {
-        executionInfo.status = 'completed';
-        executionInfo.exit_code = code || 0;
-        executionInfo.completed_at = getCurrentTimestamp();
+      await transitionPersistence;
+      const currentExecutionInfo = this.executions.get(executionId);
+      if (currentExecutionInfo) {
+        const snapshot = output.snapshot();
+        const executionInfo: ExecutionInfo = {
+          ...currentExecutionInfo,
+          status: 'completed',
+          exit_code: code || 0,
+          stdout: sanitizeString(snapshot.stdout),
+          stderr: sanitizeString(snapshot.stderr),
+          output_truncated: snapshot.truncated,
+          completed_at: getCurrentTimestamp(),
+        };
 
         // 実行時間は全体（フォアグラウンド + バックグラウンド）で計算
         if (executionInfo.started_at) {
@@ -1173,6 +1518,35 @@ export class ProcessManager {
           executionInfo.execution_time_ms = Date.now() - startTime;
         }
 
+        let outputFileId = executionInfo.output_id;
+        let outputPersistenceSucceeded = false;
+        try {
+          outputFileId = await this.saveOutputToFile(
+            executionId,
+            snapshot.stdout,
+            snapshot.stderr,
+            snapshot.combinedOutput,
+            outputFileId
+          );
+          executionInfo.output_id = outputFileId;
+          outputPersistenceSucceeded = true;
+        } catch (error) {
+          this.setOutputPersistenceFailure(
+            executionInfo,
+            error,
+            outputFileId,
+            snapshot.truncated
+          );
+        }
+
+        if (outputPersistenceSucceeded) {
+          this.setOutputStatus(
+            executionInfo,
+            snapshot.truncated,
+            'size_limit',
+            outputFileId
+          );
+        }
         this.executions.set(executionId, executionInfo);
 
         // adaptive modeバックグラウンドプロセス正常終了のコールバック呼び出し
@@ -1195,15 +1569,21 @@ export class ProcessManager {
       }
     });
 
-    childProcess.on('error', (error) => {
+    childProcess.on('error', async (error) => {
       clearTimeout(timeout);
+      if (terminalStateClaimed) return;
+      terminalStateClaimed = true;
       if (childProcess.pid) {
         this.processes.delete(childProcess.pid);
       }
-      const executionInfo = this.executions.get(executionId);
-      if (executionInfo) {
-        executionInfo.status = 'failed';
-        executionInfo.completed_at = getCurrentTimestamp();
+      await transitionPersistence;
+      const currentExecutionInfo = this.executions.get(executionId);
+      if (currentExecutionInfo) {
+        const executionInfo: ExecutionInfo = {
+          ...currentExecutionInfo,
+          status: 'failed',
+          completed_at: getCurrentTimestamp(),
+        };
 
         if (executionInfo.started_at) {
           const startTime = new Date(executionInfo.started_at).getTime();
@@ -1238,17 +1618,13 @@ export class ProcessManager {
     options: ExecutionOptions
   ): Promise<ExecutionInfo> {
     // detachedモード: 完全にバックグラウンドで実行し、親プロセスとの接続を切断
-    const env = getSafeEnvironment(
-      process.env as Record<string, string>,
-      options.environmentVariables
+    const childProcess = await this.spawnExecutionProcess(
+      executionId,
+      options,
+      '/bin/bash',
+      true,
+      true
     );
-
-    const childProcess = spawn('/bin/bash', ['-c', options.command], {
-      cwd: this.resolveWorkingDirectory(options.workingDirectory),
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'], // stdin は無視
-      detached: true, // 完全にデタッチ
-    });
 
     // デタッチされたプロセスのPIDは記録するが、プロセス管理からは除外
     const executionInfo = this.executions.get(executionId);
@@ -1261,18 +1637,17 @@ export class ProcessManager {
     // デタッチされたプロセスは親プロセスの終了後も継続実行されるため、
     // 出力の収集は限定的
     const startTime = Date.now();
-    let stdout = '';
-    let stderr = '';
+    const output = new BoundedOutputCollector(options.maxOutputSize);
 
     if (childProcess.stdout) {
       childProcess.stdout.on('data', (data) => {
-        stdout += data.toString();
+        output.appendStdout(data);
       });
     }
 
     if (childProcess.stderr) {
       childProcess.stderr.on('data', (data) => {
-        stderr += data.toString();
+        output.appendStderr(data);
       });
     }
 
@@ -1280,13 +1655,22 @@ export class ProcessManager {
     childProcess.on('close', async (code) => {
       const executionInfo = this.executions.get(executionId);
       if (executionInfo) {
+        const snapshot = output.snapshot();
         executionInfo.status = 'completed';
         executionInfo.exit_code = code || 0;
         executionInfo.execution_time_ms = Date.now() - startTime;
         executionInfo.completed_at = getCurrentTimestamp();
+        executionInfo.stdout = sanitizeString(snapshot.stdout);
+        executionInfo.stderr = sanitizeString(snapshot.stderr);
+        executionInfo.output_truncated = snapshot.truncated;
 
         try {
-          const outputFileId = await this.saveOutputToFile(executionId, stdout, stderr);
+          const outputFileId = await this.saveOutputToFile(
+            executionId,
+            snapshot.stdout,
+            snapshot.stderr,
+            snapshot.combinedOutput
+          );
           executionInfo.output_id = outputFileId;
         } catch (error) {
           // ファイル保存失敗は重要なエラーとしてログに記録し、実行情報に含める
@@ -1360,11 +1744,13 @@ export class ProcessManager {
   private async saveOutputToFile(
     executionId: string,
     stdout: string,
-    stderr: string
+    stderr: string,
+    combinedOutputOverride?: string,
+    existingOutputId?: string
   ): Promise<string> {
     if (!this.fileManager) {
       // FileManagerが利用できない場合は、従来の方法でファイルを保存
-      const outputFileId = generateId();
+      const outputFileId = existingOutputId ?? generateId();
       const filePath = path.join(this.outputDir, `${outputFileId}.json`);
 
       const outputData = {
@@ -1379,8 +1765,39 @@ export class ProcessManager {
     }
 
     // FileManagerを使用して出力ファイルを作成
-    const combinedOutput = stdout + (stderr ? '\n--- STDERR ---\n' + stderr : '');
+    const combinedOutput =
+      combinedOutputOverride ?? stdout + (stderr ? '\n--- STDERR ---\n' + stderr : '');
+    if (existingOutputId) {
+      await this.fileManager.replaceOutputFile(existingOutputId, combinedOutput);
+      return existingOutputId;
+    }
     return await this.fileManager.createOutputFile(combinedOutput, executionId);
+  }
+
+  private setOutputPersistenceFailure(
+    executionInfo: ExecutionInfo,
+    error: unknown,
+    staleOutputId: string | undefined,
+    actuallyTruncated: boolean
+  ): void {
+    const staleOutputAvailable =
+      staleOutputId !== undefined && this.fileManager?.hasOutputFile(staleOutputId) === true;
+    executionInfo.output_truncated = actuallyTruncated;
+    if (actuallyTruncated) executionInfo.truncation_reason = 'size_limit';
+    else delete executionInfo.truncation_reason;
+    if (staleOutputAvailable) executionInfo.output_id = staleOutputId;
+    else delete executionInfo.output_id;
+    executionInfo.output_status = {
+      complete: false,
+      reason: 'persistence_failure',
+      available_via_output_id: staleOutputAvailable,
+    };
+    executionInfo.message = `Final output persistence failed; ${staleOutputAvailable ? 'output_id contains only the earlier transition snapshot.' : 'no retained output is available.'} ${error instanceof Error ? error.message : String(error)}`;
+    executionInfo.next_steps = [
+      'Treat any existing output_id as partial and stale',
+      'Resolve the storage failure and rerun the command if complete output is required',
+    ];
+    delete executionInfo.guidance;
   }
 
   /**
@@ -1397,13 +1814,12 @@ export class ProcessManager {
     // reasonに基づいて出力状態を設定
     const needsGuidance = !!outputId; // output_idがあれば常にガイダンスを提供
 
-    // 後方互換性のため outputTruncated を設定
-    executionInfo.output_truncated =
-      actuallyTruncated || reason === 'timeout' || reason === 'background_transition';
+    executionInfo.output_truncated = actuallyTruncated;
 
     // Issue #14: バックグラウンド移行とタイムアウトは特別扱い
     if (reason === 'background_transition') {
-      executionInfo.truncation_reason = reason;
+      if (actuallyTruncated) executionInfo.truncation_reason = 'size_limit';
+      else delete executionInfo.truncation_reason;
       executionInfo.output_status = {
         complete: false, // バックグラウンド実行中は未完了
         reason: reason,
@@ -1416,19 +1832,19 @@ export class ProcessManager {
       executionInfo.next_steps = [
         'Use process_list to check status',
         'Use read_execution_output when completed',
-        'Use output_id for real-time pipeline processing',
+        'Use output_id only for the retained transition snapshot until completion',
       ];
       if (needsGuidance) {
         executionInfo.guidance = {
-          pipeline_usage: `Background process active. Use "input_output_id": "${outputId}" for real-time processing`,
+          pipeline_usage: `Background process active. "input_output_id": "${outputId}" reads the retained transition snapshot; wait for completion before using final output.`,
           suggested_commands: [
-            'tail -f equivalent using input_output_id for live monitoring',
-            'grep for real-time log filtering',
-            'awk for live data extraction and formatting',
+            'read_execution_output for the retained transition snapshot',
+            'process_get_execution to wait for final retained output',
+            'grep/sed/awk processing after execution completes',
           ],
           background_processing: {
             status_check: 'Use process_get_execution for detailed status',
-            monitoring: 'Output_id supports real-time streaming while process runs',
+            monitoring: 'Output_id is a retained snapshot, not a live stream, while the process runs',
           },
         };
       }
@@ -1436,7 +1852,8 @@ export class ProcessManager {
     }
 
     if (reason === 'timeout') {
-      executionInfo.truncation_reason = reason;
+      if (actuallyTruncated) executionInfo.truncation_reason = 'size_limit';
+      else delete executionInfo.truncation_reason;
       executionInfo.output_status = {
         complete: false, // タイムアウトは未完了
         reason: reason,
@@ -1444,10 +1861,10 @@ export class ProcessManager {
         recommended_action: outputId ? 'use_read_execution_output' : undefined,
       };
 
-      executionInfo.message = `Command timed out. ${outputId ? 'Use read_execution_output with output_id for complete results.' : 'Partial output available.'}`;
+      executionInfo.message = `Command timed out. ${outputId ? 'Use read_execution_output with output_id for retained results.' : 'Partial output available.'}`;
       if (needsGuidance) {
         executionInfo.next_steps = [
-          'Use read_execution_output to get complete output',
+          'Use read_execution_output to get retained output',
           'Use output_id for pipeline processing with grep/sed/awk commands',
         ];
         executionInfo.guidance = {
@@ -1475,10 +1892,10 @@ export class ProcessManager {
       // 状況に応じたメッセージとアクションの設定
       switch (reason) {
         case 'size_limit':
-          executionInfo.message = `Output exceeded size limit. ${outputId ? 'Complete output available via output_id.' : 'Output was truncated.'}`;
+          executionInfo.message = `Output exceeded size limit. ${outputId ? 'Retained output is available via output_id; excess data was discarded.' : 'Output was truncated.'}`;
           if (needsGuidance) {
             executionInfo.next_steps = [
-              'Use read_execution_output to get complete output',
+              'Use read_execution_output to get retained output',
               'Use output_id for streaming pipeline processing',
             ];
             executionInfo.guidance = {
@@ -1492,10 +1909,10 @@ export class ProcessManager {
           }
           break;
         default:
-          executionInfo.message = `Output truncated due to ${reason}. ${outputId ? 'Complete output may be available via output_id.' : ''}`;
+          executionInfo.message = `Output truncated due to ${reason}. ${outputId ? 'Retained output is available via output_id.' : ''}`;
           if (needsGuidance) {
             executionInfo.next_steps = [
-              'Use read_execution_output to get complete output',
+              'Use read_execution_output to get retained output',
               'Use output_id for pipeline processing',
             ];
             executionInfo.guidance = {
@@ -1530,7 +1947,43 @@ export class ProcessManager {
   }
 
   getExecution(executionId: string): ExecutionInfo | undefined {
-    return this.executions.get(executionId);
+    const executionInfo = this.executions.get(executionId);
+    if (!executionInfo) return undefined;
+    return this.projectOutputAvailability(executionInfo);
+  }
+
+  private projectOutputAvailability(executionInfo: ExecutionInfo): ExecutionInfo {
+    const projectedExecution = { ...executionInfo };
+    const outputId = executionInfo.output_id;
+    if (!outputId || !this.fileManager || this.fileManager.hasOutputFile(outputId)) {
+      return projectedExecution;
+    }
+
+    delete projectedExecution.output_id;
+    if (executionInfo.output_status) {
+      projectedExecution.output_status = {
+        ...executionInfo.output_status,
+        available_via_output_id: false,
+      };
+      delete projectedExecution.output_status.recommended_action;
+    }
+    delete projectedExecution.guidance;
+    if (executionInfo.status === 'running') {
+      projectedExecution.message =
+        'Command is still running, but its retained output is no longer available.';
+      projectedExecution.next_steps = [
+        'Use process_get_execution to monitor completion',
+        'Rerun the command if retained output is required',
+      ];
+    } else {
+      projectedExecution.message =
+        'Retained output is no longer available; inline execution output remains in this record.';
+      projectedExecution.next_steps = [
+        'Use inline stdout and stderr if they are sufficient',
+        'Rerun the command if retained output is required',
+      ];
+    }
+    return projectedExecution;
   }
 
   listExecutions(filter?: {
@@ -1540,7 +1993,9 @@ export class ProcessManager {
     limit?: number;
     offset?: number;
   }): { executions: ExecutionInfo[]; total: number } {
-    let executions = Array.from(this.executions.values());
+    let executions = Array.from(this.executions.values()).map((executionInfo) =>
+      this.projectOutputAvailability(executionInfo)
+    );
 
     // フィルタリング
     if (filter) {
@@ -1666,7 +2121,7 @@ export class ProcessManager {
       try {
         childProcess.kill('SIGTERM');
         setTimeout(() => {
-          if (!childProcess.killed) {
+          if (childProcess.exitCode === null && childProcess.signalCode === null) {
             childProcess.kill('SIGKILL');
           }
         }, 5000);
@@ -1689,18 +2144,14 @@ export class ProcessManager {
   } {
     const previousWorkdir = this.defaultWorkingDirectory;
 
-    // ディレクトリの検証
-    if (!this.isAllowedWorkingDirectory(workingDirectory)) {
-      throw new Error(`Working directory not allowed: ${workingDirectory}`);
-    }
-
-    this.defaultWorkingDirectory = workingDirectory;
+    const canonicalWorkingDirectory = this.resolveWorkingDirectory(workingDirectory);
+    this.defaultWorkingDirectory = canonicalWorkingDirectory;
 
     return {
       success: true,
       previous_working_directory: previousWorkdir,
-      new_working_directory: workingDirectory,
-      working_directory_changed: previousWorkdir !== workingDirectory,
+      new_working_directory: canonicalWorkingDirectory,
+      working_directory_changed: previousWorkdir !== canonicalWorkingDirectory,
     };
   }
 
@@ -1713,15 +2164,7 @@ export class ProcessManager {
   }
 
   private isAllowedWorkingDirectory(workingDirectory: string): boolean {
-    // パスの正規化を行って比較
-    const normalizedPath = path.resolve(workingDirectory);
-    return this.allowedWorkingDirectories.some((allowedDir) => {
-      const normalizedAllowed = path.resolve(allowedDir);
-      return (
-        normalizedPath === normalizedAllowed ||
-        normalizedPath.startsWith(normalizedAllowed + path.sep)
-      );
-    });
+    return isValidPath(workingDirectory, this.allowedWorkingDirectories);
   }
 
   private resolveWorkingDirectory(workingDirectory?: string): string {
@@ -1731,6 +2174,6 @@ export class ProcessManager {
       throw new Error(`Working directory not allowed: ${resolved}`);
     }
 
-    return resolved;
+    return canonicalizeExistingPath(resolved);
   }
 }

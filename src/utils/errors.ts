@@ -104,6 +104,12 @@ export class SecurityError extends MCPShellError {
   }
 }
 
+export class SecurityBoundaryError extends MCPShellError {
+  constructor(code: string, message: string, details?: Record<string, unknown>, requestId?: string) {
+    super(code, message, 'SECURITY', details, requestId);
+  }
+}
+
 export class ResourceLimitError extends MCPShellError {
   constructor(resource: string, limit: number, requestId?: string) {
     super(

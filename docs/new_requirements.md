@@ -802,7 +802,8 @@ interface EnhancedSecurityConfig extends SecurityConfig {
 - ✅ `SecurityManager`クラスによる基本的なコマンド検証
 - ✅ 3段階のセキュリティモード（`permissive`, `restrictive`, `custom`）
 - ✅ 危険なパターンの検出（`detectDangerousPatterns`）
-- ✅ パス制限、実行時間制限、メモリ制限
+- ✅ パス制限、実行時間制限、出力保持量制限
+- ⚠️ プロセス単位のCPU・PID・メモリ制限は未実装（外部cgroup等が必要）
 
 **プロセス実行・管理**
 - ✅ `ProcessManager`による包括的なコマンド実行管理
@@ -1311,4 +1312,3 @@ interface EnhancedSecurityConfig extends SecurityConfig {
 - 企業固有要件への対応
 
 本要求仕様書により、現在のMCP Shell Serverの安全性を段階的かつ確実に向上させることが可能になります。
-

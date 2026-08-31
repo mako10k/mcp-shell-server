@@ -32,7 +32,13 @@ describe('MCP Shell Server Components', () => {
     process.env['MCP_SHELL_ENHANCED_MODE'] = 'false';
     process.env['MCP_SHELL_LLM_EVALUATION'] = 'false';
 
-    processManager = new ProcessManager();
+    processManager = new ProcessManager(
+      50,
+      '/tmp/mcp-shell-outputs',
+      undefined,
+      undefined,
+      { kind: 'host' }
+    );
     securityManager = new SecurityManager();
     terminalManager = new TerminalManager();
     fileManager = new FileManager();
@@ -461,21 +467,18 @@ describe('MCP Shell Server Components', () => {
       expect(result.max_execution_time).toBe(120);
     });
 
-    it('should validate commands in restrictive mode', () => {
+    it('should defer restrictive command effects to the sandbox boundary', () => {
       // restrictiveモードに設定
       securityManager.setRestrictions({
         security_mode: 'restrictive',
       });
 
-      // 許可されたコマンドは通る
+      // Full shell syntax is accepted here and confined at execution time.
       expect(() => securityManager.validateCommand('echo "test"')).not.toThrow();
       expect(() => securityManager.validateCommand('ls -la')).not.toThrow();
       expect(() => securityManager.validateCommand('cat file.txt')).not.toThrow();
-
-      // 許可されていないコマンドはエラーになる
-      expect(() => securityManager.validateCommand('rm /tmp/test')).toThrow();
-      expect(() => securityManager.validateCommand('mv file1 file2')).toThrow();
-      expect(() => securityManager.validateCommand('sudo ls')).toThrow();
+      expect(() => securityManager.validateCommand('echo ok; rm -f target')).not.toThrow();
+      expect(() => securityManager.validateCommand('/usr/bin/touch target')).not.toThrow();
     });
 
     it('should detect dangerous patterns in permissive mode', () => {
@@ -504,7 +507,7 @@ describe('MCP Shell Server Components', () => {
       expect(() => securityManager.validateCommand('ls -la')).not.toThrow();
     });
 
-    it('should validate custom security settings', () => {
+    it('should require legacy custom security settings to migrate', () => {
       // customモードに設定
       securityManager.setRestrictions({
         security_mode: 'custom',
@@ -512,15 +515,11 @@ describe('MCP Shell Server Components', () => {
         blocked_commands: ['cat'],
       });
 
-      // 許可されたコマンドは通る
-      expect(() => securityManager.validateCommand('echo "test"')).not.toThrow();
-      expect(() => securityManager.validateCommand('ls -la')).not.toThrow();
-
-      // ブロックされたコマンドはエラーになる
-      expect(() => securityManager.validateCommand('cat /etc/passwd')).toThrow();
-
-      // リストにないコマンドもエラーになる
-      expect(() => securityManager.validateCommand('pwd')).toThrow();
+      for (const command of ['echo "test"', 'ls -la', 'cat /etc/passwd', 'pwd']) {
+        expect(() => securityManager.validateCommand(command)).toThrowError(
+          expect.objectContaining({ code: 'CUSTOM_MODE_MIGRATION_REQUIRED' })
+        );
+      }
     });
 
     it('should classify commands for basic safety', () => {
@@ -956,7 +955,7 @@ describe('MCP Shell Server Components', () => {
     describe('Specific lint command scenarios', () => {
       it('should handle eslint command output correctly', async () => {
         const result = await processManager.executeCommand({
-          command: 'npx eslint --version',
+          command: './node_modules/.bin/eslint --version',
           executionMode: 'foreground',
           timeoutSeconds: 10,
           maxOutputSize: 1024,
@@ -984,7 +983,7 @@ describe('MCP Shell Server Components', () => {
       it('should handle lint command with stderr output', async () => {
         // 存在しないファイルをlintして意図的にエラーを発生
         const result = await processManager.executeCommand({
-          command: 'npx eslint nonexistent-file.js',
+          command: './node_modules/.bin/eslint nonexistent-file.js',
           executionMode: 'foreground',
           timeoutSeconds: 10,
           maxOutputSize: 1024,
@@ -1015,7 +1014,8 @@ describe('MCP Shell Server Components', () => {
       it('should handle long-running lint command', async () => {
         // 全てのファイルをlintして時間のかかる処理をテスト
         const result = await processManager.executeCommand({
-          command: 'npx eslint src/**/*.ts --format compact --no-warn-ignored 2>&1 || true',
+          command:
+            './node_modules/.bin/eslint src/**/*.ts --format compact --no-warn-ignored 2>&1 || true',
           executionMode: 'foreground',
           timeoutSeconds: 30,
           maxOutputSize: 16384,
@@ -1037,7 +1037,7 @@ describe('MCP Shell Server Components', () => {
           // 長い出力も取得できることを確認
           expect(readResult.output_id).toBe(result.output_id);
         }
-      });
+      }, 30000);
     });
   });
 });

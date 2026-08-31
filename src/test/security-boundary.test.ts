@@ -1,0 +1,705 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
+import * as net from 'net';
+import { FileManager } from '../core/file-manager.js';
+import { ProcessManager } from '../core/process-manager.js';
+import { createShellToolRuntime } from '../runtime/tool-runtime.js';
+import { BwrapLauncher } from '../security/bwrap-launcher.js';
+import { SecurityManager } from '../security/manager.js';
+import { isValidPath } from '../utils/helpers.js';
+
+const savedEnvironment = {
+  securityMode: process.env['MCP_SHELL_SECURITY_MODE'],
+  allowedWorkdirs: process.env['MCP_SHELL_ALLOWED_WORKDIRS'],
+  defaultWorkdir: process.env['MCP_SHELL_DEFAULT_WORKDIR'],
+  bwrapPath: process.env['MCP_SHELL_BWRAP_PATH'],
+  streaming: process.env['MCP_SHELL_ENABLE_STREAMING'],
+  executionBackend: process.env['EXECUTION_BACKEND'],
+  enhancedMode: process.env['MCP_SHELL_ENHANCED_MODE'],
+  llmEvaluation: process.env['MCP_SHELL_LLM_EVALUATION'],
+  hostSentinel: process.env['MCP_SHELL_TEST_HOST_SENTINEL'],
+};
+
+afterEach(() => {
+  const restore = (name: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  };
+  restore('MCP_SHELL_SECURITY_MODE', savedEnvironment.securityMode);
+  restore('MCP_SHELL_ALLOWED_WORKDIRS', savedEnvironment.allowedWorkdirs);
+  restore('MCP_SHELL_DEFAULT_WORKDIR', savedEnvironment.defaultWorkdir);
+  restore('MCP_SHELL_BWRAP_PATH', savedEnvironment.bwrapPath);
+  restore('MCP_SHELL_ENABLE_STREAMING', savedEnvironment.streaming);
+  restore('EXECUTION_BACKEND', savedEnvironment.executionBackend);
+  restore('MCP_SHELL_ENHANCED_MODE', savedEnvironment.enhancedMode);
+  restore('MCP_SHELL_LLM_EVALUATION', savedEnvironment.llmEvaluation);
+  restore('MCP_SHELL_TEST_HOST_SENTINEL', savedEnvironment.hostSentinel);
+});
+
+describe('Issue #24 execution boundary', () => {
+  it('uses canonical component boundaries and rejects symlink escape', async () => {
+    const base = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-path-'));
+    const root = path.join(base, 'root');
+    const sibling = path.join(base, 'root-sibling');
+    const outside = path.join(base, 'outside');
+    await Promise.all([
+      fsp.mkdir(root),
+      fsp.mkdir(sibling),
+      fsp.mkdir(outside),
+    ]);
+    const insideFile = path.join(root, 'inside.txt');
+    const siblingFile = path.join(sibling, 'sibling.txt');
+    const outsideFile = path.join(outside, 'outside.txt');
+    await Promise.all([
+      fsp.writeFile(insideFile, 'inside'),
+      fsp.writeFile(siblingFile, 'sibling'),
+      fsp.writeFile(outsideFile, 'outside'),
+    ]);
+    const escapeLink = path.join(root, 'escape.txt');
+    await fsp.symlink(outsideFile, escapeLink);
+
+    expect(isValidPath(insideFile, [root])).toBe(true);
+    expect(isValidPath(siblingFile, [root])).toBe(false);
+    expect(isValidPath(escapeLink, [root])).toBe(false);
+    expect(isValidPath(path.join(root, 'missing.txt'), [root])).toBe(false);
+    await fsp.rm(base, { recursive: true, force: true });
+  });
+
+  it('maps restrictive to sandbox and fails closed on unsupported routes', () => {
+    const manager = new SecurityManager();
+    manager.setRestrictions({ security_mode: 'restrictive' });
+
+    expect(
+      manager.resolveExecutionBoundary({
+        remote: false,
+        executionMode: 'foreground',
+        createTerminal: false,
+        hasEnvironmentOverrides: false,
+      })
+    ).toEqual({ kind: 'sandbox', profile: 'restrictive-v1' });
+
+    const cases = [
+      {
+        route: {
+          remote: true,
+          executionMode: 'foreground' as const,
+          createTerminal: false,
+          hasEnvironmentOverrides: false,
+        },
+        code: 'SANDBOX_REMOTE_UNAVAILABLE',
+      },
+      {
+        route: {
+          remote: false,
+          executionMode: 'foreground' as const,
+          createTerminal: true,
+          hasEnvironmentOverrides: false,
+        },
+        code: 'SANDBOX_TERMINAL_UNAVAILABLE',
+      },
+      {
+        route: {
+          remote: false,
+          executionMode: 'detached' as const,
+          createTerminal: false,
+          hasEnvironmentOverrides: false,
+        },
+        code: 'SANDBOX_DETACHED_UNAVAILABLE',
+      },
+      {
+        route: {
+          remote: false,
+          executionMode: 'foreground' as const,
+          createTerminal: false,
+          hasEnvironmentOverrides: true,
+        },
+        code: 'SANDBOX_ENV_UNSUPPORTED',
+      },
+    ];
+
+    for (const testCase of cases) {
+      expect(() => manager.resolveExecutionBoundary(testCase.route)).toThrowError(
+        expect.objectContaining({ code: testCase.code })
+      );
+    }
+  });
+
+  it('rejects an invalid security-mode configuration instead of selecting host execution', () => {
+    process.env['MCP_SHELL_SECURITY_MODE'] = 'unsupported-mode';
+    expect(() => new SecurityManager()).toThrowError(
+      expect.objectContaining({ code: 'SECURITY_CONFIGURATION_INVALID' })
+    );
+  });
+
+  it('fails closed when the configured Bubblewrap provider is missing', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-bwrap-missing-'));
+    const outputDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-bwrap-missing-output-'));
+    process.env['MCP_SHELL_ALLOWED_WORKDIRS'] = root;
+    process.env['MCP_SHELL_DEFAULT_WORKDIR'] = root;
+    process.env['MCP_SHELL_ENABLE_STREAMING'] = 'false';
+    const launcher = new BwrapLauncher([root], {
+      providerPath: path.join(root, 'missing-bwrap'),
+    });
+    expect(() => launcher.buildLaunchSpec('echo never', root)).toThrowError(
+      expect.objectContaining({ code: 'SANDBOX_UNAVAILABLE' })
+    );
+    const manager = new ProcessManager(5, outputDir, undefined, launcher);
+    const sideEffect = path.join(root, 'provider-failure-must-not-run');
+    await expect(
+      manager.executeCommand({
+        command: `touch ${JSON.stringify(sideEffect)}`,
+        executionMode: 'foreground',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      })
+    ).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' });
+    expect(fs.existsSync(sideEffect)).toBe(false);
+    manager.cleanup();
+    await Promise.all([
+      fsp.rm(root, { recursive: true, force: true }),
+      fsp.rm(outputDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  it('rejects a Bubblewrap provider resolved inside the approved workspace', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-bwrap-workspace-'));
+    const providerPath = path.join(root, 'bwrap');
+    await fsp.writeFile(providerPath, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const launcher = new BwrapLauncher([root], { providerPath });
+
+    expect(() => launcher.buildLaunchSpec('echo never', root)).toThrowError(
+      expect.objectContaining({ code: 'SANDBOX_CAPABILITY_MISSING' })
+    );
+    await fsp.rm(root, { recursive: true, force: true });
+  });
+
+  it('fails closed in ShellTools before unsupported restrictive routes start', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-route-'));
+    const outputDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-route-output-'));
+    process.env['MCP_SHELL_SECURITY_MODE'] = 'permissive';
+    process.env['MCP_SHELL_ALLOWED_WORKDIRS'] = root;
+    process.env['MCP_SHELL_DEFAULT_WORKDIR'] = root;
+    process.env['MCP_SHELL_ENABLE_STREAMING'] = 'false';
+    process.env['MCP_SHELL_ENHANCED_MODE'] = 'false';
+    process.env['MCP_SHELL_LLM_EVALUATION'] = 'false';
+    const runtime = createShellToolRuntime({ outputDir });
+    await runtime.shellTools.setSecurityRestrictions({ security_mode: 'restrictive' });
+    expect(runtime.securityManager.getRestrictions()?.security_mode).toBe('restrictive');
+
+    process.env['EXECUTION_BACKEND'] = 'remote';
+    await expect(
+      runtime.shellTools.executeShellValidated({
+        command: 'echo never',
+        execution_mode: 'foreground',
+      })
+    ).rejects.toMatchObject({ code: 'SANDBOX_REMOTE_UNAVAILABLE' });
+
+    process.env['EXECUTION_BACKEND'] = 'local';
+    await expect(
+      runtime.shellTools.executeShellValidated({
+        command: 'echo never',
+        execution_mode: 'detached',
+      })
+    ).rejects.toMatchObject({ code: 'SANDBOX_DETACHED_UNAVAILABLE' });
+    const environmentSideEffect = path.join(root, 'environment-route-must-not-run');
+    await expect(
+      runtime.shellTools.executeShellValidated({
+        command: `touch ${JSON.stringify(environmentSideEffect)}`,
+        execution_mode: 'foreground',
+        environment_variables: { UNSUPPORTED_OVERRIDE: '1' },
+      })
+    ).rejects.toMatchObject({ code: 'SANDBOX_ENV_UNSUPPORTED' });
+    expect(fs.existsSync(environmentSideEffect)).toBe(false);
+    await expect(
+      runtime.shellTools.terminalOperateValidated({ command: 'echo never' })
+    ).rejects.toMatchObject({ code: 'SANDBOX_TERMINAL_UNAVAILABLE' });
+    await expect(
+      runtime.shellTools.terminalOperateValidated({
+        terminal_id: 'existing-terminal',
+        dimensions: { width: 100, height: 40 },
+      })
+    ).rejects.toMatchObject({ code: 'SANDBOX_TERMINAL_UNAVAILABLE' });
+
+    await runtime.cleanup();
+    await Promise.all([
+      fsp.rm(root, { recursive: true, force: true }),
+      fsp.rm(outputDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  it('fails legacy custom before process creation', async () => {
+    const manager = new SecurityManager();
+    manager.setRestrictions({ security_mode: 'custom', allowed_commands: ['echo'] });
+    expect(() => manager.validateCommand('echo never')).toThrowError(
+      expect.objectContaining({ code: 'CUSTOM_MODE_MIGRATION_REQUIRED' })
+    );
+  });
+
+  it('rejects low-level execution when no boundary was selected', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-boundary-missing-'));
+    const outputDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-boundary-output-'));
+    process.env['MCP_SHELL_ALLOWED_WORKDIRS'] = root;
+    process.env['MCP_SHELL_DEFAULT_WORKDIR'] = root;
+    process.env['MCP_SHELL_ENABLE_STREAMING'] = 'false';
+    const manager = new ProcessManager(5, outputDir);
+    const sideEffect = path.join(root, 'must-not-exist');
+
+    await expect(
+      manager.executeCommand({
+        command: `touch ${JSON.stringify(sideEffect)}`,
+        executionMode: 'foreground',
+        workingDirectory: root,
+        timeoutSeconds: 10,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      })
+    ).rejects.toMatchObject({ code: 'ISOLATION_REQUIREMENT_MISSING' });
+    expect(fs.existsSync(sideEffect)).toBe(false);
+
+    manager.cleanup();
+    await Promise.all([
+      fsp.rm(root, { recursive: true, force: true }),
+      fsp.rm(outputDir, { recursive: true, force: true }),
+    ]);
+  });
+
+  it.runIf(process.platform === 'linux' && fs.existsSync('/usr/bin/bwrap'))(
+    'confines compound commands in the real Bubblewrap execution path',
+    async () => {
+      const root = await fsp.mkdtemp(path.join('/tmp', 'mcp-shell-bwrap-real-'));
+      const outputDir = await fsp.mkdtemp(path.join('/tmp', 'mcp-shell-output-'));
+      const fileDir = await fsp.mkdtemp(path.join('/tmp', 'mcp-shell-files-'));
+      process.env['MCP_SHELL_ALLOWED_WORKDIRS'] = root;
+      process.env['MCP_SHELL_DEFAULT_WORKDIR'] = root;
+      process.env['MCP_SHELL_ENABLE_STREAMING'] = 'false';
+      process.env['MCP_SHELL_TEST_HOST_SENTINEL'] = 'host-secret';
+      const fileManager = new FileManager(fileDir);
+      const manager = new ProcessManager(5, outputDir, fileManager);
+      const completedCallbackIds: string[] = [];
+      const timeoutCallbackIds: string[] = [];
+      manager.setBackgroundProcessCallbacks({
+        onComplete: (executionId) => {
+          completedCallbackIds.push(executionId);
+        },
+        onTimeout: (executionId) => {
+          timeoutCallbackIds.push(executionId);
+        },
+      });
+
+      const result = await manager.executeCommand({
+        command: [
+          'printf "uid=%s\\n" "$(id -u)"',
+          'printf "env=%s|%s|%s|%s|%s\\n" "$PATH" "$HOME" "$TMPDIR" "$LANG" "${MCP_SHELL_TEST_HOST_SENTINEL-unset}"',
+          'for fd_number in 3 4 5 6 7 8 9; do test ! -e "/proc/$$/fd/$fd_number" || echo "ambient-fd=$fd_number"; done; echo fds-checked',
+          'grep -q "^NoNewPrivs:[[:space:]]*1$" /proc/self/status && echo no-new-privs',
+          'touch /workspace/forbidden 2>/dev/null || echo readonly',
+          'touch /tmp/private && echo tmp-writable',
+          'printf "tmp-size="; df -B1 --output=size /tmp | tail -n1 | tr -d " "',
+          'test ! -e /etc/passwd && test ! -e /home && test ! -e /run && test ! -e /var && echo host-paths-hidden',
+          'if printf x >/dev/tcp/127.0.0.1/1 2>/dev/null; then echo network-open; else echo network-blocked; fi',
+        ].join('; '),
+        executionMode: 'foreground',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 15,
+        maxOutputSize: 65536,
+        captureStderr: true,
+      });
+
+      expect(result.status).toBe('completed');
+      expect(result.execution_isolation).toMatchObject({
+        kind: 'sandbox',
+        launcher: 'bwrap',
+        profile: 'restrictive-v1',
+        workspace_access: 'read-only',
+        network_access: 'none',
+      });
+      if (result.execution_isolation?.kind !== 'sandbox') {
+        throw new Error('The restrictive execution did not return a sandbox receipt.');
+      }
+      expect(result.execution_isolation.provider_version).toMatch(
+        /^bubblewrap \d+\.\d+\.\d+$/
+      );
+      expect(result.stdout).toContain('uid=65534');
+      expect(result.stdout).toContain(
+        'env=/usr/bin:/bin|/tmp/home|/tmp|C.UTF-8|unset'
+      );
+      expect(result.stdout).toContain('fds-checked');
+      expect(result.stdout).not.toContain('ambient-fd=');
+      expect(result.stdout).toContain('no-new-privs');
+      expect(result.stdout).toContain('readonly');
+      expect(result.stdout).toContain('tmp-writable');
+      expect(result.stdout).toContain('host-paths-hidden');
+      expect(result.stdout).toContain('network-blocked');
+      expect(result.stdout).not.toContain('network-open');
+      const tmpSize = Number(result.stdout?.match(/tmp-size=(\d+)/)?.[1]);
+      expect(tmpSize).toBeGreaterThan(0);
+      expect(tmpSize).toBeLessThanOrEqual(64 * 1024 * 1024);
+      expect(fs.existsSync(path.join(root, 'forbidden'))).toBe(false);
+
+      const socketPath = path.join(root, 'host-control.sock');
+      let socketPayload = '';
+      const socketServer = net.createServer((socket) => {
+        socket.on('data', (data) => {
+          socketPayload += data.toString();
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        socketServer.once('error', reject);
+        socketServer.listen(socketPath, resolve);
+      });
+      await expect(
+        manager.executeCommand({
+          command: 'printf must-not-run',
+          executionMode: 'foreground',
+          executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+          workingDirectory: root,
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        })
+      ).rejects.toMatchObject({ code: 'SANDBOX_WORKSPACE_UNSAFE' });
+      await new Promise<void>((resolve, reject) => {
+        socketServer.close((error) => (error ? reject(error) : resolve()));
+      });
+      await fsp.rm(socketPath, { force: true });
+      expect(socketPayload).toBe('');
+
+      for (let index = 0; index < 10; index += 1) {
+        const quickResult = await manager.executeCommand({
+          command: 'printf quick',
+          executionMode: 'foreground',
+          executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+          workingDirectory: root,
+          timeoutSeconds: 5,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+        expect(quickResult.status).toBe('completed');
+        expect(quickResult.stdout).toBe('quick');
+      }
+
+      const adaptiveResult = await manager.executeCommand({
+        command: 'printf adaptive',
+        executionMode: 'adaptive',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        foregroundTimeoutSeconds: 2,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      expect(adaptiveResult.status).toBe('completed');
+      expect(adaptiveResult.stdout).toBe('adaptive');
+      expect(adaptiveResult.execution_isolation?.kind).toBe('sandbox');
+
+      const adaptiveBurst = await manager.executeCommand({
+        command: 'head -c 2048 /dev/zero',
+        executionMode: 'adaptive',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 3,
+        foregroundTimeoutSeconds: 2,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let completedAdaptiveBurst = manager.getExecution(adaptiveBurst.execution_id);
+      for (
+        let attempt = 0;
+        attempt < 100 && completedAdaptiveBurst?.status === 'running';
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedAdaptiveBurst = manager.getExecution(adaptiveBurst.execution_id);
+      }
+      expect(completedAdaptiveBurst?.status).toBe('completed');
+      for (
+        let attempt = 0;
+        attempt < 50 && !completedCallbackIds.includes(adaptiveBurst.execution_id);
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(completedCallbackIds).toContain(adaptiveBurst.execution_id);
+      expect(timeoutCallbackIds).not.toContain(adaptiveBurst.execution_id);
+
+      const replaceFailure = vi
+        .spyOn(fileManager, 'replaceOutputFile')
+        .mockRejectedValueOnce(new Error('forced adaptive persistence failure'));
+      try {
+        const adaptivePersistenceFailure = await manager.executeCommand({
+          command: 'printf stale; sleep 0.2; printf final',
+          executionMode: 'adaptive',
+          executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+          workingDirectory: root,
+          timeoutSeconds: 3,
+          foregroundTimeoutSeconds: 0.05,
+          maxOutputSize: 1024,
+          captureStderr: true,
+        });
+        const transitionOutputId = adaptivePersistenceFailure.output_id;
+        expect(transitionOutputId).toBeDefined();
+        let failedPersistence = manager.getExecution(adaptivePersistenceFailure.execution_id);
+        for (
+          let attempt = 0;
+          attempt < 100 && failedPersistence?.status === 'running';
+          attempt += 1
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          failedPersistence = manager.getExecution(adaptivePersistenceFailure.execution_id);
+        }
+        expect(failedPersistence?.status).toBe('completed');
+        expect(failedPersistence?.stdout).toBe('stalefinal');
+        expect(failedPersistence?.output_id).toBe(transitionOutputId);
+        expect(failedPersistence?.output_status).toMatchObject({
+          complete: false,
+          reason: 'persistence_failure',
+          available_via_output_id: true,
+        });
+        expect(failedPersistence?.message).toContain('earlier transition snapshot');
+        if (!transitionOutputId) {
+          throw new Error('The adaptive transition did not produce an output_id.');
+        }
+        const staleOutput = await fileManager.readFile(transitionOutputId, 0, 4096, 'utf-8');
+        expect(staleOutput.content).toBe('stale');
+      } finally {
+        replaceFailure.mockRestore();
+      }
+
+      const backgroundResult = await manager.executeCommand({
+        command: 'sleep 0.05; printf background',
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      expect(backgroundResult.execution_isolation?.kind).toBe('sandbox');
+      let completedBackground = manager.getExecution(backgroundResult.execution_id);
+      for (let attempt = 0; attempt < 100 && completedBackground?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedBackground = manager.getExecution(backgroundResult.execution_id);
+      }
+      expect(completedBackground?.status).toBe('completed');
+      expect(completedBackground?.execution_isolation?.kind).toBe('sandbox');
+
+      const boundedBackground = await manager.executeCommand({
+        command: 'yes A | head -c 4096; yes B | head -c 4096 >&2',
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let completedBounded = manager.getExecution(boundedBackground.execution_id);
+      for (let attempt = 0; attempt < 100 && completedBounded?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedBounded = manager.getExecution(boundedBackground.execution_id);
+      }
+      expect(completedBounded?.status).toBe('completed');
+      expect(completedBounded?.output_truncated).toBe(true);
+      expect(completedBounded?.output_id).toBeDefined();
+      if (!completedBounded?.output_id) {
+        throw new Error('The bounded background execution did not produce an output_id.');
+      }
+      const boundedOutput = await fileManager.readFile(
+        completedBounded.output_id,
+        0,
+        4096,
+        'utf-8'
+      );
+      expect(Buffer.byteLength(boundedOutput.content)).toBeLessThanOrEqual(1024);
+
+      const exactCombined = await manager.executeCommand({
+        command: "printf '%0512d' 0; printf '%0512d' 0 >&2",
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let completedExactCombined = manager.getExecution(exactCombined.execution_id);
+      for (
+        let attempt = 0;
+        attempt < 100 && completedExactCombined?.status === 'running';
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedExactCombined = manager.getExecution(exactCombined.execution_id);
+      }
+      expect(completedExactCombined?.status).toBe('completed');
+      expect(completedExactCombined?.output_truncated).toBe(true);
+      expect(completedExactCombined?.output_id).toBeDefined();
+      const exactCombinedOutputId = completedExactCombined?.output_id;
+      if (!exactCombinedOutputId) {
+        throw new Error('The exact combined background execution did not produce an output_id.');
+      }
+      const exactCombinedOutput = await fileManager.readFile(
+        exactCombinedOutputId,
+        0,
+        4096,
+        'utf-8'
+      );
+      expect(Buffer.byteLength(exactCombinedOutput.content, 'utf8')).toBeLessThanOrEqual(1024);
+
+      const utf8Bounded = await manager.executeCommand({
+        command: 'i=0; while [ "$i" -lt 400 ]; do printf "€"; i=$((i + 1)); done',
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let completedUtf8 = manager.getExecution(utf8Bounded.execution_id);
+      for (let attempt = 0; attempt < 100 && completedUtf8?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        completedUtf8 = manager.getExecution(utf8Bounded.execution_id);
+      }
+      expect(completedUtf8?.status).toBe('completed');
+      expect(completedUtf8?.output_truncated).toBe(true);
+      expect(completedUtf8?.output_id).toBeDefined();
+      const utf8OutputId = completedUtf8?.output_id;
+      if (!utf8OutputId) {
+        throw new Error('The UTF-8 background execution did not produce an output_id.');
+      }
+      const utf8Output = await fileManager.readFile(utf8OutputId, 0, 4096, 'utf-8');
+      expect(Buffer.byteLength(utf8Output.content, 'utf8')).toBeLessThanOrEqual(1024);
+      expect(utf8Output.content.endsWith('\uFFFD')).toBe(false);
+
+      const backgroundTimeout = await manager.executeCommand({
+        command: 'sleep 30',
+        executionMode: 'background',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 1,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      let timedOutBackground = manager.getExecution(backgroundTimeout.execution_id);
+      for (let attempt = 0; attempt < 150 && timedOutBackground?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        timedOutBackground = manager.getExecution(backgroundTimeout.execution_id);
+      }
+      expect(timedOutBackground?.status).toBe('timeout');
+      for (
+        let attempt = 0;
+        attempt < 50 && !timeoutCallbackIds.includes(backgroundTimeout.execution_id);
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(timeoutCallbackIds).toContain(backgroundTimeout.execution_id);
+      expect(completedCallbackIds).not.toContain(backgroundTimeout.execution_id);
+      expect(timedOutBackground?.output_truncated).toBe(false);
+
+      const adaptiveTimeout = await manager.executeCommand({
+        command: 'sleep 30',
+        executionMode: 'adaptive',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 1,
+        foregroundTimeoutSeconds: 0.05,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      expect(adaptiveTimeout.status).toBe('running');
+      let timedOutAdaptive = manager.getExecution(adaptiveTimeout.execution_id);
+      for (let attempt = 0; attempt < 150 && timedOutAdaptive?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        timedOutAdaptive = manager.getExecution(adaptiveTimeout.execution_id);
+      }
+      expect(timedOutAdaptive?.status).toBe('timeout');
+      for (
+        let attempt = 0;
+        attempt < 50 && !timeoutCallbackIds.includes(adaptiveTimeout.execution_id);
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(timeoutCallbackIds).toContain(adaptiveTimeout.execution_id);
+      expect(completedCallbackIds).not.toContain(adaptiveTimeout.execution_id);
+
+      const pipelineSource = await manager.executeCommand({
+        command: 'printf pipeline-data',
+        executionMode: 'foreground',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      const pipelineOutputId = pipelineSource.output_id;
+      expect(pipelineOutputId).toBeDefined();
+      if (!pipelineOutputId) {
+        throw new Error('The pipeline source did not produce an output_id.');
+      }
+      const pipelineSink = await manager.executeCommand({
+        command: 'cat',
+        executionMode: 'foreground',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        inputOutputId: pipelineOutputId,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      expect(pipelineSink.stdout).toBe('pipeline-data');
+      expect(pipelineSink.execution_isolation?.kind).toBe('sandbox');
+
+      const commandFailure = await manager.executeCommand({
+        command: 'exit 23',
+        executionMode: 'foreground',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 5,
+        maxOutputSize: 1024,
+        captureStderr: true,
+      });
+      expect(commandFailure.status).toBe('completed');
+      expect(commandFailure.exit_code).toBe(23);
+      expect(commandFailure.execution_isolation?.kind).toBe('sandbox');
+
+      const timeoutResult = await manager.executeCommand({
+        command: 'sleep 30',
+        executionMode: 'foreground',
+        executionBoundary: { kind: 'sandbox', profile: 'restrictive-v1' },
+        workingDirectory: root,
+        timeoutSeconds: 1,
+        maxOutputSize: 1024,
+        captureStderr: true,
+        returnPartialOnTimeout: true,
+      });
+      expect(timeoutResult.status).toBe('timeout');
+      expect(timeoutResult.execution_isolation?.kind).toBe('sandbox');
+      expect(timeoutResult.process_id).toBeDefined();
+      let providerAlive = true;
+      for (let attempt = 0; attempt < 100 && providerAlive; attempt += 1) {
+        try {
+          process.kill(timeoutResult.process_id as number, 0);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        } catch {
+          providerAlive = false;
+        }
+      }
+      expect(providerAlive).toBe(false);
+      manager.cleanup();
+      await fileManager.cleanup();
+      await Promise.all([
+        fsp.rm(root, { recursive: true, force: true }),
+        fsp.rm(outputDir, { recursive: true, force: true }),
+        fsp.rm(fileDir, { recursive: true, force: true }),
+      ]);
+    },
+    45000
+  );
+});

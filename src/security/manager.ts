@@ -1,4 +1,5 @@
-import { SecurityRestrictions, SecurityMode } from '../types/index.js';
+import { SecurityModeSchema } from '../types/index.js';
+import type { SecurityRestrictions, SecurityMode } from '../types/index.js';
 import {
   EnhancedSecurityConfig,
   DEFAULT_ENHANCED_SECURITY_CONFIG,
@@ -6,8 +7,9 @@ import {
   CommandClassification,
   BasicSafetyRule,
 } from '../types/enhanced-security.js';
-import { SecurityError } from '../utils/errors.js';
+import { SecurityBoundaryError, SecurityError } from '../utils/errors.js';
 import { isValidPath, generateId, getCurrentTimestamp } from '../utils/helpers.js';
+import type { ExecutionBoundary, ExecutionRoute } from './execution-boundary.js';
 import { EnhancedSafetyEvaluator } from './enhanced-evaluator.js';
 import { createMessageCallbackFromMCPServer, type CreateMessageCallback } from './chat-completion-adapter.js';
 import type { ElicitationHandler } from './evaluator-types.js';
@@ -37,9 +39,10 @@ export class SecurityManager {
 
   private setDefaultRestrictions(): void {
     // Get default settings from environment variables
-    const defaultMode = (process.env['MCP_SHELL_SECURITY_MODE'] as SecurityMode) || 'permissive';
+    const defaultMode = this.parseSecurityMode(
+      process.env['MCP_SHELL_SECURITY_MODE'] ?? 'permissive'
+    );
     const defaultExecutionTime = parseInt(process.env['MCP_SHELL_MAX_EXECUTION_TIME'] || '300');
-    const defaultMemoryMb = parseInt(process.env['MCP_SHELL_MAX_MEMORY_MB'] || '1024');
     const defaultNetworkEnabled = process.env['MCP_SHELL_ENABLE_NETWORK'] !== 'false';
 
     // Automatic configuration for Enhanced Mode
@@ -55,7 +58,6 @@ export class SecurityManager {
       restriction_id: generateId(),
       security_mode: defaultMode,
       max_execution_time: defaultExecutionTime, // 5 minutes
-      max_memory_mb: defaultMemoryMb, // 1GB
       enable_network: defaultNetworkEnabled,
       active: true,
       configured_at: getCurrentTimestamp(),
@@ -124,12 +126,14 @@ export class SecurityManager {
   }
 
   setRestrictions(restrictions: Partial<SecurityRestrictions>): SecurityRestrictions {
+    const securityMode = this.parseSecurityMode(
+      restrictions.security_mode ?? this.restrictions?.security_mode ?? 'permissive'
+    );
     const newRestrictions: SecurityRestrictions = {
       restriction_id: generateId(),
-      security_mode: restrictions.security_mode || this.restrictions?.security_mode || 'permissive',
+      security_mode: securityMode,
       max_execution_time:
         restrictions.max_execution_time || this.restrictions?.max_execution_time || 300,
-      max_memory_mb: restrictions.max_memory_mb || this.restrictions?.max_memory_mb || 1024,
       enable_network: restrictions.enable_network ?? this.restrictions?.enable_network ?? true,
       active: true,
       configured_at: getCurrentTimestamp(),
@@ -158,6 +162,18 @@ export class SecurityManager {
 
     this.restrictions = newRestrictions;
     return newRestrictions;
+  }
+
+  private parseSecurityMode(mode: unknown): SecurityMode {
+    const parsedMode = SecurityModeSchema.safeParse(mode);
+    if (!parsedMode.success) {
+      throw new SecurityBoundaryError(
+        'SECURITY_CONFIGURATION_INVALID',
+        'MCP_SHELL_SECURITY_MODE must select a supported security mode.',
+        { configuredMode: mode }
+      );
+    }
+    return parsedMode.data;
   }
 
   getRestrictions(): SecurityRestrictions | null {
@@ -189,96 +205,69 @@ export class SecurityManager {
         break;
 
       case 'restrictive':
-        // restrictive mode: only allow read-only and information retrieval commands
-        const restrictiveAllowedCommands = [
-          // File/directory operations (read-only)
-          'ls',
-          'cat',
-          'less',
-          'more',
-          'head',
-          'tail',
-          'file',
-          'stat',
-          'find',
-          'locate',
-          // Text processing
-          'grep',
-          'awk',
-          'sed',
-          'sort',
-          'uniq',
-          'wc',
-          'cut',
-          'tr',
-          'column',
-          // System information
-          'pwd',
-          'whoami',
-          'id',
-          'date',
-          'uptime',
-          'uname',
-          'hostname',
-          'ps',
-          'top',
-          'df',
-          'du',
-          'free',
-          'lscpu',
-          'lsblk',
-          'lsusb',
-          'lspci',
-          // Network (read-only)
-          'ping',
-          'nslookup',
-          'dig',
-          'host',
-          'netstat',
-          'ss',
-          'lsof',
-          // Basic commands
-          'echo',
-          'printf',
-          'which',
-          'type',
-          'command',
-          'history',
-          'env',
-          'printenv',
-          // Archive (read-only)
-          'tar',
-          'zip',
-          'unzip',
-          'gzip',
-          'gunzip',
-          'zcat',
-        ];
-        if (!this.isCommandAllowed(command, restrictiveAllowedCommands, [])) {
-          throw new SecurityError(`Command '${command}' is not allowed in restrictive mode`, {
-            command,
-            allowedCommands: restrictiveAllowedCommands,
-          });
-        }
+        // Full shell syntax is permitted only inside the restrictive Bubblewrap profile.
         break;
 
       case 'custom':
-        // custom mode: use detailed settings
-        if (
-          !this.isCommandAllowed(
-            command,
-            this.restrictions.allowed_commands,
-            this.restrictions.blocked_commands
-          )
-        ) {
-          throw new SecurityError(`Command '${command}' is not allowed by security policy`, {
-            command,
-            allowedCommands: this.restrictions.allowed_commands,
-            blockedCommands: this.restrictions.blocked_commands,
-          });
-        }
-        break;
+        throw new SecurityBoundaryError(
+          'CUSTOM_MODE_MIGRATION_REQUIRED',
+          'Legacy custom command policies cannot execute. Migrate to an approved sandbox profile.',
+          { command }
+        );
     }
+  }
+
+  resolveExecutionBoundary(route: ExecutionRoute): ExecutionBoundary {
+    if (!this.restrictions?.active) {
+      return { kind: 'host' };
+    }
+
+    if (this.restrictions.security_mode === 'custom') {
+      throw new SecurityBoundaryError(
+        'CUSTOM_MODE_MIGRATION_REQUIRED',
+        'Legacy custom command policies cannot execute. Migrate to an approved sandbox profile.'
+      );
+    }
+
+    if (this.restrictions.security_mode !== 'restrictive') {
+      return { kind: 'host' };
+    }
+
+    if (route.remote) {
+      throw new SecurityBoundaryError(
+        'SANDBOX_REMOTE_UNAVAILABLE',
+        'Remote execution is unavailable for restrictive sandbox requests.'
+      );
+    }
+    if (route.createTerminal) {
+      throw new SecurityBoundaryError(
+        'SANDBOX_TERMINAL_UNAVAILABLE',
+        'Interactive terminal execution is unavailable for restrictive sandbox requests.'
+      );
+    }
+    if (route.executionMode === 'detached') {
+      throw new SecurityBoundaryError(
+        'SANDBOX_DETACHED_UNAVAILABLE',
+        'Detached execution is unavailable for restrictive sandbox requests.'
+      );
+    }
+    if (route.hasEnvironmentOverrides) {
+      throw new SecurityBoundaryError(
+        'SANDBOX_ENV_UNSUPPORTED',
+        'Environment overrides are unavailable for restrictive sandbox requests.'
+      );
+    }
+
+    return { kind: 'sandbox', profile: 'restrictive-v1' };
+  }
+
+  assertTerminalMutationAllowed(): void {
+    this.resolveExecutionBoundary({
+      remote: false,
+      executionMode: 'foreground',
+      createTerminal: true,
+      hasEnvironmentOverrides: false,
+    });
   }
 
   validatePath(path: string): void {
@@ -308,22 +297,6 @@ export class SecurityManager {
         {
           requestedTime: timeoutSeconds,
           maxAllowedTime: this.restrictions.max_execution_time,
-        }
-      );
-    }
-  }
-
-  validateMemoryUsage(memoryMb: number): void {
-    if (!this.restrictions?.active) {
-      return;
-    }
-
-    if (this.restrictions.max_memory_mb && memoryMb > this.restrictions.max_memory_mb) {
-      throw new SecurityError(
-        `Memory usage ${memoryMb}MB exceeds maximum allowed ${this.restrictions.max_memory_mb}MB`,
-        {
-          requestedMemory: memoryMb,
-          maxAllowedMemory: this.restrictions.max_memory_mb,
         }
       );
     }
@@ -367,35 +340,6 @@ export class SecurityManager {
     }
   }
 
-  private isCommandAllowed(
-    command: string,
-    allowedCommands?: string[],
-    blockedCommands?: string[]
-  ): boolean {
-    // Extract the first word (actual command name) from the command
-    const cmdName = command.trim().split(/\s+/)[0];
-
-    // Block if cmdName is empty
-    if (!cmdName) {
-      return false;
-    }
-
-    // Check blocked commands
-    if (blockedCommands && blockedCommands.length > 0) {
-      if (blockedCommands.some((blocked) => cmdName === blocked || cmdName.startsWith(blocked))) {
-        return false;
-      }
-    }
-
-    // Check allowed commands
-    if (allowedCommands && allowedCommands.length > 0) {
-      return allowedCommands.some((allowed) => cmdName === allowed || cmdName.startsWith(allowed));
-    }
-
-    // Allow if allowedCommands is not specified (only blockedCommands check)
-    return true;
-  }
-
   // Enhanced Security Configuration Methods
 
   /**
@@ -430,9 +374,11 @@ export class SecurityManager {
    * Check if enhanced security mode is enabled
    */
   isEnhancedModeEnabled(): boolean {
-    const enabled = this.enhancedConfig.enhanced_mode_enabled;
-    console.error('isEnhancedModeEnabled() called:', enabled);
-    return enabled;
+    const securityMode = this.restrictions?.security_mode;
+    if (securityMode === 'restrictive' || securityMode === 'custom') {
+      return false;
+    }
+    return this.enhancedConfig.enhanced_mode_enabled;
   }
 
   /**

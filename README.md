@@ -99,7 +99,7 @@ Add to MCP settings:
 - ✅ MCP integration complete
 
 ### Key Achievements
-- 🔐 **Comprehensive Security**: Advanced command validation and sandboxing
+- 🔐 **Explicit Security Boundaries**: Bubblewrap-backed restrictive execution and clearly identified unconfined modes
 - 🖥️ **18 MCP Tools**: Complete API covering all shell operations
 - 📊 **Real-time Monitoring**: System and process metrics
 - 🖥️ **Terminal Sessions**: Interactive PTY-based terminals
@@ -109,10 +109,10 @@ Add to MCP settings:
 ## Features
 
 ### 🛡️ Security-First Design
-- Sandboxed command execution
-- Configurable command restrictions
-- Path access control
-- Resource usage limits
+- Bubblewrap sandboxing for restrictive local non-interactive execution
+- Fail-closed unsupported restrictive routes
+- Canonical request-path validation
+- Execution-time and output limits
 - Real-time security monitoring
 
 ### 🔧 Shell Operations
@@ -145,8 +145,8 @@ Add to MCP settings:
   - Session leader detection and validation
   - Safe fallback behavior for unknown processes
 - **🆕 Control Code Validation**: Secure handling of terminal control sequences
-- Process isolation and sandboxing
-- Configurable security restrictions
+- Mode-specific isolation receipts
+- Explicit migration failure for legacy custom command lists
 
 ### 📁 File Operations
 - Output file management
@@ -241,7 +241,7 @@ const result = await client.request({
 
 // Response includes guidance for pipeline processing
 console.log(result.guidance.pipeline_usage);
-// "Background process active. Use "input_output_id": "xyz" for real-time processing"
+// "input_output_id" reads the retained transition snapshot; wait for completion for final output.
 ```
 
 #### Automatic File Cleanup
@@ -376,14 +376,18 @@ npm test
 
 ## Configuration
 
-The server can be configured through environment variables or by calling the security restriction tools at runtime.
+The server security mode and trusted workspace roots are startup configuration supplied through environment variables. They are not mutable through the public MCP tool surface.
 
 ### Default Security Settings
 
-- Blocked dangerous commands (rm, sudo, etc.)
-- Limited to safe directories
+- The default mode is `permissive`: commands execute directly on the host and are not blocked by a command allow/block policy
+- Working-directory roots limit which existing directory may be selected; this validation is not a child-process sandbox or filesystem confinement boundary
 - 5-minute execution timeout
-- 1GB memory limit
+- Bounded retained command output; no per-process CPU, PID, or memory containment
+
+Use `MCP_SHELL_SECURITY_MODE=restrictive` on Linux with Bubblewrap for the fail-closed
+`restrictive-v1` sandbox. Other modes remain direct host execution; legacy `custom` command-list
+configuration requires migration and does not execute.
 
 ### Disabling Tools
 Set `MCP_DISABLED_TOOLS` to a comma-separated list of tool names to disable.
@@ -406,7 +410,7 @@ The server supports the following environment variables for configuration:
   ```
 - `MCP_SHELL_ALLOWED_WORKDIRS`: Comma-separated list of allowed working directories
   ```bash
-  export MCP_SHELL_ALLOWED_WORKDIRS="/home/user,/tmp,/var/log"
+  export MCP_SHELL_ALLOWED_WORKDIRS="/home/user/projects/project-a,/home/user/projects/project-b"
   ```
 
 #### Security Configuration
@@ -414,6 +418,7 @@ The server supports the following environment variables for configuration:
   ```bash
   export MCP_SHELL_SECURITY_MODE="enhanced"
   ```
+- `MCP_SHELL_BWRAP_PATH`: Optional trusted absolute path to Bubblewrap. Restrictive mode otherwise checks `/usr/bin/bwrap` and `/bin/bwrap`.
 - `MCP_SHELL_ELICITATION`: Enable user intent elicitation for complex scenarios (for enhanced modes)
   ```bash
   export MCP_SHELL_ELICITATION="true"
@@ -421,26 +426,23 @@ The server supports the following environment variables for configuration:
 - `MCP_SHELL_LLM_API_KEY`: API key for LLM-based safety evaluation (optional, falls back to MCP sampling)
 - `MCP_SHELL_LLM_TIMEOUT`: Timeout for LLM evaluation in seconds (default: 30)
 
-#### Resource Limits
+#### Execution Limits
 - `MCP_SHELL_MAX_EXECUTION_TIME`: Default maximum execution time in seconds
   ```bash
   export MCP_SHELL_MAX_EXECUTION_TIME="300"
   ```
-- `MCP_SHELL_MAX_MEMORY_MB`: Default maximum memory usage in MB
-  ```bash
-  export MCP_SHELL_MAX_MEMORY_MB="1024"
-  ```
+
+Per-process memory is not limited by this server. Apply an external cgroup or service-manager limit when memory containment is required.
 
 #### Complete Configuration Example
 ```bash
 # Security settings
 export MCP_SHELL_SECURITY_MODE="restrictive"
 export MCP_SHELL_MAX_EXECUTION_TIME="300"
-export MCP_SHELL_MAX_MEMORY_MB="1024"
 
 # Working directory settings
 export MCP_SHELL_DEFAULT_WORKDIR="/home/user/projects"
-export MCP_SHELL_ALLOWED_WORKDIRS="/home/user,/tmp"
+export MCP_SHELL_ALLOWED_WORKDIRS="/home/user/projects/project-a"
 
 # Tool restrictions
 export MCP_DISABLED_TOOLS="process_terminate,delete_execution_outputs"
@@ -449,36 +451,26 @@ export MCP_DISABLED_TOOLS="process_terminate,delete_execution_outputs"
 npm start
 ```
 
-**Note**: Additional configuration options can be set at runtime using the `security_set_restrictions` tool for more granular control over allowed/blocked commands, directories, and other security parameters.
+**Note**: `restrictive` requires Linux and a successfully probed Bubblewrap provider. Provider absence or setup failure stops the request; it never falls back to direct host execution.
 
-### Runtime Security Configuration
+### Startup Security Configuration
 
-Use the `security_set_restrictions` tool to dynamically configure security settings:
-
-```json
-{
-  "security_mode": "custom",
-  "allowed_commands": ["ls", "cat", "grep"],
-  "blocked_commands": ["rm", "sudo"],
-  "allowed_directories": ["/tmp", "/home/user"],
-  "max_execution_time": 300,
-  "max_memory_mb": 1024
-}
-```
+Select the security mode with `MCP_SHELL_SECURITY_MODE` before starting the server. The public MCP API intentionally does not expose `security_set_restrictions`, because an evaluated client must not be able to downgrade its own execution boundary.
 
 **Security Modes:**
-- `permissive`: Allow most commands with basic safety checks
-- `restrictive`: Only allow read-only commands (ls, cat, grep, etc.)
-- `enhanced`: AI-powered safety evaluation with LLM-based analysis (recommended)
-- `enhanced-fast`: Optimized enhanced mode for better performance
-- `custom`: Use detailed configuration with allowed/blocked commands
+- `permissive` / `moderate`: Direct, unconfined host execution. Command evaluation is not an OS isolation boundary.
+- `restrictive`: Full Bash syntax runs inside `restrictive-v1`: approved workspace mounted read-only, private `/tmp`, fixed environment, and no IP network. Foreground, background, and adaptive local execution are supported. The enhanced evaluator is bypassed because OS confinement, rather than client sampling support, is the required execution gate.
+- `enhanced` / `enhanced-fast`: LLM/Sampling evaluation followed by direct, unconfined host execution. Evaluation does not provide filesystem or process isolation.
+- `custom`: Legacy command-list configurations return `CUSTOM_MODE_MIGRATION_REQUIRED` before process creation.
+
+Restrictive mode temporarily rejects interactive terminals, remote execution, detached execution, request environment overrides, and workspaces containing special filesystem endpoints with stable `SANDBOX_*` codes in an MCP tool-error result's `structuredContent.code`. A successful response includes `execution_isolation` describing the actual launcher and profile.
 
 ## API Reference
 
 ### Shell Operations
 
 #### `shell_execute`
-Execute shell commands with various execution modes. Can also create new interactive terminal sessions.
+Execute shell commands with various execution modes. Interactive terminal creation is unavailable in restrictive mode until a reviewed sandboxed PTY boundary is provided.
 
 **Parameters:**
 - `command` (required): Command to execute
@@ -542,6 +534,7 @@ The MCP Shell Server supports command chaining through the Pipeline feature, all
 - Pipeline feature is different from shell pipes (`|`)
 - Each command requires a separate `shell_execute` call
 - Use `output_id` from first command's response as `input_output_id` for second command
+- If the source execution is still running, `input_output_id` reads its retained transition snapshot; it is not a live stream. Wait for completion before consuming final output
 - FileManager automatically handles data transfer between commands
 - Supports large output files (up to 100MB)
 
@@ -611,14 +604,6 @@ Read output file contents safely.
 #### `delete_execution_outputs`
 Delete output files with confirmation.
 
-### Security & Monitoring
-
-#### `security_set_restrictions`
-Configure security restrictions.
-
-#### `monitoring_get_stats`
-Get system-wide statistics.
-
 ## Architecture
 
 ```
@@ -647,15 +632,19 @@ mcp-shell-server/
 
 ## Security Considerations
 
-1. **Command Validation**: All commands are validated against security policies
-2. **Path Restrictions**: File system access is limited to allowed directories  
-3. **Resource Limits**: CPU, memory, and execution time limits are enforced
+1. **Execution Boundary**: Only restrictive local non-interactive execution is OS-confined by Bubblewrap; other modes are explicitly unconfined
+2. **Path Validation**: Existing request paths and working directories use canonical component-boundary checks; this alone is not a child-process filesystem sandbox
+3. **Resource Limits**: Execution-time and host-memory output-retention limits are enforced by the server; complete cgroup-backed CPU/memory containment is not provided
 4. **Audit Logging**: All operations are logged for security auditing
-5. **Sandboxed Execution**: Commands run in isolated environments
+5. **Fail-closed Sandbox**: Restrictive requests never fall back to host execution when Bubblewrap or a covered route is unavailable
+
+Restrictive launch rejects observed sockets, FIFOs, devices, and unknown special entries below the approved root. Keep sensitive runtime endpoints outside approved roots: nested mounts, FUSE behavior, and concurrent host mutation after inspection remain outside this expedited profile's local-operator threat model.
+
+Every readable regular file below the selected approved root is readable inside restrictive mode. Read-only prevents modification, not disclosure, so configure the narrowest project root and never approve a home directory or another tree containing credentials.
 
 ## Error Handling
 
-The server provides comprehensive error handling with categorized error codes:
+The server provides categorized application error codes in MCP tool-error `structuredContent.code`:
 
 - `AUTH_*`: Authentication and authorization errors
 - `PARAM_*`: Parameter validation errors  

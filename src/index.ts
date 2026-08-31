@@ -39,7 +39,7 @@ function printHelp(version: string): void {
     '  EXECUTION_BACKEND=local|remote  Select execution backend (default: local)',
     '  EXECUTOR_URL / EXECUTOR_HOST / EXECUTOR_PORT / EXECUTOR_TOKEN  Configure remote executor',
     '  MCP_SHELL_DEFAULT_WORKDIR  Default working directory for shell_execute',
-    '  MCP_ALLOWED_WORKDIRS       Comma-separated allowed directories',
+    '  MCP_SHELL_ALLOWED_WORKDIRS Comma-separated approved working-directory roots',
     '  MCP_DISABLED_TOOLS         Comma-separated tool names to disable',
     '  LOG_LEVEL=debug|info|warn|error  Log verbosity',
     '',

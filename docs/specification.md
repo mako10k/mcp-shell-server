@@ -17,7 +17,18 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 - **バージョン**: 2.0.0
 - **プロトコル**: Model Context Protocol (MCP) v1.0
 - **対応プラットフォーム**: Linux, macOS, Windows
-- **セキュリティレベル**: Sandboxed Execution
+- **セキュリティレベル**: mode-specific。`restrictive` のローカル非対話実行のみ Bubblewrap で隔離し、他モードはホスト直接実行
+
+### 実行境界
+
+- `restrictive`: Linux/Bubblewrap必須。承認workspaceはread-only、`/tmp`はprivate、環境は固定、networkなし。Bubblewrapの不在・probe/setup失敗でhost実行へfallbackしない。
+- `custom`: 旧command-list設定は移行専用。`CUSTOM_MODE_MIGRATION_REQUIRED` をprocess生成前に返す。
+- `permissive` / `moderate`: host直接実行。
+- `enhanced` / `enhanced-fast`: LLM/Sampling評価後にhost直接実行。評価はOS isolationではない。
+- restrictiveのPTY、remote、detached、request環境変数overrideは未対応であり、対応する `SANDBOX_*` errorでfail-closedする。
+- 成功した実行は `execution_isolation` に実際のlauncher/profileを返す。
+- path validationは既存pathのcanonical/component-boundary検査であり、host直接実行されるchild processのfilesystem sandboxではない。
+- `input_output_id` は保持済み出力を読む。adaptive実行中は遷移時snapshotでありlive streamではないため、最終出力が必要なconsumerは完了を待つ。
 
 ## Tools
 
@@ -25,8 +36,8 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 
 #### shell_execute
 
-安全にシェルコマンドを実行します。サンドボックス環境での実行により、システムの安全性を確保します。
-新規ターミナルセッション作成にも対応しています。
+選択されたsecurity modeに従ってシェルコマンドを実行します。restrictiveではフルBash文字列をBubblewrap内で実行します。
+新規ターミナルセッション作成はhost直接実行モードのみ対応します。
 
 **パラメータ:**
 ```json
@@ -58,6 +69,7 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
   "output_truncated": "boolean - 出力が切り捨てられたかどうか",
   "execution_time_ms": "number - 実行時間（ミリ秒）",
   "process_id": "number (optional) - プロセスID（async/backgroundモードの場合）",
+  "execution_isolation": "object - 実際のhost/Bubblewrap実行境界",
   "terminal_id": "string (optional) - ターミナルID（create_terminal=trueの場合）",
   "output_id": "string (optional) - 出力ファイルID（FileManagerで管理される場合）",
   "transition_reason": "string (optional) - adaptiveモードでのバックグラウンド移行理由: 'foreground_timeout' | 'output_size_limit'",
@@ -235,7 +247,8 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 {
   "deleted_files": "array - 削除されたファイルIDのリスト",
   "failed_files": "array - 削除に失敗したファイルIDのリスト",
-  "total_deleted": "number - 削除されたファイル数"
+  "total_deleted": "number - 削除されたファイル数",
+  "deleted_bytes": "number - 削除lock内で確認した実際の削除byte数"
 }
 ```
 
@@ -418,32 +431,9 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 }
 ```
 
-### Security & Monitoring
+### Security Configuration
 
-#### security_set_restrictions
-
-実行制限を設定します。
-
-**パラメータ:**
-```json
-{
-  "allowed_commands": "array (optional) - 許可するコマンドのリスト",
-  "blocked_commands": "array (optional) - 禁止するコマンドのリスト",
-  "allowed_directories": "array (optional) - アクセス可能なディレクトリ",
-  "max_execution_time": "number (optional) - 最大実行時間（秒）",
-  "max_memory_mb": "number (optional) - 最大メモリ使用量（MB）",
-  "enable_network": "boolean (optional, default: true) - ネットワークアクセスを許可するか"
-}
-```
-
-**レスポンス:**
-```json
-{
-  "restriction_id": "string - 制限設定ID",
-  "active": "boolean - 制限が有効かどうか",
-  "configured_at": "string - 設定時刻"
-}
-```
+security mode と trusted workspace root は、起動前に `MCP_SHELL_SECURITY_MODE`、`MCP_SHELL_ALLOWED_WORKDIRS`、`MCP_SHELL_DEFAULT_WORKDIR` で設定します。評価対象のMCP client自身による境界downgradeを防ぐため、public MCP APIは `security_set_restrictions` を公開しません。
 
 #### monitoring_get_stats
 
@@ -525,15 +515,16 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 
 ## セキュリティ機能
 
-### サンドボックス実行
-- すべてのコマンドは隔離された環境で実行
-- ファイルシステムアクセスの制限
-- ネットワークアクセスの制御
+### 実行境界
+- `restrictive` のローカル非対話コマンドだけが必須の Bubblewrap 境界で実行される
+- `restrictive` では承認済みworkspaceを読み取り専用で公開し、IPネットワーク名前空間を分離する
+- `restrictive` で未対応の terminal・remote・detached・環境変数上書き経路はコマンド開始前に失敗する
+- `permissive`、`moderate`、`enhanced`、`enhanced-fast` はホストで直接実行され、OSレベルのファイルシステム・ネットワーク隔離を提供しない
 
 ### コマンド制限
-- 危険なコマンドの自動検出と禁止
-- ホワイトリスト/ブラックリストによる制御
-- 実行時間とリソース使用量の制限
+- モードに応じたコマンド評価と起動時設定
+- 総実行時間と保持出力サイズの制限
+- CPU・PID・プロセスメモリの強制制限は提供せず、必要な場合は外部cgroup等を使用する
 
 ### 監査ログ
 - すべての実行ログの記録
@@ -547,7 +538,7 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 - 最大ターミナルセッション数: 20
 - 最大ファイルサイズ: 100MB
 - 最大実行時間: 300秒
-- 最大メモリ使用量: 1GB
+- プロセス単位のCPU・PID・メモリ制限: 未実装（必要な場合は外部cgroup等を使用）
 
 ### スケーラビリティ
 - 非同期処理による高いスループット
@@ -647,4 +638,3 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
   - パフォーマンス改善
   - 新しいターミナル管理機能
   - 包括的な監視機能の追加
-

@@ -44,7 +44,7 @@
 
 **After (improved):**
 ```
-"Execute shell commands in a secure sandboxed environment and return their output. Supports multiple execution modes: foreground (immediate), background (async), and adaptive (starts foreground, switches to background if needed). Commands run with security restrictions and resource limits."
+"Execute shell commands and return their output. Restrictive local foreground, background, and adaptive requests run in the required Bubblewrap profile; other executable modes are reported as direct host execution. Restrictive terminal, remote, and detached routes fail closed."
 ```
 
 ### 2. Parameter Description
@@ -82,7 +82,7 @@ timeout_seconds: "Maximum time in seconds to wait for foreground execution befor
 #### ✅ Include in descriptions:
 - セキュリティ制限による実行失敗の可能性
 - タイムアウト時の動作
-- リソース制限（メモリ、出力サイズ）
+- リソース制限（実行時間、出力保持サイズ）
 - パーミッション要件
 
 #### Example:
