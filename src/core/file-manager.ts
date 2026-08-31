@@ -466,6 +466,7 @@ export class FileManager {
     const currentTime = Date.now();
     const deleteCandidates: string[] = [];
     const preserveCandidates: string[] = [];
+    const candidateSizes = new Map<string, number>();
     let spaceFeed = 0;
 
     // ファイルを作成時間でソート（新しい順）
@@ -490,6 +491,7 @@ export class FileManager {
 
         if (fileAgeHours > maxAgeHours) {
           deleteCandidates.push(outputId);
+          candidateSizes.set(outputId, fileInfo.size);
           spaceFeed += fileInfo.size;
         } else {
           preserveCandidates.push(outputId);
@@ -499,26 +501,24 @@ export class FileManager {
 
     const spaceFreedMB = Math.round((spaceFeed / (1024 * 1024)) * 100) / 100;
 
-    // 実際の削除実行（dryRunでない場合）
-    if (!dryRun && deleteCandidates.length > 0) {
-      try {
-        await this.deleteFiles(deleteCandidates, true);
-      } catch (error) {
-        console.error('Auto cleanup failed:', error);
-        // エラーの場合は削除されなかった扱い
-        return {
-          deleted_files: [],
-          preserved_files: Array.from(this.files.keys()),
-          space_freed_mb: 0,
-          dry_run: dryRun,
-        };
-      }
+    if (dryRun || deleteCandidates.length === 0) {
+      return {
+        deleted_files: deleteCandidates,
+        preserved_files: preserveCandidates,
+        space_freed_mb: spaceFreedMB,
+        dry_run: dryRun,
+      };
     }
 
+    const deletionResult = await this.deleteFiles(deleteCandidates, true);
+    const actualSpaceFreed = deletionResult.deleted_files.reduce(
+      (total, outputId) => total + (candidateSizes.get(outputId) ?? 0),
+      0
+    );
     return {
-      deleted_files: deleteCandidates,
-      preserved_files: preserveCandidates,
-      space_freed_mb: spaceFreedMB,
+      deleted_files: deletionResult.deleted_files,
+      preserved_files: Array.from(this.files.keys()),
+      space_freed_mb: Math.round((actualSpaceFreed / (1024 * 1024)) * 100) / 100,
       dry_run: dryRun,
     };
   }

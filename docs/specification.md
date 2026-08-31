@@ -28,6 +28,7 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 - restrictiveのPTY、remote、detached、request環境変数overrideは未対応であり、対応する `SANDBOX_*` errorでfail-closedする。
 - 成功した実行は `execution_isolation` に実際のlauncher/profileを返す。
 - path validationは既存pathのcanonical/component-boundary検査であり、host直接実行されるchild processのfilesystem sandboxではない。
+- `input_output_id` は保持済み出力を読む。adaptive実行中は遷移時snapshotでありlive streamではないため、最終出力が必要なconsumerは完了を待つ。
 
 ## Tools
 

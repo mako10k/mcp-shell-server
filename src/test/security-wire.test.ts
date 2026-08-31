@@ -132,6 +132,8 @@ describe.runIf(process.platform === 'linux')('restrictive MCP wire contract', ()
         const initialOutputId = startedExecution['output_id'];
         expect(typeof executionId).toBe('string');
         expect(typeof initialOutputId).toBe('string');
+        expect(JSON.stringify(startedExecution['guidance'])).toContain('retained transition snapshot');
+        expect(JSON.stringify(startedExecution['guidance'])).not.toContain('real-time');
 
         let completedExecution: Record<string, unknown> = startedExecution;
         for (let attempt = 0; attempt < 100 && completedExecution['status'] === 'running'; attempt += 1) {
@@ -163,6 +165,22 @@ describe.runIf(process.platform === 'linux')('restrictive MCP wire contract', ()
         }
         const retainedOutput = JSON.parse(retainedText.text) as Record<string, unknown>;
         expect(retainedOutput['content']).toBe('beforeafter');
+
+        const deleted = await client.callTool({
+          name: 'delete_execution_outputs',
+          arguments: { output_ids: [initialOutputId], confirm: true },
+        });
+        expect(deleted.isError).not.toBe(true);
+        const afterDeletion = await client.callTool({
+          name: 'process_get_execution',
+          arguments: { execution_id: executionId },
+        });
+        const deletedExecution = parseToolText(afterDeletion, 'completed deletion readback');
+        expect(deletedExecution['output_id']).toBeUndefined();
+        expect(deletedExecution['output_status']).toMatchObject({
+          complete: true,
+          available_via_output_id: false,
+        });
       } finally {
         await client.close();
         await fsp.rm(workspaceRoot, { recursive: true, force: true });

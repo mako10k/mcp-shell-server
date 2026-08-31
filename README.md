@@ -241,7 +241,7 @@ const result = await client.request({
 
 // Response includes guidance for pipeline processing
 console.log(result.guidance.pipeline_usage);
-// "Background process active. Use "input_output_id": "xyz" for real-time processing"
+// "input_output_id" reads the retained transition snapshot; wait for completion for final output.
 ```
 
 #### Automatic File Cleanup
@@ -380,10 +380,14 @@ The server security mode and trusted workspace roots are startup configuration s
 
 ### Default Security Settings
 
-- Blocked dangerous commands (rm, sudo, etc.)
-- Limited to safe directories
+- The default mode is `permissive`: commands execute directly on the host and are not blocked by a command allow/block policy
+- Working-directory roots limit which existing directory may be selected; this validation is not a child-process sandbox or filesystem confinement boundary
 - 5-minute execution timeout
 - Bounded retained command output; no per-process CPU, PID, or memory containment
+
+Use `MCP_SHELL_SECURITY_MODE=restrictive` on Linux with Bubblewrap for the fail-closed
+`restrictive-v1` sandbox. Other modes remain direct host execution; legacy `custom` command-list
+configuration requires migration and does not execute.
 
 ### Disabling Tools
 Set `MCP_DISABLED_TOOLS` to a comma-separated list of tool names to disable.
@@ -530,6 +534,7 @@ The MCP Shell Server supports command chaining through the Pipeline feature, all
 - Pipeline feature is different from shell pipes (`|`)
 - Each command requires a separate `shell_execute` call
 - Use `output_id` from first command's response as `input_output_id` for second command
+- If the source execution is still running, `input_output_id` reads its retained transition snapshot; it is not a live stream. Wait for completion before consuming final output
 - FileManager automatically handles data transfer between commands
 - Supports large output files (up to 100MB)
 

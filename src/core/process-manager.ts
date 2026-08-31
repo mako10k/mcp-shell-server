@@ -1832,19 +1832,19 @@ export class ProcessManager {
       executionInfo.next_steps = [
         'Use process_list to check status',
         'Use read_execution_output when completed',
-        'Use output_id for real-time pipeline processing',
+        'Use output_id only for the retained transition snapshot until completion',
       ];
       if (needsGuidance) {
         executionInfo.guidance = {
-          pipeline_usage: `Background process active. Use "input_output_id": "${outputId}" for real-time processing`,
+          pipeline_usage: `Background process active. "input_output_id": "${outputId}" reads the retained transition snapshot; wait for completion before using final output.`,
           suggested_commands: [
-            'tail -f equivalent using input_output_id for live monitoring',
-            'grep for real-time log filtering',
-            'awk for live data extraction and formatting',
+            'read_execution_output for the retained transition snapshot',
+            'process_get_execution to wait for final retained output',
+            'grep/sed/awk processing after execution completes',
           ],
           background_processing: {
             status_check: 'Use process_get_execution for detailed status',
-            monitoring: 'Output_id supports real-time streaming while process runs',
+            monitoring: 'Output_id is a retained snapshot, not a live stream, while the process runs',
           },
         };
       }
@@ -1947,7 +1947,28 @@ export class ProcessManager {
   }
 
   getExecution(executionId: string): ExecutionInfo | undefined {
-    return this.executions.get(executionId);
+    const executionInfo = this.executions.get(executionId);
+    if (!executionInfo) return undefined;
+    return this.projectOutputAvailability(executionInfo);
+  }
+
+  private projectOutputAvailability(executionInfo: ExecutionInfo): ExecutionInfo {
+    const projectedExecution = { ...executionInfo };
+    const outputId = executionInfo.output_id;
+    if (!outputId || !this.fileManager || this.fileManager.hasOutputFile(outputId)) {
+      return projectedExecution;
+    }
+
+    delete projectedExecution.output_id;
+    if (executionInfo.output_status) {
+      projectedExecution.output_status = {
+        ...executionInfo.output_status,
+        available_via_output_id: false,
+      };
+      delete projectedExecution.output_status.recommended_action;
+    }
+    delete projectedExecution.guidance;
+    return projectedExecution;
   }
 
   listExecutions(filter?: {
@@ -1957,7 +1978,9 @@ export class ProcessManager {
     limit?: number;
     offset?: number;
   }): { executions: ExecutionInfo[]; total: number } {
-    let executions = Array.from(this.executions.values());
+    let executions = Array.from(this.executions.values()).map((executionInfo) =>
+      this.projectOutputAvailability(executionInfo)
+    );
 
     // フィルタリング
     if (filter) {

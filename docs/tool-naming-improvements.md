@@ -246,6 +246,12 @@ MCP_SHELL_ALLOWED_WORKDIRS=/home/user/projects/project-a,/home/user/projects/pro
 
 ### 3. セキュリティ制限設定の簡素化
 
+> **Historical proposal, not the current security contract.** The current implementation defaults
+> to permissive direct host execution. Restrictive execution uses the Linux Bubblewrap
+> `restrictive-v1` boundary, and legacy custom command-list configuration fails closed with
+> `CUSTOM_MODE_MIGRATION_REQUIRED`. The whitelist/custom design below is retained only as design
+> history and must not be used as operational guidance.
+
 **現在の問題**:
 - `allowed_commands`と`blocked_commands`の組み合わせが複雑
 - 空の場合の挙動が不明確
