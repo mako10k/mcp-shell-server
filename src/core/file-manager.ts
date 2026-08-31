@@ -212,6 +212,7 @@ export class FileManager {
     deleted_files: string[];
     failed_files: string[];
     total_deleted: number;
+    deleted_bytes: number;
   }> {
     if (!confirm) {
       throw new Error('Deletion must be confirmed');
@@ -219,6 +220,7 @@ export class FileManager {
 
     const deletedFiles: string[] = [];
     const failedFiles: string[] = [];
+    let deletedBytes = 0;
 
     for (const outputId of outputIds) {
       try {
@@ -226,18 +228,20 @@ export class FileManager {
           const fileInfo = this.files.get(outputId);
           if (!fileInfo) return false;
 
+          const fileSize = await getFileSize(fileInfo.path);
           // ファイルシステムからファイルを削除
           await fs.unlink(fileInfo.path);
 
           // マップから削除
           this.files.delete(outputId);
-          return true;
+          return fileSize;
         });
-        if (!deleted) {
+        if (deleted === false) {
           failedFiles.push(outputId);
           continue;
         }
         deletedFiles.push(outputId);
+        deletedBytes += deleted;
       } catch (error) {
         // エラーログを内部ログに記録（標準出力を避ける）
         // console.error(`Failed to delete file ${outputId}:`, error);
@@ -249,6 +253,7 @@ export class FileManager {
       deleted_files: deletedFiles,
       failed_files: failedFiles,
       total_deleted: deletedFiles.length,
+      deleted_bytes: deletedBytes,
     };
   }
 
@@ -466,7 +471,6 @@ export class FileManager {
     const currentTime = Date.now();
     const deleteCandidates: string[] = [];
     const preserveCandidates: string[] = [];
-    const candidateSizes = new Map<string, number>();
     let spaceFeed = 0;
 
     // ファイルを作成時間でソート（新しい順）
@@ -491,7 +495,6 @@ export class FileManager {
 
         if (fileAgeHours > maxAgeHours) {
           deleteCandidates.push(outputId);
-          candidateSizes.set(outputId, fileInfo.size);
           spaceFeed += fileInfo.size;
         } else {
           preserveCandidates.push(outputId);
@@ -511,14 +514,10 @@ export class FileManager {
     }
 
     const deletionResult = await this.deleteFiles(deleteCandidates, true);
-    const actualSpaceFreed = deletionResult.deleted_files.reduce(
-      (total, outputId) => total + (candidateSizes.get(outputId) ?? 0),
-      0
-    );
     return {
       deleted_files: deletionResult.deleted_files,
       preserved_files: Array.from(this.files.keys()),
-      space_freed_mb: Math.round((actualSpaceFreed / (1024 * 1024)) * 100) / 100,
+      space_freed_mb: Math.round((deletionResult.deleted_bytes / (1024 * 1024)) * 100) / 100,
       dry_run: dryRun,
     };
   }

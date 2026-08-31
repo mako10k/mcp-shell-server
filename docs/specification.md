@@ -247,7 +247,8 @@ MCP Shell Serverは、Model Context Protocol (MCP) を使用して安全かつ�
 {
   "deleted_files": "array - 削除されたファイルIDのリスト",
   "failed_files": "array - 削除に失敗したファイルIDのリスト",
-  "total_deleted": "number - 削除されたファイル数"
+  "total_deleted": "number - 削除されたファイル数",
+  "deleted_bytes": "number - 削除lock内で確認した実際の削除byte数"
 }
 ```
 

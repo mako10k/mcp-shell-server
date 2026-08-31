@@ -1968,6 +1968,21 @@ export class ProcessManager {
       delete projectedExecution.output_status.recommended_action;
     }
     delete projectedExecution.guidance;
+    if (executionInfo.status === 'running') {
+      projectedExecution.message =
+        'Command is still running, but its retained output is no longer available.';
+      projectedExecution.next_steps = [
+        'Use process_get_execution to monitor completion',
+        'Rerun the command if retained output is required',
+      ];
+    } else {
+      projectedExecution.message =
+        'Retained output is no longer available; inline execution output remains in this record.';
+      projectedExecution.next_steps = [
+        'Use inline stdout and stderr if they are sufficient',
+        'Rerun the command if retained output is required',
+      ];
+    }
     return projectedExecution;
   }
 

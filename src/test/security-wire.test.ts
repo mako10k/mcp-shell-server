@@ -181,6 +181,11 @@ describe.runIf(process.platform === 'linux')('restrictive MCP wire contract', ()
           complete: true,
           available_via_output_id: false,
         });
+        expect(deletedExecution['message']).toContain('no longer available');
+        expect(JSON.stringify(deletedExecution['next_steps'])).not.toContain('output_id');
+        expect(JSON.stringify(deletedExecution['next_steps'])).not.toContain(
+          'read_execution_output'
+        );
       } finally {
         await client.close();
         await fsp.rm(workspaceRoot, { recursive: true, force: true });

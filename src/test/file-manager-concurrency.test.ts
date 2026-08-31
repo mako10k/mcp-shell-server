@@ -54,6 +54,7 @@ describe('FileManager output operation serialization', () => {
         deleted_files: [outputId],
         failed_files: [],
         total_deleted: 1,
+        deleted_bytes: Buffer.byteLength('replacement'),
       });
       expect(() => manager.getFile(outputId)).toThrow(/not found/i);
       await expect(fsp.stat(outputPath)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -163,6 +164,49 @@ describe('FileManager output operation serialization', () => {
       expect(result.space_freed_mb).toBe(1);
       expect(() => manager.getFile(deletedId)).toThrow(/not found/i);
       expect(manager.getFile(failedId).output_id).toBe(failedId);
+    } finally {
+      await manager.cleanup();
+      await fsp.rm(baseDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports replacement size when auto-cleanup waits for the output lock', async () => {
+    const actualFs = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+    const baseDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-shell-cleanup-race-'));
+    const manager = new FileManager(baseDir);
+
+    try {
+      const outputId = await manager.createOutputFile('a'.repeat(1024 * 1024));
+      let signalReplacementStarted!: () => void;
+      const replacementStarted = new Promise<void>((resolve) => {
+        signalReplacementStarted = resolve;
+      });
+      let releaseReplacement!: () => void;
+      const replacementGate = new Promise<void>((resolve) => {
+        releaseReplacement = resolve;
+      });
+      vi.mocked(fsp.writeFile).mockImplementationOnce(async (...args) => {
+        signalReplacementStarted();
+        await replacementGate;
+        return actualFs.writeFile(...args);
+      });
+
+      const replacement = manager.replaceOutputFile(outputId, 'b'.repeat(2 * 1024 * 1024));
+      await replacementStarted;
+      const cleanup = manager.performAutoCleanup({
+        maxAgeHours: -1,
+        preserveRecent: -1,
+        dryRun: false,
+      });
+      releaseReplacement();
+
+      await expect(replacement).resolves.toBeUndefined();
+      await expect(cleanup).resolves.toMatchObject({
+        deleted_files: [outputId],
+        preserved_files: [],
+        space_freed_mb: 2,
+        dry_run: false,
+      });
     } finally {
       await manager.cleanup();
       await fsp.rm(baseDir, { recursive: true, force: true });
