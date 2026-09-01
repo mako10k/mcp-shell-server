@@ -47,9 +47,11 @@ committed through the resulting Merkle DAG.
 | `src/security/manager.ts`, `src/tools/shell-tools.ts` | root |
 | `src/core/process-manager.ts`, `src/core/terminal-manager.ts` | root |
 | `src/core/enhanced-history-manager.ts`, `src/utils/helpers.ts` | root |
-| `extensions/vscode-mcp-shell/package.json` | `package.json`, server and schema roots |
-| `extensions/vscode-mcp-shell/src/extension.ts` | `package.json`, `src/server.ts`, extension package metadata |
-| `docs/specification.md` | package, CLI, server, schema, policy, handler, process, terminal, history, and logger roots |
+| `src/runtime/tool-runtime.ts`, `src/runtime/execution-intent.ts` | root |
+| `extensions/vscode-mcp-shell/package.json` | `package.json`, server, schema, runtime, and execution-intent roots |
+| `extensions/vscode-mcp-shell/src/extension.ts` | `package.json`, `src/server.ts`, runtime, execution intent, extension package metadata |
+| `extensions/vscode-mcp-shell/README.md` | package, extension package metadata, specification, and security policy |
+| `docs/specification.md` | package, CLI, server, schema, execution intent, policy, handler, process, terminal, history, and logger roots |
 | `SECURITY.md` | `package.json`, policy, handler, process, terminal, and logger roots |
 | `docs/control-codes.md` | specification, quick schema, terminal manager |
 | `docs/program-guard.md` | specification, security policy, quick schema, terminal manager |

@@ -4,10 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const extensionRoot = new URL('../', import.meta.url);
-const serverRoot = new URL(
-  'node_modules/@mako10k/mcp-shell-server/',
-  extensionRoot,
-);
+const serverRoot = new URL('../../', extensionRoot);
 const bundleRoot = new URL('dist/mcp-shell-server/', extensionRoot);
 const bundleDirectory = new URL('dist/', bundleRoot);
 const bundleEntry = new URL('index.mjs', bundleDirectory);

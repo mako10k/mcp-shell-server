@@ -162,8 +162,10 @@ creation と input は restrictive mode では利用できません。
 主要 input:
 
 - `terminal_id`: 既存 terminal。省略時は `command` を指定して作成
-- `command` / `input`: terminal へ送る text
-- `execute`: default true
+- `command` / `input`: terminal へ送る text。両方の同時指定は曖昧なため拒否
+- `command`: 新規 terminal では必須。既存 terminal への入力にも使用可能
+- `input`: `terminal_id` で指定した既存 terminal 専用
+- `execute`: default true。新規・既存のどちらでも false は Enter を付加しない
 - `control_codes`: default false
 - `send_to`: process name, path, `pid:12345`, `sessionleader:`, `*`
 - `force_input`: default false
@@ -174,6 +176,9 @@ creation と input は restrictive mode では利用できません。
 - `include_ansi`: default false
 
 Public `terminal_operate` schema は raw-byte hex input を公開しません。
+Validation は terminal 作成、resize、入力送信より前に完了します。command/input
+text の前後空白は変更せず、`control_codes` が true の場合だけ送信時に対応する
+escape sequence を解釈します。
 
 ### `terminal_list`
 

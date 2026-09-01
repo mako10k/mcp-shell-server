@@ -2,7 +2,7 @@
   "name": "mcp-shell-server-vscode",
   "displayName": "MCP Shell Server",
   "description": "VS Code extension that exposes MCP Shell Server tools and registers the bundled MCP server.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "mako10k",
   "license": "MIT",
   "repository": {
@@ -263,15 +263,23 @@
             },
             "command": {
               "type": "string",
-              "description": "Command to run when creating a terminal."
+              "description": "Command to run when creating a terminal, or input for an existing terminal. Mutually exclusive with input."
             },
             "input": {
               "type": "string",
-              "description": "Input to send to terminal."
+              "description": "Input to send to an existing terminal. Mutually exclusive with command."
             },
             "execute": {
               "type": "boolean",
-              "description": "Send Enter after input."
+              "description": "Send Enter after command or input."
+            },
+            "control_codes": {
+              "type": "boolean",
+              "description": "Interpret command or input as control-code escapes."
+            },
+            "send_to": {
+              "type": "string",
+              "description": "Program guard target checked before input is sent."
             }
           },
           "additionalProperties": true
@@ -378,8 +386,9 @@
     ]
   },
   "scripts": {
-    "build": "npm run typecheck && npm run bundle:extension && npm run bundle:server",
-    "bundle:extension": "esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --sourcemap --outfile=dist/extension.js --external:vscode --external:node-pty",
+    "build": "npm run build:server-core && npm run typecheck && npm run bundle:extension && npm run bundle:server",
+    "build:server-core": "npm --prefix ../.. run build",
+    "bundle:extension": "esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --sourcemap --outfile=dist/extension.js --external:vscode --external:node-pty --alias:@mako10k/mcp-shell-server/tool-runtime=../../dist/runtime/tool-runtime.js",
     "bundle:server": "node scripts/bundle-server.mjs",
     "package": "npm run build && npx -y @vscode/vsce package",
     "package:release": "npm install --include=dev && npm run build && npm prune --omit=dev && npx -y @vscode/vsce package",

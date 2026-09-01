@@ -1,7 +1,6 @@
 import { ShellType, Dimensions, SafetyEvaluationResult } from '../types/index.js';
 import {
   ShellExecuteParams,
-  ShellExecuteParamsSchema,
   ShellGetExecutionParams,
   ShellGetExecutionParamsSchema,
   ShellSetDefaultWorkdirParams,
@@ -35,7 +34,13 @@ import {
   CommandHistoryQueryParamsSchema,
   AdjustCriteriaParams as _AdjustCriteriaParams, // Disabled MCP tool type
 } from '../types/schemas.js';
-import { TerminalOperateParams, TerminalOperateParamsSchema } from '../types/quick-schemas.js';
+import { TerminalOperateParams } from '../types/quick-schemas.js';
+import {
+  resolveShellExecuteIntent,
+  resolveTerminalOperateIntent,
+  type ShellExecuteIntent,
+  type TerminalOperateIntent,
+} from '../runtime/execution-intent.js';
 import { ProcessManager, ExecutionOptions } from '../core/process-manager.js';
 import { RemoteProcessService } from '../core/remote-process-service.js';
 import { TerminalManager } from '../core/terminal-manager.js';
@@ -98,8 +103,11 @@ export class ShellTools {
 
   // Shell Operations
   async executeShellValidated(rawParams: unknown) {
-    const params = ShellExecuteParamsSchema.parse(rawParams);
-    return this.executeShell(params);
+    return this.executeShellIntent(resolveShellExecuteIntent(rawParams));
+  }
+
+  async executeShellIntent(intent: ShellExecuteIntent) {
+    return this.executeShell(intent.parameters);
   }
 
   async getExecutionValidated(rawParams: unknown) {
@@ -443,8 +451,11 @@ export class ShellTools {
 
   // Terminal Management
   async terminalOperateValidated(rawParams: unknown) {
-    const params = TerminalOperateParamsSchema.parse(rawParams ?? {});
-    return this.terminalOperate(params);
+    return this.terminalOperateIntent(resolveTerminalOperateIntent(rawParams));
+  }
+
+  async terminalOperateIntent(intent: TerminalOperateIntent) {
+    return this.performTerminalOperate(intent);
   }
 
   async listTerminalsValidated(rawParams: unknown) {
@@ -723,8 +734,13 @@ export class ShellTools {
 
   // 統合ターミナル操作 (create + send_input + get_output を統合)
   async terminalOperate(params: TerminalOperateParams) {
+    return this.terminalOperateIntent(resolveTerminalOperateIntent(params));
+  }
+
+  private async performTerminalOperate(resolvedIntent: TerminalOperateIntent) {
+    const params = resolvedIntent.parameters;
     try {
-      const requestedInput = params.input || params.command;
+      const requestedInput = resolvedIntent.input?.value;
       if (
         !params.terminal_id ||
         params.dimensions !== undefined ||
@@ -748,7 +764,7 @@ export class ShellTools {
 
       // 1. ターミナルの準備 (新規作成 or 既存利用)
       if (!terminalId) {
-        if (!params.command) {
+        if (!resolvedIntent.input || resolvedIntent.input.source !== 'command') {
           throw new Error('Either terminal_id or command must be provided');
         }
 
@@ -766,14 +782,14 @@ export class ShellTools {
         terminalId = terminalInfo.terminal_id;
 
         // 作成後にコマンドを自動実行
-        if (params.command) {
+        if (resolvedIntent.input.send) {
           await this.terminalManager.sendInput(
             terminalId,
-            params.command,
-            true, // execute
-            params.control_codes || false,
+            resolvedIntent.input.value,
+            resolvedIntent.input.execute,
+            resolvedIntent.input.controlCodes,
             false, // raw_bytes
-            params.send_to // program guard
+            resolvedIntent.input.sendTo // program guard
           );
         }
       } else {
@@ -797,8 +813,8 @@ export class ShellTools {
         }
 
         // inputまたはcommandが指定されていれば送信（未読出力チェック付き）
-        const inputToSend = params.input || params.command;
-        if (typeof inputToSend === 'string' && inputToSend.length > 0) {
+        const inputToSend = resolvedIntent.input;
+        if (inputToSend?.send) {
           // 制御コード送信時は自動的にforce_inputをtrueにする（Ctrl+C等の緊急操作のため）
           const effectiveForceInput = params.force_input || params.control_codes;
 
@@ -823,11 +839,11 @@ export class ShellTools {
           if (!inputRejected) {
             await this.terminalManager.sendInput(
               terminalId,
-              inputToSend,
-              params.execute !== false, // デフォルトtrue
-              params.control_codes || false,
+              inputToSend.value,
+              inputToSend.execute,
+              inputToSend.controlCodes,
               false, // raw_bytes
-              params.send_to // program guard
+              inputToSend.sendTo // program guard
             );
           }
         }

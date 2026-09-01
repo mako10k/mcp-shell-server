@@ -3,7 +3,12 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   createShellToolRuntime,
+  resolveShellExecuteIntent,
+  resolveTerminalOperateIntent,
+  type ExecutionConfirmation,
+  type ShellExecuteIntent,
   type ShellToolRuntime,
+  type TerminalOperateIntent,
   type CreateMessageCallback,
   type ElicitationHandler
 } from '@mako10k/mcp-shell-server/tool-runtime';
@@ -173,8 +178,14 @@ class DirectShellTool implements vscode.LanguageModelTool<ToolParams> {
     options: vscode.LanguageModelToolInvocationOptions<ToolParams>,
     _token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelToolResult> {
+    const executionIntent = resolveInvocationIntent(this.toolName, options.input);
     const runtime = await getRuntime(this.context, this.output);
-    const result = await dispatchToolCall(runtime.shellTools, this.toolName, options.input);
+    const result = await dispatchToolCall(
+      runtime.shellTools,
+      this.toolName,
+      options.input,
+      executionIntent
+    );
 
     return new vscode.LanguageModelToolResult([
       new vscode.LanguageModelTextPart(JSON.stringify(result))
@@ -183,21 +194,16 @@ class DirectShellTool implements vscode.LanguageModelTool<ToolParams> {
 }
 
 function buildConfirmationMessage(toolName: ToolName, input?: ToolParams): vscode.MarkdownString {
-  if (!input) {
-    return new vscode.MarkdownString('Run MCP Shell Server tool?');
-  }
-
   if (toolName === 'shell_execute') {
-    const command = typeof input.command === 'string' ? input.command.trim() : '';
-    return command
-      ? new vscode.MarkdownString(`Run the following command?\n\n\`\`\`\n${command}\n\`\`\``)
-      : new vscode.MarkdownString('Run a shell command?');
+    return renderExecutionConfirmation(resolveShellExecuteIntent(input ?? {}).confirmation);
   }
 
   if (toolName === 'terminal_operate') {
-    const command = typeof input.command === 'string' ? input.command.trim() : '';
-    const text = command ? `Terminal command: ${command}` : 'Operate a terminal session?';
-    return new vscode.MarkdownString(text);
+    return renderExecutionConfirmation(resolveTerminalOperateIntent(input ?? {}).confirmation);
+  }
+
+  if (!input) {
+    return new vscode.MarkdownString('Run MCP Shell Server tool?');
   }
 
   if (toolName === 'delete_execution_outputs') {
@@ -211,14 +217,57 @@ function buildConfirmationMessage(toolName: ToolName, input?: ToolParams): vscod
   return new vscode.MarkdownString(`Run ${toolName}?`);
 }
 
+function renderExecutionConfirmation(confirmation: ExecutionConfirmation): vscode.MarkdownString {
+  const message = new vscode.MarkdownString();
+  message.appendText(confirmation.summary);
+
+  for (const payload of confirmation.payloads) {
+    message.appendMarkdown('\n\n');
+    message.appendText(`${payload.label}:`);
+    message.appendMarkdown('\n\n');
+    message.appendCodeblock(payload.value, 'text');
+  }
+
+  if (confirmation.details.length > 0) {
+    message.appendMarkdown('\n\n');
+    message.appendText('Resolved execution details:');
+    for (const detail of confirmation.details) {
+      message.appendMarkdown('\n\n- ');
+      message.appendText(`${detail.label}: ${detail.value}`);
+    }
+  }
+
+  return message;
+}
+
+type DirectExecutionIntent = ShellExecuteIntent | TerminalOperateIntent;
+
+function resolveInvocationIntent(
+  toolName: ToolName,
+  input?: ToolParams
+): DirectExecutionIntent | undefined {
+  if (toolName === 'shell_execute') {
+    return resolveShellExecuteIntent(input ?? {});
+  }
+  if (toolName === 'terminal_operate') {
+    return resolveTerminalOperateIntent(input ?? {});
+  }
+  return undefined;
+}
+
 async function dispatchToolCall(
   shellTools: ShellToolsApi,
   toolName: ToolName,
-  params?: ToolParams
+  params?: ToolParams,
+  executionIntent?: DirectExecutionIntent
 ): Promise<unknown> {
   switch (toolName) {
-    case 'shell_execute':
-      return shellTools.executeShellValidated(params ?? {});
+    case 'shell_execute': {
+      if (executionIntent?.kind !== 'shell_execute') {
+        throw new Error('Resolved shell execution intent is required');
+      }
+      return shellTools.executeShellIntent(executionIntent);
+    }
     case 'process_get_execution':
       return shellTools.getExecutionValidated(params ?? {});
     case 'shell_set_default_workdir':
@@ -233,8 +282,12 @@ async function dispatchToolCall(
       return shellTools.getCleanupSuggestionsValidated(params ?? {});
     case 'perform_auto_cleanup':
       return shellTools.performAutoCleanupValidated(params ?? {});
-    case 'terminal_operate':
-      return shellTools.terminalOperateValidated(params ?? {});
+    case 'terminal_operate': {
+      if (executionIntent?.kind !== 'terminal_operate') {
+        throw new Error('Resolved terminal operation intent is required');
+      }
+      return shellTools.terminalOperateIntent(executionIntent);
+    }
     case 'terminal_list':
       return shellTools.listTerminalsValidated(params ?? {});
     case 'terminal_get_info':

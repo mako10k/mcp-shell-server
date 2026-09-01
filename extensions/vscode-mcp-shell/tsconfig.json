@@ -6,6 +6,12 @@
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@mako10k/mcp-shell-server/tool-runtime": [
+        "../../dist/runtime/tool-runtime.d.ts"
+      ]
+    },
     "strict": true,
     "sourceMap": true,
     "esModuleInterop": true,

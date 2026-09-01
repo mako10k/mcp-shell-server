@@ -95,10 +95,32 @@ export const TerminalOperateParamsSchema = z
       .default(true)
       .describe('Include terminal information in response'),
   })
-  .refine((data) => data.terminal_id || data.command, {
-    message:
-      'Either terminal_id (to use existing terminal) or command (to create new terminal) must be provided',
-    path: ['terminal_id', 'command'],
+  .superRefine((data, context) => {
+    if (!data.terminal_id && !data.command) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Either terminal_id (to use existing terminal) or command (to create new terminal) must be provided',
+        path: ['terminal_id', 'command'],
+      });
+    }
+
+    if (data.command !== undefined && data.input !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'command and input cannot be specified together because the terminal payload would be ambiguous',
+        path: ['command', 'input'],
+      });
+    }
+
+    if (!data.terminal_id && data.input !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'input can only be sent to an existing terminal_id',
+        path: ['input'],
+      });
+    }
   });
 
 // 3. システム概要（ダッシュボード的な情報）

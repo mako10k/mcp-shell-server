@@ -15,6 +15,15 @@ import { logger } from '../utils/helpers.js';
 
 export type { CreateMessageCallback } from '../security/chat-completion-adapter.js';
 export type { ElicitationHandler } from '../security/evaluator-types.js';
+export {
+  resolveShellExecuteIntent,
+  resolveTerminalOperateIntent,
+} from './execution-intent.js';
+export type {
+  ExecutionConfirmation,
+  ShellExecuteIntent,
+  TerminalOperateIntent,
+} from './execution-intent.js';
 
 export type ShellToolRuntime = {
   processManager: ProcessManager;

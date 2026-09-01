@@ -609,7 +609,9 @@ Apply age and retention policies, with dry-run support.
 Create a host terminal, send input, resize it, and retrieve output through one
 tool. Mutation is unavailable in restrictive mode. Important parameters include
 `terminal_id`, `command`, `input`, `execute`, `control_codes`, `send_to`,
-`dimensions`, and `get_output`.
+`dimensions`, and `get_output`. `command` and `input` are mutually exclusive;
+`input` requires an existing `terminal_id`. The `execute` flag controls whether
+Enter is appended for both newly created and existing terminals.
 
 #### `terminal_list`
 List active terminal sessions.
