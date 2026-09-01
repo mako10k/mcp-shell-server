@@ -11,7 +11,7 @@ By participating in this project, you agree to abide by our code of conduct. Be 
 ### Prerequisites
 
 - Node.js 18.0.0 or higher
-- npm or yarn package manager
+- npm
 - TypeScript knowledge
 - Basic understanding of Model Context Protocol (MCP)
 
@@ -113,6 +113,7 @@ For new features:
    - Run `npm run build` to ensure compilation
    - Run `npm test` to verify all tests pass
    - Run `npm run lint` to check code style
+   - Run `npm run docs:check` when public tools, metadata, examples, or current documentation change
    - Update documentation if needed
 
 2. **PR Description:**
@@ -122,7 +123,6 @@ For new features:
    - Include testing details
 
 3. **Review Process:**
-   - Maintainers will review within 48 hours
    - Address feedback promptly
    - Keep PR updated with main branch
 
@@ -130,7 +130,7 @@ For new features:
 
 ### Core Principles
 
-- **Security First**: All operations must be secure by default
+- **Explicit Boundaries**: Document the actual execution mode and isolation boundary without implying blanket safety
 - **Type Safety**: Use TypeScript strictly
 - **Modularity**: Keep components loosely coupled
 - **Performance**: Consider resource usage
@@ -195,14 +195,6 @@ We follow Semantic Versioning (SemVer):
 
 - **Questions**: Open a discussion
 - **Issues**: Use issue templates
-- **Real-time**: Join our community chat
 - **Security**: Follow security policy
-
-## Recognition
-
-Contributors will be recognized in:
-- CONTRIBUTORS.md file
-- Release notes
-- Project documentation
 
 Thank you for contributing to MCP Shell Server!

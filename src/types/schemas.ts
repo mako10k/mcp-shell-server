@@ -22,7 +22,7 @@ export const ShellExecuteParamsSchema = z
       .string()
       .optional()
       .describe(
-        'Optional comment from the LLM client explaining the intent or context behind this command execution. This helps the safety evaluator understand the broader context, but will be treated as advisory only and not blindly trusted.'
+        'Optional comment from the LLM client explaining the intent or context behind this command execution. This helps the command evaluator understand the broader context, but will be treated as advisory only and not blindly trusted.'
       ),
     execution_mode: ExecutionModeSchema.default('adaptive').describe(
       'How the command should be executed: "foreground" (wait for completion), "background" (run async), "detached" (fire-and-forget), "adaptive" (start foreground, switch to background for long-running commands)'
@@ -119,7 +119,7 @@ export const ShellExecuteParamsSchema = z
       .boolean()
       .default(false)
       .describe(
-        'Force user confirmation regardless of LLM evaluation result. Use this to test ELICITATION functionality or when you want direct user confirmation even for safe commands.'
+        'Force user confirmation regardless of LLM evaluation result. Use this to test ELICITATION functionality or when direct user confirmation is required even if the evaluator would allow the command.'
       ),
   })
   .strict()
@@ -565,7 +565,7 @@ export const AutoCleanupParamsSchema = z.object({
   dry_run: z
     .boolean()
     .optional()
-    .describe('If true, simulate cleanup without deleting files. Default: true for safety.'),
+    .describe('If true, preview cleanup without deleting files. Default: true.'),
   preserve_recent: z
     .number()
     .int()

@@ -1,5 +1,8 @@
 # MCP Shell Server ツール名改善提案
 
+Status: historical naming proposal. The current 13-tool public surface is
+documented in `specification.md` and registered in `src/server.ts`.
+
 ## 概要
 
 このドキュメントは、MCP Shell Serverのツール名をLLMにとってより理解しやすくするための改善提案をまとめています。

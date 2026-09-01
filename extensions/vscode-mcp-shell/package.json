@@ -1,7 +1,7 @@
 {
   "name": "mcp-shell-server-vscode",
-  "displayName": "Safe Shell Runner",
-  "description": "VS Code extension that registers MCP Shell Server as Safe Shell Runner.",
+  "displayName": "MCP Shell Server",
+  "description": "VS Code extension that exposes MCP Shell Server tools and registers the bundled MCP server.",
   "version": "0.2.0",
   "publisher": "mako10k",
   "license": "MIT",
@@ -43,7 +43,7 @@
       {
         "name": "shell_execute",
         "displayName": "Shell Execute",
-        "modelDescription": "Execute shell commands securely using MCP Shell Server. Returns a JSON string with execution status, outputs, and metadata. Use when a real shell command must run.",
+        "modelDescription": "Execute a shell command using MCP Shell Server. Returns a JSON string with execution status, retained output, and execution-boundary metadata.",
         "userDescription": "Execute a shell command via MCP Shell Server and return JSON output.",
         "canBeReferencedInPrompt": true,
         "toolReferenceName": "shell_execute",
@@ -387,7 +387,7 @@
     "watch": "tsc -p . -w"
   },
   "dependencies": {
-    "@mako10k/mcp-shell-server": "^2.7.1"
+    "@mako10k/mcp-shell-server": "^2.8.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

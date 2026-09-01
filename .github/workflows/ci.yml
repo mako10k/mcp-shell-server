@@ -7,6 +7,43 @@ on:
     branches: [ main ]
 
 jobs:
+  documentation:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Check documentation consistency
+      run: npm run docs:check
+
+    - name: Install pinned Sealgraph
+      env:
+        SEALGRAPH_ARCHIVE_SHA256: 1cf4c8e71e16b3783c7a45275eee25c21dede94211f299ccc2485b9ae404189d
+        SEALGRAPH_ARCHIVE_URL: https://github.com/mako10k/sealgraph/releases/download/v0.1.0-beta.6/sealgraph_0.1.0-beta.6_linux_amd64.tar.gz
+      run: |
+        sealgraph_archive="$RUNNER_TEMP/sealgraph_0.1.0-beta.6_linux_amd64.tar.gz"
+        sealgraph_directory="$RUNNER_TEMP/sealgraph-0.1.0-beta.6"
+        curl --fail --location --silent --show-error "$SEALGRAPH_ARCHIVE_URL" --output "$sealgraph_archive"
+        echo "$SEALGRAPH_ARCHIVE_SHA256  $sealgraph_archive" | sha256sum --check --strict
+        mkdir "$sealgraph_directory"
+        tar --extract --gzip --strip-components=1 --file "$sealgraph_archive" --directory "$sealgraph_directory"
+        test -x "$sealgraph_directory/sealgraph"
+        echo "$sealgraph_directory" >> "$GITHUB_PATH"
+
+    - name: Check Sealgraph provenance
+      run: |
+        sealgraph init
+        node scripts/check-sealgraph.mjs
+
   test:
     runs-on: ubuntu-latest
     

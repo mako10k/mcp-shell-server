@@ -1,0 +1,3 @@
+repository_format = 4
+object_format = sha256
+ref_format = manifest-v1

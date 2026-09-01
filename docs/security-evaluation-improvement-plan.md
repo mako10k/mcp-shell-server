@@ -1,5 +1,8 @@
 # Security Evaluation Criteria Improvement Plan
 
+Status: historical implementation plan. Verify current evaluator behavior in
+the source; this document is not an execution-boundary guarantee.
+
 ## Overview
 Improve the security evaluation system to reduce overly strict assessments while maintaining essential safety protections through dynamic criteria adjustment.
 

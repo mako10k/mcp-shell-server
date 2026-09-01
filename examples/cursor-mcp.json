@@ -1,10 +1,12 @@
 {
   "servers": {
     "mcp-shell-server": {
-      "type": "stdio",    "command": "mcp-shell-server",
+      "type": "stdio",
+      "command": "mcp-shell-server",
       "env": {
+        "MCP_SHELL_SECURITY_MODE": "permissive",
         "MCP_SHELL_DEFAULT_WORKDIR": "${workspaceRoot}",
-        "MCP_SHELL_ALLOWED_WORKDIRS": "${workspaceRoot},/tmp"
+        "MCP_SHELL_ALLOWED_WORKDIRS": "${workspaceRoot}"
       }
     }
   }

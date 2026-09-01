@@ -56,3 +56,9 @@ data/
 *.db-wal
 
 jscpd-report/
+
+# Sealgraph runtime-only state. Canonical config, objects, and refs are tracked.
+.sealgraph/index/
+.sealgraph/cache/
+.sealgraph/locks/
+.sealgraph/logs/

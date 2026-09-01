@@ -1,12 +1,16 @@
 # VS Code Language Model Tools 対応設計案
 
+Status: historical proposal. Language Model Tools are now implemented; verify
+the current surface in `extensions/vscode-mcp-shell/package.json` and
+`src/server.ts`.
+
 ## 目的
 
 Copilot Chat で MCP Shell Server と同等のツール群を VSIX から直接提供できるようにする。MCP サーバー経由のツール提供に依存せず、VS Code の Language Model Tools API を使って同じツール名・入出力・挙動を提供する。
 
 参照:
-- [docs/specification.md](docs/specification.md)
-- [src/server.ts](src/server.ts)
+- [API specification](specification.md)
+- [MCP server tool registry](../src/server.ts)
 - https://code.visualstudio.com/api/extension-guides/ai/tools
 
 ## 現状
@@ -121,7 +125,7 @@ MCP サーバーの Enhanced Evaluator は MCP の sampling/elicitation に依�
 {
   "name": "shell_execute",
   "displayName": "Shell Execute",
-  "modelDescription": "Execute shell commands securely with intelligent output handling...",
+  "modelDescription": "Execute a shell command using the configured execution mode and retain oversized output...",
   "canBeReferencedInPrompt": true,
   "toolReferenceName": "shell_execute",
   "inputSchema": { "type": "object", "properties": { "command": { "type": "string" } }, "required": ["command"] }

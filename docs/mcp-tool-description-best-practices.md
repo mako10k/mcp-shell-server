@@ -1,5 +1,8 @@
 # MCP Tool Description Best Practices
 
+Status: historical research note. Examples may use superseded tool names; use
+`specification.md` and `src/server.ts` for the current public surface.
+
 ## Overview
 
 このドキュメントは、Model Context Protocol (MCP) ツールの description とパラメータ description のベストプラクティスをまとめたものです。LLM が誤解しにくく、効果的にツールを使用できるような記述方法を目指します。
@@ -39,7 +42,7 @@
 
 **Before (current):**
 ```
-"Execute shell commands securely in a sandboxed environment. Can also create new interactive terminal sessions."
+"Execute shell commands using the configured execution mode. Restrictive local non-interactive execution uses the documented Bubblewrap boundary; terminal sessions use direct host execution."
 ```
 
 **After (improved):**

@@ -41,7 +41,6 @@ function printHelp(version: string): void {
     '  MCP_SHELL_DEFAULT_WORKDIR  Default working directory for shell_execute',
     '  MCP_SHELL_ALLOWED_WORKDIRS Comma-separated approved working-directory roots',
     '  MCP_DISABLED_TOOLS         Comma-separated tool names to disable',
-    '  LOG_LEVEL=debug|info|warn|error  Log verbosity',
     '',
     'Related commands (from package scripts):',
     '  npm run backoffice:start   Start Backoffice UI only',

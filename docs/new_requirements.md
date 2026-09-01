@@ -1,5 +1,8 @@
 # 高度なコマンド実行安全性機能の要求仕様書
 
+Status: historical requirements record. It contains design terminology and
+requirements that do not necessarily describe version 2.8.0 behavior.
+
 ## 概要
 
 参考GitHub Repository（実装手法の参考用）:

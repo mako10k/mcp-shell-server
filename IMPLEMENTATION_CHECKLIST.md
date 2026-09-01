@@ -1,5 +1,8 @@
 # MCP Shell Server 改善実施チェックリスト
 
+Status: historical implementation record. Current public tools and defaults are
+documented in `docs/specification.md`.
+
 ## 概要
 このチェックリストは、MCP Shell Serverのツール名とExecutionModeの改善を段階的に実施するためのものです。
 

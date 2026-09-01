@@ -159,7 +159,7 @@ export class MCPShellServer {
         },
         {
           name: 'perform_auto_cleanup',  
-          description: 'Perform automatic cleanup of old output files based on age and retention policies. Supports dry-run mode for safety. Automatically preserves recent files while cleaning up old ones to manage disk space.',
+          description: 'Perform automatic cleanup of old output files based on age and retention policies. Supports dry-run preview and preserves a configurable number of recent files.',
           inputSchema: zodToJsonSchema(AutoCleanupParamsSchema, { target: 'jsonSchema7' })
         },
 

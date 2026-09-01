@@ -1,5 +1,8 @@
 # MCP統合機能に関する技術メモ
 
+Status: historical integration memo. Verify current protocol behavior against
+the implementation and current MCP SDK documentation.
+
 ## MCPプロトコルの基本概念
 
 ### MCP (Model Context Protocol)
