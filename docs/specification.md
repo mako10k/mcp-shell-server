@@ -3,7 +3,7 @@
 MCP Shell Server は、Model Context Protocol (MCP) を通じてコマンド実行、
 保持出力、ホストターミナル、コマンド履歴を扱うサーバーです。
 
-この文書は version 2.8.0 の public MCP tool surface を記述します。
+この文書は version 2.8.1 の public MCP tool surface を記述します。
 実行時の正確な input schema は `tools/list` が返す JSON Schema を正とし、
 実装上の登録箇所は `src/server.ts`、入力定義は
 `src/types/schemas.ts` と `src/types/quick-schemas.ts` です。
@@ -11,7 +11,7 @@ MCP Shell Server は、Model Context Protocol (MCP) を通じてコマンド実�
 ## Server information
 
 - Name: `mcp-shell-server`
-- Package version: `2.8.0`
+- Package version: `2.8.1`
 - Transport: stdio
 - MCP implementation: `@modelcontextprotocol/sdk`。protocol version は client と SDK が接続時に negotiation する
 - Direct-host platforms: Linux, macOS, Windows
@@ -38,7 +38,7 @@ launcher と profile を返します。
 
 ## Public tools
 
-version 2.8.0 は次の13ツールを公開します。`MCP_DISABLED_TOOLS` に指定された
+version 2.8.1 は次の13ツールを公開します。`MCP_DISABLED_TOOLS` に指定された
 ツールは `tools/list` から除外され、呼び出しも拒否されます。
 
 | Category | Tool |
@@ -221,7 +221,7 @@ best-effort で記録し、他の public tool call すべてに durable record �
 | `MCP_SHELL_ELICITATION` | enhanced mode elicitation |
 | `MCP_SHELL_LLM_API_KEY` | optional evaluator API key |
 | `MCP_SHELL_LLM_TIMEOUT` | evaluator timeout |
-`MCP_SHELL_MAX_CONCURRENT`、`MCP_LOG_LEVEL`、`LOG_LEVEL` は version 2.8.0 の
+`MCP_SHELL_MAX_CONCURRENT`、`MCP_LOG_LEVEL`、`LOG_LEVEL` は version 2.8.1 の
 configuration variables ではありません。同時 process 数の default limit は
 50ですが、環境変数からは変更できません。
 
@@ -298,5 +298,6 @@ Guarded terminal input:
 
 ## Change history
 
-- 2.8.0: current public tool surface and mode-specific execution-boundary contract
+- 2.8.1: factual public metadata, aligned documentation inventory, and Sealgraph provenance checks
+- 2.8.0: public tool surface and mode-specific execution-boundary contract
 - Detailed release history: [CHANGELOG.md](../CHANGELOG.md)

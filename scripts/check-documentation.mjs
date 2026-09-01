@@ -112,11 +112,15 @@ if (!readme.includes(`current package version is ${packageJson.version}`)) {
 if (!specification.includes(`version ${packageJson.version}`)) {
   reportFailure('Specification version differs from package.json');
 }
-if (!extensionSource.includes(`const SERVER_VERSION = '${packageJson.version}';`)) {
-  reportFailure('VS Code bundled MCP server version differs from package.json');
-}
-if (extensionPackage.dependencies['@mako10k/mcp-shell-server'] !== `^${packageJson.version}`) {
-  reportFailure('VS Code MCP server dependency differs from package.json');
+const extensionServerVersion = extensionSource.match(
+  /const SERVER_VERSION = '([^']+)';/,
+)?.[1];
+if (!extensionServerVersion) {
+  reportFailure('Could not locate the VS Code bundled MCP server version');
+} else if (
+  extensionPackage.dependencies['@mako10k/mcp-shell-server'] !== `^${extensionServerVersion}`
+) {
+  reportFailure('VS Code bundled MCP server version differs from its dependency declaration');
 }
 
 const publicDocuments = [

@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.8.1] - 2026-09-01
+
+### Added
+- Record exact document dependency generations with the committed Sealgraph provenance graph.
+- Validate public tool counts, package metadata, examples, local links, and all current Sealgraph REF contents in CI.
+
+### Changed
+- Replace blanket safety claims with mode-specific execution-boundary descriptions and factual logging behavior.
+- Align the published README, specification, setup guides, examples, package description, and shipped documentation inventory with the 13-tool implementation.
+
 ## [2.8.0] - 2026-08-31
 
 ### Added
