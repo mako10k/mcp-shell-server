@@ -10,7 +10,7 @@ import {
 
 const PROVIDER_ID = 'mcp-shell-server.provider';
 const SERVER_LABEL = 'MCP Shell Server';
-const SERVER_VERSION = '2.8.0';
+const SERVER_VERSION = '2.8.1';
 const TOOL_NAMES = [
   'shell_execute',
   'process_get_execution',
@@ -42,7 +42,9 @@ function getServerEntry(context: vscode.ExtensionContext): string {
   return path.join(
     context.extensionPath,
     'dist',
-    'mcp-shell-server.js'
+    'mcp-shell-server',
+    'dist',
+    'index.mjs'
   );
 }
 
