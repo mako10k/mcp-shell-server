@@ -84,7 +84,7 @@ Send an ANSI sequence:
 
 ## Public boundary
 
-The internal terminal manager contains a raw-byte helper, but version 2.8.0
+The internal terminal manager contains a raw-byte helper, but version 2.8.1
 does not expose `raw_bytes` in the public `terminal_operate` schema. Clients
 must not send that parameter.
 

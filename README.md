@@ -702,7 +702,7 @@ MIT License - see LICENSE file for details.
 
 ## Version History
 
-The current package version is 2.8.0. See [CHANGELOG.md](CHANGELOG.md) for
+The current package version is 2.8.1. See [CHANGELOG.md](CHANGELOG.md) for
 release history and behavior changes.
 
 ## Documentation
