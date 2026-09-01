@@ -40,7 +40,9 @@ jobs:
         echo "$sealgraph_directory" >> "$GITHUB_PATH"
 
     - name: Check Sealgraph provenance
-      run: node scripts/check-sealgraph.mjs
+      run: |
+        sealgraph init
+        node scripts/check-sealgraph.mjs
 
   test:
     runs-on: ubuntu-latest
