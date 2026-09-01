@@ -35,7 +35,8 @@ jobs:
         curl --fail --location --silent --show-error "$SEALGRAPH_ARCHIVE_URL" --output "$sealgraph_archive"
         echo "$SEALGRAPH_ARCHIVE_SHA256  $sealgraph_archive" | sha256sum --check --strict
         mkdir "$sealgraph_directory"
-        tar --extract --gzip --file "$sealgraph_archive" --directory "$sealgraph_directory"
+        tar --extract --gzip --strip-components=1 --file "$sealgraph_archive" --directory "$sealgraph_directory"
+        test -x "$sealgraph_directory/sealgraph"
         echo "$sealgraph_directory" >> "$GITHUB_PATH"
 
     - name: Check Sealgraph provenance
